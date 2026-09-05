@@ -1,0 +1,68 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --plum: #5C3243;
+  --cream: #FAF7F2;
+}
+
+* {
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  background: var(--cream);
+  color: #211B1E;
+  font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+}
+
+::selection {
+  background: #5C3243;
+  color: #FAF7F2;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: #F0E8E4; }
+::-webkit-scrollbar-thumb { background: #C9B7BD; border-radius: 8px; }
+::-webkit-scrollbar-thumb:hover { background: #5C3243; }
+
+@layer components {
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 bg-plum text-white text-xs font-medium uppercase tracking-widest px-8 py-4 transition-all duration-300 hover:bg-plum-hover disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-outline {
+    @apply inline-flex items-center justify-center gap-2 border border-plum text-plum text-xs font-medium uppercase tracking-widest px-8 py-4 transition-all duration-300 hover:bg-plum hover:text-white;
+  }
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 text-plum text-xs font-medium uppercase tracking-widest px-4 py-2 transition-colors hover:text-accent;
+  }
+  .input-field {
+    @apply w-full bg-white border border-line px-4 py-3 text-sm text-ink placeholder:text-ink-muted focus:outline-none focus:border-plum transition-colors;
+  }
+  .label-caption {
+    @apply text-[11px] font-medium uppercase tracking-widest2 text-ink-muted;
+  }
+  .section-title {
+    @apply font-serif text-3xl sm:text-4xl lg:text-5xl font-normal text-plum tracking-tight;
+  }
+  .container-artful {
+    @apply max-w-8xl mx-auto px-5 sm:px-8 lg:px-12;
+  }
+  .link-underline {
+    @apply relative after:absolute after:left-0 after:-bottom-1 after:h-px after:w-0 after:bg-current after:transition-all after:duration-300 hover:after:w-full;
+  }
+}
+
+.hide-scrollbar::-webkit-scrollbar { display: none; }
+.hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+.hover-zoom img { transition: transform 0.8s cubic-bezier(0.22,1,0.36,1); }
+.hover-zoom:hover img { transform: scale(1.06); }

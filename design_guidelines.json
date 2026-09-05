@@ -1,0 +1,269 @@
+{
+  "brand": {
+    "name": "ARTFUL",
+    "tagline": "Thoughtful Gifting & Artisanal Lifestyle",
+    "currency": "INR",
+    "currency_symbol": "₹",
+    "identity": "ARTFUL is a high-end international D2C artistic lifestyle and thoughtful-gifting brand. It combines bespoke craftsmanship with emotional storytelling, creating heirloom-quality objects and curated gift boxes."
+  },
+  "interface_duality_principle": {
+    "storefront": "Feels like an editorial museum gallery and luxury boutique. Warm, editorial, image-led, generous whitespace, serif titles, serene interactions, high perceived value.",
+    "admin_panel": "Feels like a high-precision commerce flight deck. Dense, clean, operational, structured, dark/slate sidebar, cardless high-density tables, instant filters, data-first."
+  },
+  "color_palette": {
+    "storefront": {
+      "primary": "#5C3243",
+      "primary_hover": "#4A2735",
+      "primary_light": "#F5EFF0",
+      "brand_plum": "#6B3A4B",
+      "brand_wine": "#3D1C28",
+      "secondary": "#D4A373",
+      "secondary_light": "#F8F1E9",
+      "accent": "#B56576",
+      "accent_gold": "#E9D8A6",
+      "background_page": "#FAF7F2",
+      "background_card": "#FFFFFF",
+      "background_surface_alt": "#F5EFF0",
+      "text_primary": "#211B1E",
+      "text_secondary": "#594E53",
+      "text_muted": "#8C7E85",
+      "border": "#E6DDD9",
+      "border_subtle": "#F0E8E4",
+      "cta_button": "#5C3243",
+      "cta_text": "#FFFFFF",
+      "success": "#2D6A4F",
+      "warning": "#E07A5F",
+      "error": "#9E2A2B"
+    },
+    "admin_panel": {
+      "sidebar_bg": "#1E181C",
+      "sidebar_active": "#5C3243",
+      "sidebar_text": "#D6C7CC",
+      "bg_app": "#F4F1EA",
+      "bg_card": "#FFFFFF",
+      "text_main": "#1A1517",
+      "text_muted": "#6E6267",
+      "border": "#E2D9D5",
+      "primary_action": "#5C3243",
+      "status_pending": {
+        "bg": "#FEF3C7",
+        "text": "#92400E",
+        "border": "#FDE68A"
+      },
+      "status_processing": {
+        "bg": "#E0F2FE",
+        "text": "#075985",
+        "border": "#BAE6FD"
+      },
+      "status_shipped": {
+        "bg": "#F3E8FF",
+        "text": "#6B21A8",
+        "border": "#E9D5FF"
+      },
+      "status_delivered": {
+        "bg": "#DCFCE7",
+        "text": "#166534",
+        "border": "#BBF7D0"
+      },
+      "status_cancelled": {
+        "bg": "#FEE2E2",
+        "text": "#991B1B",
+        "border": "#FECACA"
+      }
+    }
+  },
+  "typography": {
+    "font_family": {
+      "headings_editorial": "Cormorant Garamond, Playfair Display, serif",
+      "body_and_ui": "Plus Jakarta Sans, General Sans, sans-serif",
+      "mono_data": "JetBrains Mono, monospace"
+    },
+    "font_weights": {
+      "light": "300",
+      "regular": "400",
+      "medium": "500",
+      "semibold": "600",
+      "bold": "700"
+    },
+    "scale": {
+      "h1_hero": "text-4xl sm:text-5xl lg:text-6xl font-serif font-light tracking-tight leading-tight",
+      "h2_section": "text-2xl sm:text-3xl lg:text-4xl font-serif font-normal text-primary tracking-tight",
+      "h3_subsection": "text-xl sm:text-2xl font-serif font-medium",
+      "body_lg": "text-lg font-sans font-light leading-relaxed",
+      "body_base": "text-base font-sans font-normal leading-relaxed text-secondary",
+      "body_sm": "text-sm font-sans font-normal leading-normal text-muted",
+      "caption": "text-xs font-sans font-medium uppercase tracking-widest text-muted",
+      "button": "text-sm font-sans font-medium tracking-wide uppercase"
+    }
+  },
+  "layout_and_spacing": {
+    "whitespace": "Generous (2x to 3x normal density for Storefront). Use py-16, py-24, py-32 for section separation.",
+    "container_max_width": "max-w-7xl mx-auto px-4 sm:px-6 lg:px-12",
+    "grid_bento": "Asymmetric editorial grids with ratio spans (e.g. col-span-12 md:col-span-8 and col-span-12 md:col-span-4).",
+    "borders": "1px subtle solid strokes (#E6DDD9) without aggressive dropshadows."
+  },
+  "storefront_sections": {
+    "announcement_bar": {
+      "description": "Top-level sticky bar in deep plum (#5C3243) with soft gold (#E9D8A6) typography.",
+      "content": "Complimentary Handwritten Gift Card & Bespoke Artisanal Packaging on Orders above ₹2,999",
+      "cta": "Explore Occasions",
+      "data_testid": "announcement-bar"
+    },
+    "header_nav": {
+      "type": "Glassmorphic floating or sticky bar with backdrop blur (backdrop-blur-md bg-white/80).",
+      "elements": [
+        "Brand Logo (ARTFUL wordmark in serif plum)",
+        "Desktop Links: Curated Gifts, Occasions, Bespoke Boxes, Artisanal Decor, Our Story",
+        "Utility Icons: Smart Search Trigger, Wishlist Counter, Cart Drawer Trigger (with item count pill)"
+      ],
+      "data_testid": "main-header-nav"
+    },
+    "hero_section": {
+      "type": "Split-screen or layered editorial scene with 40% height ratio image focus.",
+      "heading": "Artisanal Curations for Unforgettable Moments",
+      "subheading": "Handcrafted lifestyle objects and bespoke gift boxes thoughtfully created to elevate life's gentle celebrations.",
+      "cta_primary": {
+        "text": "Shop Gift Collections",
+        "data_testid": "hero-primary-cta"
+      },
+      "cta_secondary": {
+        "text": "Explore Bespoke Gifting",
+        "data_testid": "hero-secondary-cta"
+      }
+    },
+    "featured_categories": {
+      "items": [
+        "For Special Occasions",
+        "Artisanal Ceramics",
+        "Self-Care Retreats",
+        "Bespoke Gift Boxes",
+        "Monogrammed Keepsakes"
+      ],
+      "data_testid": "featured-categories-grid"
+    },
+    "bestsellers": {
+      "type": "Asymmetric product card carousel or 4-column grid with quick-view and instant gift add.",
+      "data_testid": "bestsellers-section"
+    },
+    "gift_by_occasion_or_recipient": {
+      "type": "Interactive tabs / pills filtering occasions (Anniversary, Housewarming, Birthday, Corporate, Weddings) and recipients (For Her, For Him, For Couples).",
+      "data_testid": "gift-by-occasion-section"
+    },
+    "brand_story": {
+      "type": "Editorial vignette featuring artisan spotlight, sustainability commitment, and custom calligraphy gift cards.",
+      "data_testid": "brand-story-vignette"
+    },
+    "testimonials": {
+      "type": "Customer quotes with verified buyer badge, ratings, and luxury gift unboxing preview photos.",
+      "data_testid": "testimonials-section"
+    },
+    "newsletter": {
+      "type": "Minimalist subscription box with email input, INR 500 first-gift coupon promise, and privacy note.",
+      "data_testid": "newsletter-form"
+    },
+    "footer": {
+      "type": "Deep wine/plum section with customer care, INR currency badge, gift guide links, social media, and copyright.",
+      "data_testid": "footer-section"
+    }
+  },
+  "product_catalog_and_pdp": {
+    "catalog_grid": {
+      "layout": "3 or 4 column grid with hover image switch (lifestyle placement vs product close-up).",
+      "filters": "Drawer or collapsible sidebar for Price in ₹, Occasion, Material, Recipient, Delivery Speed.",
+      "sorting": "Sort by Featured, Price: Low to High, Price: High to Low, New Arrivals.",
+      "data_testid": "product-catalog-grid"
+    },
+    "pdp": {
+      "gallery": "Interactive image gallery with zoom capability and thumbnail navigation.",
+      "pricing": "Displayed in ₹ INR with tax inclusion note.",
+      "gifting_customizer": "Gift wrap checkbox (₹199), handwritten message input card (max 250 chars), preferred delivery date selector.",
+      "accordions": ["Artisan & Origin Story", "Materials & Care Instructions", "Shipping & Gift Packaging Details"],
+      "ctas": {
+        "add_to_cart": "add-to-cart-button",
+        "buy_now": "buy-now-button",
+        "wishlist": "wishlist-toggle-button"
+      }
+    }
+  },
+  "cart_and_checkout": {
+    "cart_drawer": {
+      "type": "Slide-over right panel with progress bar toward free gift wrapping (₹2,999 threshold).",
+      "elements": [
+        "Item list with quantity modifiers",
+        "Gifting note summary",
+        "Subtotal in ₹",
+        "Proceed to Checkout CTA"
+      ],
+      "data_testid": "cart-drawer"
+    },
+    "guest_checkout": {
+      "steps": [
+        "Step 1: Mobile Number & OTP Verification (for friction-free Indian D2C flow)",
+        "Step 2: Shipping & Recipient Address (Support distinct Gift Recipient Address vs Billing Address)",
+        "Step 3: Gift Message & Wrap Options",
+        "Step 4: Payment (UPI / Razorpay simulation, Credit/Debit Cards, COD with ₹99 fee)"
+      ],
+      "data_testid": "guest-checkout-flow"
+    },
+    "order_success": {
+      "elements": [
+        "Order ID (e.g., ART-2026-8942)",
+        "Estimated delivery date range",
+        "Live tracking link",
+        "WhatsApp updates opt-in toggle"
+      ],
+      "data_testid": "order-success-container"
+    }
+  },
+  "admin_panel_specifications": {
+    "sidebar": {
+      "theme": "Dark Plum / Obsidian Charcoal (#1E181C)",
+      "links": [
+        "Dashboard Overview",
+        "Orders & Fulfillment",
+        "Gift Catalog & Inventory",
+        "Occasion Collections",
+        "Customers & Loyalty",
+        "Analytics & Revenue (₹)",
+        "Storefront Settings"
+      ],
+      "data_testid": "admin-sidebar-nav"
+    },
+    "density": "High data-density tables with subtle grid borders, inline search, date range picker, export CSV, bulk actions.",
+    "status_chips": "Pill-shaped badges with soft tinted background and crisp text.",
+    "forms": "Structured 2-column forms with input validation feedback, monetary ₹ inputs, and image drag-and-drop upload zone.",
+    "data_testid": "admin-dashboard-root"
+  },
+  "curated_media_assets": [
+    {
+      "category": "Hero & Editorial Lifestyle",
+      "url": "https://images.unsplash.com/photo-1613424777445-f93a2a48e285?crop=entropy&cs=srgb&fm=jpg&q=85",
+      "description": "Warm sunlight ceramic vase on woven tablecloth."
+    },
+    {
+      "category": "Artisanal Ceramics",
+      "url": "https://images.pexels.com/photos/15028227/pexels-photo-15028227.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "description": "Uniquely shaped ceramic vase on dark backdrop."
+    },
+    {
+      "category": "Luxury Gift Boxes",
+      "url": "https://images.unsplash.com/photo-1625552186152-668cd2f0b707?crop=entropy&cs=srgb&fm=jpg&q=85",
+      "description": "Luxury gift box with ribbon and dried roses."
+    },
+    {
+      "category": "Bespoke Packaging",
+      "url": "https://images.unsplash.com/photo-1707944145479-12755f0434d8?crop=entropy&cs=srgb&fm=jpg&q=85",
+      "description": "Mint green luxury gift box with twine and roses."
+    }
+  ],
+  "testing_attributes_policy": {
+    "rule": "All buttons, form inputs, links, tabs, tables, status indicators, and modal triggers MUST contain explicit kebab-case data-testid attributes.",
+    "examples": [
+      "data-testid=\"search-input-field\"",
+      "data-testid=\"product-card-101\"",
+      "data-testid=\"admin-order-status-chip\"",
+      "data-testid=\"checkout-otp-input\""
+    ]
+  },
+  "file_system_note": "Target application is implemented using React JavaScript (.js / .jsx) components. Ensure guidelines and imports reflect standard .js syntax."
+}

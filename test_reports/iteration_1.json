@@ -1,0 +1,74 @@
+{
+  "summary": "ARTFUL premium gifting e-commerce (React+FastAPI+MongoDB) — end-to-end backend + frontend testing. 33/33 backend pytest cases pass; full guest checkout flow (DEV OTP + mock-pay), COD, tracking, coupon WELCOME10, admin login/dashboard/products/orders/coupons and cross-customer security all verified live via UI. Razorpay & Twilio are correctly in DEV mode (labelled 'Demo'/'DEV OTP' as expected) — not treated as failures per spec.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_artful_api.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "test_coverage": {
+    "backend_endpoints_tested": [
+      "GET /api/health",
+      "GET /api/categories",
+      "GET /api/products (list + on_sale filter)",
+      "GET /api/products/{slug}",
+      "GET /api/cms/homepage",
+      "GET /api/search (typo correction anniversery->anniversary verified)",
+      "GET /api/search/autocomplete",
+      "POST /api/auth/otp/send (dev_otp returned)",
+      "POST /api/auth/otp/verify (invalid + valid)",
+      "GET /api/auth/me",
+      "POST /api/coupons/validate (WELCOME10)",
+      "POST /api/checkout/create-order (razorpay + cod)",
+      "POST /api/checkout/mock-pay (idempotent, no double stock deduction verified)",
+      "GET /api/orders/{order_number} (own vs other customer -> 404)",
+      "POST /api/orders/track (valid + wrong phone -> 404)",
+      "GET/POST /api/wishlist (auth required)",
+      "POST /api/admin/auth/login (invalid + valid)",
+      "GET /api/admin/dashboard/stats (401 without token, 200 with)",
+      "POST/PUT /api/admin/products (create, update, appears on storefront)",
+      "POST /api/admin/products/{id}/inventory",
+      "GET /api/admin/orders + PUT status + PUT tracking",
+      "POST /api/admin/coupons",
+      "GET /api/admin/customers, /api/admin/search/analytics, /api/admin/settings, /api/admin/cms/homepage"
+    ],
+    "frontend_flows_tested": [
+      "Homepage load: hero-section, announcement-bar, featured-categories-grid",
+      "Search: search-trigger -> search-input-field -> /search with search-instead + search-count + typo correction displayed",
+      "Shop catalog: product-catalog-grid, sort-select present",
+      "PDP: pdp-title, pdp-price, add-to-cart-button, wishlist-toggle-button",
+      "Cart drawer opens on add-to-cart",
+      "Cart page: coupon-input, apply-coupon-btn, cartpage-total. WELCOME10 -> ₹1,399 -> ₹1,259 (-₹140)",
+      "Guest checkout end-to-end: checkout-phone-input -> checkout-send-otp -> Demo OTP shown inline -> checkout-otp-input + checkout-verify-otp -> address fields -> payment-razorpay -> place-order-btn -> /order-success/ART-2026-00005 with order-success-container + order-number",
+      "Account page: account-nav-profile, account-nav-orders, account-nav-addresses, account-nav-wishlist all present",
+      "Track order: track-order-number + track-phone + track-submit -> track-result rendered",
+      "Admin login (admin-email/password/login-btn) -> /admin dashboard with stats (stat-total-revenue, stat-this-month, stat-total-orders, stat-customers) and full admin-nav-* set",
+      "Admin products: add-product-btn present on /admin/products"
+    ]
+  },
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Real testid for checkout phone is `checkout-phone-input` (not `checkout-mobile-input` as review request said). No functional issue — just a doc/spec mismatch; recommend aligning the spec text with the actual testid so future testing agents don't waste time. Similar: request mentioned `checkout-mobile-input` explicitly.",
+    "server.py uses deprecated FastAPI @app.on_event('startup') — consider migrating to lifespan handlers (non-blocking, informational).",
+    "CORS is `allow_origins=['*']` with `allow_credentials=False`. Acceptable for stateless JWT header auth, but if cookie/session ever added, this must tighten to explicit origins.",
+    "routers_shop.py `create_payment_order` reserves inventory before payment intent creation — good — but there is no timed release of reservations if the customer abandons after create-order without calling mock-pay. Consider a cron/janitor to release stale reserved stock after N minutes (not a blocker for MVP).",
+    "test_customer_cannot_access_other_order confirms 404 for cross-customer access. Admin routes correctly return 401/403 without token. Security posture is good."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_artful_api.py (new)"
+  ],
+  "success_rate": {"backend": "100% (33/33)", "frontend": "100% of critical flows verified"},
+  "test_credentials": "Admin: admin@artful.com / Artful@2026. Customer: OTP via DEV mode (POST /api/auth/otp/send returns dev_otp; UI shows 'Demo OTP: XXXXXX').",
+  "seed_data_creation": "Created test products via admin API (TEST_Product_*), test coupons (TEST*****), and 5 guest orders (ART-2026-00001..00005) during testing. Idempotent — no data corruption.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All 33 backend API tests pass in ~3.5s (see /app/backend/tests/test_artful_api.py). Full checkout works via DEV mock-pay; frontend testid for phone input is `checkout-phone-input`. Coupon WELCOME10 seeded (10% off, min cart 999, capped at ₹500). Playwright note: use `page.evaluate(\"...click()\")` if `force=True` click fails with 'Element outside of viewport' (happens on some fixed-position CTAs — DOM click works fine).",
+  "rca of the issue": "No functional bugs found. Only minor spec/testid docstring mismatch: review request referenced `checkout-mobile-input` but implementation uses `checkout-phone-input` — cosmetic doc issue only, actual UX is fine."
+}
