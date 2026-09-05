@@ -57,16 +57,59 @@ function Orders() {
   );
 }
 
+const STEPS = ["Order Placed", "Confirmed", "Processing", "Packed", "Shipped", "Out for Delivery", "Delivered"];
 function OrderDetail() {
   const { num } = useParams();
   const [o, setO] = useState(null);
-  useEffect(() => { api.get(`/orders/${num}`).then(({ data }) => setO(data)).catch(() => setO(false)); }, [num]);
+  const load = () => api.get(`/orders/${num}`).then(({ data }) => setO(data)).catch(() => setO(false));
+  useEffect(() => { load(); }, [num]);
   if (!o) return <p className="text-ink-muted">Loading…</p>;
+
+  const normStatus = (st) => (st === "Pending" ? "Order Placed" : st);
+  const reachedIdx = Math.max(-1, ...(o.status_history || []).map((h) => STEPS.indexOf(normStatus(h.status))));
+  const cancelled = ["Cancelled", "Returned", "Refunded"].includes(o.status);
+  const paid = ["paid", "cod_confirmed"].includes(o.payment.status);
+  const canCancel = !["Shipped", "Out for Delivery", "Delivered", "Cancelled", "Returned", "Refunded"].includes(o.status);
+
+  const cancel = async () => {
+    if (!window.confirm("Cancel this order?")) return;
+    try { const { data } = await api.post(`/orders/${num}/cancel`, { reason: "Customer request" }); toast.success(data.message); load(); }
+    catch (e) { toast.error(apiError(e)); }
+  };
+
   return (
     <div>
       <Link to="/account/orders" className="text-sm text-plum">← Back to orders</Link>
-      <h2 className="font-serif text-2xl text-plum mt-3 mb-1">{o.order_number}</h2>
-      <p className="text-sm text-ink-muted mb-6">{formatDate(o.created_at)} · {o.status}</p>
+      <div className="flex items-center justify-between flex-wrap gap-2 mt-3 mb-1">
+        <h2 className="font-serif text-2xl text-plum">{o.order_number}</h2>
+        <span className={`text-xs px-3 py-1 ${cancelled ? "bg-red-100 text-err" : "bg-plum-light text-plum"}`}>{o.status}</span>
+      </div>
+      <p className="text-sm text-ink-muted mb-2">{formatDate(o.created_at)}</p>
+      <div className="flex items-center gap-2 mb-6">
+        <span className={`text-xs px-2.5 py-1 ${paid ? "bg-emerald-100 text-ok" : "bg-amber-100 text-warn"}`} data-testid="order-payment-status">
+          {o.payment.status === "cod_confirmed" ? "Cash on Delivery" : o.payment.status === "paid" ? `Payment Completed${o.payment.dev_mode ? " (Demo)" : ""}` : "Payment " + o.payment.status}
+        </span>
+        {o.payment_method === "cod" && <span className="text-xs text-ink-muted">Pay on delivery</span>}
+      </div>
+
+      {!cancelled && (
+        <div className="mb-8 bg-surface p-5" data-testid="order-timeline">
+          {STEPS.map((s, i) => {
+            const done = i <= reachedIdx;
+            return (
+              <div key={s} className="flex gap-4">
+                <div className="flex flex-col items-center">
+                  <div className={`w-3.5 h-3.5 rounded-full ${done ? "bg-plum" : "bg-line border border-ink-muted/30"}`} />
+                  {i < STEPS.length - 1 && <div className={`w-px h-7 ${i < reachedIdx ? "bg-plum" : "bg-line"}`} />}
+                </div>
+                <span className={`text-sm -mt-0.5 ${done ? "text-ink font-medium" : "text-ink-muted"}`}>{s}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {o.tracking?.number && <p className="text-sm text-ink-secondary mb-4">Courier: {o.tracking.courier} · AWB: {o.tracking.number}</p>}
+
       <div className="space-y-4 mb-6">
         {o.items.map((i, idx) => (
           <div key={idx} className="flex gap-4"><img src={i.image} alt="" className="w-16 h-20 object-cover bg-surface" /><div className="flex-1"><p className="font-serif text-ink">{i.name}</p><p className="text-xs text-ink-muted">Qty {i.qty}</p></div><span className="text-plum">{inr(i.price * i.qty)}</span></div>
@@ -79,6 +122,7 @@ function OrderDetail() {
         <div className="flex justify-between text-plum font-medium text-lg pt-2 border-t border-line-subtle"><span>Total</span><span>{inr(o.pricing.total)}</span></div>
       </div>
       <div className="mt-6 text-sm text-ink-secondary"><p className="font-medium text-ink mb-1">Delivery Address</p><p>{o.address.name}, {o.address.line1}, {o.address.city}, {o.address.state} — {o.address.pincode}</p></div>
+      {canCancel && <button onClick={cancel} className="btn-outline mt-6 !border-err !text-err hover:!bg-err hover:!text-white" data-testid="cancel-order-btn">Cancel Order</button>}
     </div>
   );
 }

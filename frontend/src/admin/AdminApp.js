@@ -11,6 +11,8 @@ import { Products, Categories, Collections, Reviews, Inventory } from "./Catalog
 import Orders from "./Orders";
 import Customers from "./Customers";
 import { Coupons } from "./Marketing";
+import Campaigns from "./Campaigns";
+import Refunds from "./Refunds";
 import SearchAdmin from "./SearchAdmin";
 import { HomepageCMS, Banners, Pages, FAQs } from "./Content";
 import { Settings, AdminUsers, AuditLogs, Corporate } from "./Settings";
@@ -18,8 +20,8 @@ import { Settings, AdminUsers, AuditLogs, Corporate } from "./Settings";
 const NAV = [
   { section: null, items: [["", "Dashboard", LayoutDashboard]] },
   { section: "Catalog", items: [["products", "Products", Package], ["categories", "Categories", FolderTree], ["collections", "Collections", Layers], ["inventory", "Inventory", Boxes], ["reviews", "Reviews", Star]] },
-  { section: "Sales", items: [["orders", "Orders", ShoppingCart], ["customers", "Customers", Users]] },
-  { section: "Marketing", items: [["coupons", "Coupons & Discounts", Ticket], ["search", "Search Rules", SearchIcon]] },
+  { section: "Sales", items: [["orders", "Orders", ShoppingCart], ["refunds", "Refunds", Ticket], ["customers", "Customers", Users]] },
+  { section: "Marketing", items: [["coupons", "Coupons & Discounts", Ticket], ["campaigns", "Campaigns", Image], ["search", "Search Rules", SearchIcon]] },
   { section: "Content", items: [["homepage", "Homepage CMS", LayoutDashboard], ["banners", "Banners", Image], ["pages", "Pages", FileText], ["faqs", "FAQs", FileText]] },
   { section: "Business", items: [["corporate", "Corporate", Briefcase], ["settings", "Settings", SettingsIcon], ["admin-users", "Admin Users", ShieldCheck], ["audit", "Audit Logs", ScrollText]] },
 ];
@@ -90,8 +92,10 @@ export default function AdminApp() {
             <Route path="inventory" element={<Inventory />} />
             <Route path="reviews" element={<Reviews />} />
             <Route path="orders" element={<Orders />} />
+            <Route path="refunds" element={<Refunds />} />
             <Route path="customers" element={<Customers />} />
             <Route path="coupons" element={<Coupons />} />
+            <Route path="campaigns" element={<Campaigns />} />
             <Route path="search" element={<SearchAdmin />} />
             <Route path="homepage" element={<HomepageCMS />} />
             <Route path="banners" element={<Banners />} />

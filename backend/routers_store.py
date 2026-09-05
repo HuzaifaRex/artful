@@ -1,10 +1,35 @@
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import Response
 from typing import Optional
 from db import db, clean
 from search_engine import SearchEngine, normalize
 from security import now_iso
 
 router = APIRouter()
+
+
+@router.get("/uploads/{path:path}")
+async def serve_upload(path: str):
+    import storage
+    try:
+        data, ctype = storage.get_object(path)
+    except Exception:
+        raise HTTPException(404, "Image not found.")
+    return Response(content=data, media_type=ctype, headers={"Cache-Control": "public, max-age=86400"})
+
+
+@router.get("/cms/active-campaign")
+async def active_campaign():
+    now = now_iso()
+    cur = db.promotions.find({"status": "Active"}, {"_id": 0})
+    promos = [p async for p in cur]
+    for p in promos:
+        if p.get("end_date") and p["end_date"] < now:
+            continue
+        if p.get("start_date") and p["start_date"] > now:
+            continue
+        return {"campaign": p}
+    return {"campaign": None}
 
 
 def public_product(p):

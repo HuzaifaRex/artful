@@ -383,17 +383,62 @@ async def track_order(payload: dict):
             "address": {"city": o["address"].get("city"), "state": o["address"].get("state")}}
 
 
+async def _has_purchased(customer_id, product_id):
+    return await db.orders.count_documents({
+        "customer_id": customer_id,
+        "payment.status": {"$in": ["paid", "cod_confirmed"]},
+        "items.product_id": product_id}) > 0
+
+
+@router.get("/products/{slug}/can-review")
+async def can_review(slug: str, cust: dict = Depends(get_current_customer)):
+    p = await db.products.find_one({"slug": slug}, {"id": 1, "_id": 0})
+    if not p:
+        raise HTTPException(404, "Product not found.")
+    purchased = await _has_purchased(cust["id"], p["id"])
+    already = await db.reviews.count_documents({"product_id": p["id"], "customer_id": cust["id"]}) > 0
+    return {"can_review": purchased and not already, "purchased": purchased, "already_reviewed": already}
+
+
 @router.post("/products/{slug}/reviews")
 async def submit_review(slug: str, payload: dict, cust: dict = Depends(get_current_customer)):
     p = await db.products.find_one({"slug": slug}, {"id": 1, "_id": 0})
     if not p:
         raise HTTPException(404, "Product not found.")
+    if not await _has_purchased(cust["id"], p["id"]):
+        raise HTTPException(403, "Only verified buyers can review this product.")
+    if await db.reviews.count_documents({"product_id": p["id"], "customer_id": cust["id"]}) > 0:
+        raise HTTPException(400, "You have already reviewed this product.")
     rating = int(payload.get("rating", 0))
     if rating < 1 or rating > 5:
         raise HTTPException(400, "Please provide a rating between 1 and 5.")
     doc = {"id": str(uuid.uuid4()), "product_id": p["id"], "product_slug": slug,
            "customer_id": cust["id"], "customer_name": cust.get("name") or "ARTFUL Customer",
            "rating": rating, "title": payload.get("title"), "body": payload.get("body"),
+           "verified_buyer": True,
            "status": "Pending", "created_at": now_iso()}
     await db.reviews.insert_one(doc)
     return {"ok": True, "message": "Thank you! Your review will appear once approved.", "review": clean(doc)}
+
+
+@router.post("/orders/{order_number}/cancel")
+async def cancel_order(order_number: str, payload: dict, cust: dict = Depends(get_current_customer)):
+    o = await db.orders.find_one({"order_number": order_number, "customer_id": cust["id"]})
+    if not o:
+        raise HTTPException(404, "Order not found.")
+    if o["status"] in ("Shipped", "Out for Delivery", "Delivered", "Cancelled", "Returned", "Refunded"):
+        raise HTTPException(400, f"This order cannot be cancelled once it is {o['status'].lower()}.")
+    paid = o["payment"]["status"] in ("paid", "cod_confirmed")
+    for l in o["items"]:
+        if paid:
+            await db.products.update_one({"id": l["product_id"]}, {"$inc": {"stock": l["qty"]}})
+        else:
+            await db.products.update_one({"id": l["product_id"]}, {"$inc": {"reserved": -l["qty"]}})
+    await db.orders.update_one({"id": o["id"]}, {"$set": {"status": "Cancelled", "updated_at": now_iso()},
+        "$push": {"status_history": {"status": "Cancelled", "at": now_iso(),
+                  "note": payload.get("reason") or "Cancelled by customer."}}})
+    if o["payment"]["status"] == "paid":
+        await db.refunds.insert_one({"id": str(uuid.uuid4()), "order_number": o["order_number"],
+            "amount": o["pricing"]["total"], "reason": "Order cancelled by customer",
+            "status": "Requested", "created_at": now_iso()})
+    return {"ok": True, "message": "Your order has been cancelled." + (" A refund has been initiated." if o["payment"]["status"] == "paid" else "")}

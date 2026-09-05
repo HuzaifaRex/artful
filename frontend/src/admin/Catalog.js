@@ -4,6 +4,7 @@ import { adminApi, apiError } from "../lib/api";
 import { toast } from "sonner";
 import { inr } from "../lib/utils";
 import { StatusChip, Modal, Field, inputCls, PageHead, Empty } from "./ui";
+import { ImageUpload, MultiImageUpload } from "./ImageUpload";
 
 const BADGES = ["New", "Bestseller", "Limited", "Sale", "Featured"];
 const STATUSES = ["Draft", "Active", "Out of Stock", "Archived"];
@@ -98,7 +99,7 @@ function ProductForm({ product, cats, onClose, onSaved }) {
         <Field label="Color"><input value={f.color || ""} onChange={(e) => set("color", e.target.value)} className={inputCls} /></Field>
         <div className="sm:col-span-2"><Field label="Short description"><input value={f.short_description || ""} onChange={(e) => set("short_description", e.target.value)} className={inputCls} /></Field></div>
         <div className="sm:col-span-2"><Field label="Description"><textarea rows={3} value={f.description || ""} onChange={(e) => set("description", e.target.value)} className={inputCls} /></Field></div>
-        <div className="sm:col-span-2"><Field label="Image URLs (one per line)"><textarea rows={2} value={Array.isArray(f.images) ? f.images.join("\n") : f.images} onChange={(e) => set("images", e.target.value)} className={inputCls} /></Field></div>
+        <div className="sm:col-span-2"><Field label="Product Images"><MultiImageUpload value={Array.isArray(f.images) ? f.images : []} onChange={(v) => set("images", v)} testid="product-images" /></Field></div>
         <Field label="Tags (comma separated)"><input value={Array.isArray(f.tags) ? f.tags.join(", ") : f.tags} onChange={(e) => set("tags", e.target.value)} className={inputCls} /></Field>
         <Field label="Occasion (comma separated)"><input value={Array.isArray(f.occasion) ? f.occasion.join(", ") : f.occasion} onChange={(e) => set("occasion", e.target.value)} className={inputCls} /></Field>
         <div className="sm:col-span-2">
@@ -148,7 +149,8 @@ function SimpleManager({ title, endpoint, columns, fields, defaults = {}, testid
             {fields.map((fl) => (
               <div key={fl.key} className={fl.full ? "sm:col-span-2" : ""}>
                 <Field label={fl.label}>
-                  {fl.type === "textarea" ? <textarea rows={3} value={editing[fl.key] || ""} onChange={(e) => setEditing({ ...editing, [fl.key]: e.target.value })} className={inputCls} />
+                  {fl.type === "image" ? <ImageUpload value={editing[fl.key]} onChange={(u) => setEditing({ ...editing, [fl.key]: u })} testid={`${testid}-${fl.key}`} />
+                    : fl.type === "textarea" ? <textarea rows={3} value={editing[fl.key] || ""} onChange={(e) => setEditing({ ...editing, [fl.key]: e.target.value })} className={inputCls} />
                     : fl.type === "select" ? <select value={editing[fl.key] || ""} onChange={(e) => setEditing({ ...editing, [fl.key]: e.target.value })} className={inputCls}>{fl.options.map((o) => <option key={o}>{o}</option>)}</select>
                     : fl.type === "checkbox" ? <input type="checkbox" checked={!!editing[fl.key]} onChange={(e) => setEditing({ ...editing, [fl.key]: e.target.checked })} className="accent-plum w-4 h-4" />
                     : <input type={fl.type || "text"} value={editing[fl.key] ?? ""} onChange={(e) => setEditing({ ...editing, [fl.key]: fl.type === "number" ? Number(e.target.value) : e.target.value })} className={inputCls} />}
@@ -166,14 +168,14 @@ function SimpleManager({ title, endpoint, columns, fields, defaults = {}, testid
 export function Categories() {
   return <SimpleManager title="Categories" endpoint="categories" testid="category"
     columns={[{ key: "name", label: "Name" }, { key: "slug", label: "Slug" }, { key: "status", label: "Status", render: (c) => <StatusChip status={c.status} /> }]}
-    fields={[{ key: "name", label: "Name" }, { key: "slug", label: "Slug (optional)" }, { key: "description", label: "Description", type: "textarea", full: true }, { key: "image", label: "Image URL", full: true }, { key: "status", label: "Status", type: "select", options: ["Active", "Archived"] }]}
+    fields={[{ key: "name", label: "Name" }, { key: "slug", label: "Slug (optional)" }, { key: "description", label: "Description", type: "textarea", full: true }, { key: "image", label: "Image", type: "image", full: true }, { key: "status", label: "Status", type: "select", options: ["Active", "Archived"] }]}
     defaults={{ status: "Active" }} />;
 }
 
 export function Collections() {
   return <SimpleManager title="Collections" endpoint="collections" testid="collection"
     columns={[{ key: "name", label: "Name" }, { key: "slug", label: "Slug" }, { key: "type", label: "Type" }, { key: "status", label: "Status", render: (c) => <StatusChip status={c.status} /> }]}
-    fields={[{ key: "name", label: "Name" }, { key: "slug", label: "Slug (optional)" }, { key: "description", label: "Description", type: "textarea", full: true }, { key: "image", label: "Image URL", full: true }, { key: "type", label: "Type", type: "select", options: ["dynamic", "manual"] }, { key: "status", label: "Status", type: "select", options: ["Active", "Archived"] }]}
+    fields={[{ key: "name", label: "Name" }, { key: "slug", label: "Slug (optional)" }, { key: "description", label: "Description", type: "textarea", full: true }, { key: "image", label: "Image", type: "image", full: true }, { key: "type", label: "Type", type: "select", options: ["dynamic", "manual"] }, { key: "status", label: "Status", type: "select", options: ["Active", "Archived"] }]}
     defaults={{ status: "Active", type: "dynamic" }} />;
 }
 

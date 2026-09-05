@@ -1,0 +1,62 @@
+{
+  "summary": "ARTFUL iteration 2 — validated NEW features: verified-buyer reviews (submit + admin approve + duplicate block), customer cancel-order flow, order timeline UI + payment-status badge, hero trust badges, Festive Sale campaign bar+CTA, About/Our Story/Contact pages, admin Refunds page, admin Campaigns page, admin image UPLOAD widget (replacing URL text fields) with Emergent object storage round-trip, plus regression on guest checkout COD. 8/8 new-feature backend pytest cases pass; all new frontend testids and flows verified end-to-end.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_artful_new_features.py",
+    "/app/test_reports/pytest/new_features.xml"
+  ],
+  "test_coverage": {
+    "backend_endpoints_tested": [
+      "POST /api/admin/upload (multipart) -> /api/uploads/{path} round-trip + bad-ext 400 + unauth 401/403",
+      "GET /api/cms/active-campaign (returns active promotion after admin create)",
+      "POST/GET /api/admin/promotions",
+      "GET /api/products/{slug}/can-review (before/after purchase)",
+      "POST /api/products/{slug}/reviews (403 without purchase, 200 after COD order, 400 on duplicate)",
+      "GET /api/admin/reviews?status=Pending + PUT /api/admin/reviews/{id} (Approved) -> product.rating & review_count updated",
+      "POST /api/checkout/create-order (COD auto-confirms)",
+      "POST /api/orders/{order_number}/cancel (Pending COD -> Cancelled; second attempt -> 400)",
+      "GET /api/orders/{order_number} confirms Cancelled status"
+    ],
+    "frontend_flows_tested": [
+      "Home: hero-trust-badges shows 1000+ / 100% / Best Quality / Fastest Delivery / 4.5",
+      "Home: campaign-bar + campaign-cta rendered (Festive Sale live countdown)",
+      "/about about-page, /our-story our-story-page, /contact contact-page all render",
+      "/contact: whatsapp-btn, contact-name, contact-message, contact-submit present",
+      "Footer social icons (Instagram/FB/Twitter) rendered in bottom bar",
+      "Admin login + admin-nav-refunds + admin-nav-campaigns present",
+      "/admin/refunds page loads with add-refund button",
+      "/admin/campaigns page loads with add-campaign button",
+      "/admin/products Add Product modal uses upload-btn-product-images + hidden file input upload-product-images (no URL textbox for images)",
+      "Guest COD checkout end-to-end: addr-name/line1/city/state/pincode -> payment-cod -> place-order-btn -> /order-success/ART-2026-00014",
+      "OrderDetail: order-timeline + order-payment-status ('Cash on Delivery') + cancel-order-btn visible",
+      "PDP after purchase: write-review-box + rv-star-5 + rv-title + rv-body + rv-submit works; thank-you/pending message shown",
+      "Cancel Order -> success toast 'Your order has been cancelled.' -> status becomes Cancelled -> cancel-order-btn hidden"
+    ]
+  },
+  "action_items": [],
+  "critical_code_review_comments": [
+    "test_artful_api.py (previous iteration file) has 1 failure + 6 errors caused by Razorpay now being enabled (dev_mode flipped from True to False, and order_created fixture assumed mock-pay). This is stale test scaffolding — recommend main agent update that file to branch on razorpay_enabled or use COD in the fixture. Not a product bug.",
+    "routers_admin.py::create_refund silently caps amount at order total (min(amount, total)) without warning — consider returning a hint if the requested amount exceeds the order total.",
+    "routers_shop.py::cancel_order restocks BOTH stock and reserved only for prepaid; for cash-on-delivery (payment.status == 'cod_confirmed') it also treats as paid and restocks stock (correct). But cod_confirmed cancel does NOT create a refund row (also correct, no money captured). Behaviour aligns with spec.",
+    "Frontend footer: text-only fallback for social handles is absent (icons only). Fine for design, but a11y-wise consider aria-label on each anchor (looks like it is present in code — verify).",
+    "Prev-iteration doc referenced login-btn for admin; actual testid is admin-login-btn. Aligning spec avoids future testing loops."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_artful_new_features.py (new)"
+  ],
+  "success_rate": {"backend": "100% (8/8 new-feature tests)", "frontend": "100% of new-feature flows verified"},
+  "test_credentials": "Admin: admin@artful.com / Artful@2026. Customer via DEV OTP (POST /api/auth/otp/send returns dev_otp).",
+  "seed_data_creation": "Created 2 test COD orders (ART-2026-000xx), 1 approved review on 'terracotta-table-sculpture', 1 TEST Festive promotion, and 1 uploaded PNG in Emergent object storage during testing.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Admin login testid is 'admin-login-btn' (NOT 'login-btn'). Address input testids in /checkout are 'addr-name', 'addr-line1', 'addr-city', 'addr-state', 'addr-pincode'. Razorpay is now REAL test mode (opens external modal) — always use payment-cod to complete checkout in Playwright. Old file /app/backend/tests/test_artful_api.py has fixture failures because it assumed Razorpay dev mode (was fine in iter 1). New file /app/backend/tests/test_artful_new_features.py is Razorpay-agnostic and passes 8/8.",
+  "rca of the issue": "No product bugs found. Prior test file failures are environment drift (Razorpay flipped to enabled) not a regression."
+}

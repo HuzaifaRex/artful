@@ -64,3 +64,8 @@ async def startup():
     await db.admin_users.create_index("email", unique=True)
     await seed_module.seed()
     await seed_admin()
+    try:
+        import storage
+        storage.init_storage()
+    except Exception as e:
+        print(f"[storage] init deferred: {e}")

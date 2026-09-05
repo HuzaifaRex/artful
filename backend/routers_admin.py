@@ -1,9 +1,10 @@
 import re
 import io
+import os
 import csv
 import uuid
 from datetime import datetime, timezone, timedelta
-from fastapi import APIRouter, HTTPException, Request, Depends
+from fastapi import APIRouter, HTTPException, Request, Depends, UploadFile, File
 from fastapi.responses import StreamingResponse
 from db import db, clean
 from security import (verify_password, hash_password, create_token, get_current_admin,
@@ -296,6 +297,33 @@ register_crud("faqs", "faqs", "content", name_field="question",
               extra_defaults={"status": "Active", "order": 0})
 register_crud("search/synonyms", "search_synonyms", "search", name_field="term")
 register_crud("search/corrections", "search_corrections", "search", name_field="wrong")
+register_crud("promotions", "promotions", "marketing",
+              extra_defaults={"status": "Active", "countdown": True})
+
+
+UPLOAD_MIME = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+               ".webp": "image/webp", ".gif": "image/gif", ".avif": "image/avif"}
+
+
+@router.post("/upload")
+async def upload_image(file: UploadFile = File(...), admin: dict = Depends(get_current_admin)):
+    import storage
+    ext = os.path.splitext(file.filename or "")[1].lower() or ".png"
+    if ext not in UPLOAD_MIME:
+        raise HTTPException(400, "Unsupported image type.")
+    data = await file.read()
+    if len(data) > 8 * 1024 * 1024:
+        raise HTTPException(400, "Image too large (max 8MB).")
+    path = f"{storage.APP_NAME}/uploads/{uuid.uuid4().hex}{ext}"
+    try:
+        result = storage.put_object(path, data, UPLOAD_MIME[ext])
+    except Exception as e:
+        raise HTTPException(502, f"Upload failed: {e}")
+    url = f"/api/uploads/{result['path']}"
+    await db.media.insert_one({"id": str(uuid.uuid4()), "storage_path": result["path"], "url": url,
+                               "original_filename": file.filename, "content_type": UPLOAD_MIME[ext],
+                               "size": result.get("size", len(data)), "is_deleted": False, "at": now_iso()})
+    return {"url": url, "path": result["path"]}
 
 
 # ---------------- ORDERS ----------------
@@ -334,6 +362,14 @@ async def update_order_status(order_number: str, payload: dict, request: Request
              "Delivered", "Cancelled", "Returned", "Refunded", "Failed"]
     if new_status not in valid:
         raise HTTPException(400, "Invalid status.")
+    # Restock when cancelling/returning a previously paid order (once)
+    if new_status in ("Cancelled", "Returned") and o["status"] not in ("Cancelled", "Returned", "Refunded"):
+        paid = o["payment"]["status"] in ("paid", "cod_confirmed")
+        for l in o["items"]:
+            if paid:
+                await db.products.update_one({"id": l["product_id"]}, {"$inc": {"stock": l["qty"]}})
+            else:
+                await db.products.update_one({"id": l["product_id"]}, {"$inc": {"reserved": -l["qty"]}})
     await db.orders.update_one({"order_number": order_number},
         {"$set": {"status": new_status, "updated_at": now_iso()},
          "$push": {"status_history": {"status": new_status, "at": now_iso(), "note": payload.get("note", "")}}})

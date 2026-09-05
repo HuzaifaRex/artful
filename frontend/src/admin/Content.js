@@ -3,6 +3,7 @@ import { Plus, Edit, Trash2, Eye, EyeOff } from "lucide-react";
 import { adminApi, apiError } from "../lib/api";
 import { toast } from "sonner";
 import { StatusChip, Modal, Field, inputCls, PageHead, Empty } from "./ui";
+import { ImageUpload } from "./ImageUpload";
 
 export function HomepageCMS() {
   const [sections, setSections] = useState([]);
@@ -34,7 +35,7 @@ export function HomepageCMS() {
           <div className="space-y-4">
             <Field label="Heading"><input value={editing.heading || ""} onChange={(e) => setEditing({ ...editing, heading: e.target.value })} className={inputCls} data-testid="cms-heading" /></Field>
             <Field label="Subheading"><textarea rows={2} value={editing.subheading || ""} onChange={(e) => setEditing({ ...editing, subheading: e.target.value })} className={inputCls} /></Field>
-            {["hero", "banner", "story", "categories"].includes(editing.type) && <Field label="Image URL"><input value={editing.image || ""} onChange={(e) => setEditing({ ...editing, image: e.target.value })} className={inputCls} /></Field>}
+            {["hero", "banner", "story", "categories"].includes(editing.type) && <Field label="Image"><ImageUpload value={editing.image} onChange={(u) => setEditing({ ...editing, image: u })} testid="cms-image" /></Field>}
             {["hero", "banner", "story"].includes(editing.type) && (
               <div className="grid grid-cols-2 gap-4">
                 <Field label="CTA Text"><input value={editing.cta_text || ""} onChange={(e) => setEditing({ ...editing, cta_text: e.target.value })} className={inputCls} /></Field>
@@ -81,7 +82,8 @@ function Generic({ title, endpoint, columns, fields, defaults, testid }) {
           <div className="space-y-4">
             {fields.map((f) => (
               <Field key={f.key} label={f.label}>
-                {f.type === "textarea" ? <textarea rows={4} value={editing[f.key] || ""} onChange={(e) => setEditing({ ...editing, [f.key]: e.target.value })} className={inputCls} data-testid={`${testid}-${f.key}`} />
+                {f.type === "image" ? <ImageUpload value={editing[f.key]} onChange={(u) => setEditing({ ...editing, [f.key]: u })} testid={`${testid}-${f.key}`} />
+                  : f.type === "textarea" ? <textarea rows={4} value={editing[f.key] || ""} onChange={(e) => setEditing({ ...editing, [f.key]: e.target.value })} className={inputCls} data-testid={`${testid}-${f.key}`} />
                   : <input type={f.type === "number" ? "number" : "text"} value={editing[f.key] ?? ""} onChange={(e) => setEditing({ ...editing, [f.key]: f.type === "number" ? Number(e.target.value) : e.target.value })} className={inputCls} data-testid={`${testid}-${f.key}`} />}
               </Field>
             ))}
@@ -96,7 +98,7 @@ function Generic({ title, endpoint, columns, fields, defaults, testid }) {
 export function Banners() {
   return <Generic title="Banners" endpoint="banners" testid="banner"
     columns={["Heading", "CTA", "Status"]}
-    fields={[{ key: "heading", label: "Heading" }, { key: "cta_text", label: "CTA Text" }, { key: "status", label: "Status" }, { key: "description", label: "Description", type: "textarea" }, { key: "image", label: "Desktop Image URL" }, { key: "cta_link", label: "CTA Link" }]}
+    fields={[{ key: "heading", label: "Heading" }, { key: "cta_text", label: "CTA Text" }, { key: "status", label: "Status" }, { key: "description", label: "Description", type: "textarea" }, { key: "image", label: "Desktop Image", type: "image" }, { key: "cta_link", label: "CTA Link" }]}
     defaults={{ status: "Active" }} />;
 }
 

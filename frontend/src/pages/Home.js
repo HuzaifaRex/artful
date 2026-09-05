@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Star, ShieldCheck, Truck, Award, Users } from "lucide-react";
 import { api } from "../lib/api";
 import ProductCard from "../components/ProductCard";
 import { ProductSkeleton } from "../components/Loader";
@@ -38,6 +38,11 @@ function Hero({ s }) {
           <div className="mt-10 flex flex-wrap gap-4 animate-fadeUp" style={{ animationDelay: "240ms" }}>
             <Link to={s.cta_link || "/shop"} className="bg-gold text-plum-wine text-xs font-medium uppercase tracking-widest2 px-9 py-4 hover:bg-gold-soft transition-colors" data-testid="hero-primary-cta">{s.cta_text}</Link>
             {s.cta_secondary_text && <Link to={s.cta_secondary_link || "/collections"} className="border border-cream/40 text-cream text-xs font-medium uppercase tracking-widest2 px-9 py-4 hover:bg-cream hover:text-plum-wine transition-colors" data-testid="hero-secondary-cta">{s.cta_secondary_text}</Link>}
+          </div>
+          <div className="mt-12 grid grid-cols-2 sm:flex sm:flex-wrap gap-x-8 gap-y-4 animate-fadeUp" style={{ animationDelay: "320ms" }} data-testid="hero-trust-badges">
+            {[[Users, "1000+ Customers"], [ShieldCheck, "100% Trusted"], [Award, "Best Quality"], [Truck, "Fastest Delivery"], [Star, "4.5 Rating"]].map(([Icon, label], i) => (
+              <div key={i} className="flex items-center gap-2 text-cream/80"><Icon size={18} className="text-gold-soft shrink-0" /><span className="text-xs sm:text-[13px] font-medium">{label}</span></div>
+            ))}
           </div>
         </div>
         <div className="relative order-1 lg:order-2 min-h-[42vh] lg:min-h-full">

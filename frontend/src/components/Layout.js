@@ -6,6 +6,7 @@ import Footer from "./Footer";
 import CartDrawer from "./CartDrawer";
 import SearchOverlay from "./SearchOverlay";
 import AuthModal from "./AuthModal";
+import CampaignBar from "./CampaignBar";
 import { api, apiError } from "../lib/api";
 import { toast } from "sonner";
 
@@ -36,6 +37,7 @@ export default function Layout() {
   return (
     <div className="min-h-screen flex flex-col bg-cream">
       <Header />
+      <CampaignBar />
       <main className="flex-1">
         <Outlet key={location.pathname} />
       </main>

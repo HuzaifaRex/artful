@@ -20,6 +20,9 @@ import Account from "./pages/Account";
 import CorporateGifting from "./pages/CorporateGifting";
 import FAQPage from "./pages/FAQPage";
 import StaticPage from "./pages/StaticPage";
+import AboutPage from "./pages/AboutPage";
+import OurStoryPage from "./pages/OurStoryPage";
+import ContactPage from "./pages/ContactPage";
 import NotFound from "./pages/NotFound";
 
 import AdminLogin from "./admin/AdminLogin";
@@ -52,9 +55,9 @@ export default function App() {
             <Route path="/gifts" element={<CollectionPage />} />
             <Route path="/corporate-gifting" element={<CorporateGifting />} />
             <Route path="/faq" element={<FAQPage />} />
-            <Route path="/about" element={<StaticPage slug="about" />} />
-            <Route path="/our-story" element={<StaticPage slug="our-story" />} />
-            <Route path="/contact" element={<StaticPage slug="contact" />} />
+            <Route path="/about" element={<AboutPage />} />
+            <Route path="/our-story" element={<OurStoryPage />} />
+            <Route path="/contact" element={<ContactPage />} />
             <Route path="/shipping" element={<StaticPage slug="shipping" />} />
             <Route path="/returns" element={<StaticPage slug="returns" />} />
             <Route path="/privacy" element={<StaticPage slug="privacy" />} />

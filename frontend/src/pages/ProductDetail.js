@@ -34,6 +34,8 @@ export default function ProductDetail() {
   const [message, setMessage] = useState("");
   const [pincode, setPincode] = useState("");
   const [pinResult, setPinResult] = useState(null);
+  const [canReview, setCanReview] = useState(null);
+  const [rvForm, setRvForm] = useState({ rating: 5, title: "", body: "" });
 
   useEffect(() => {
     setP(null); setActiveImg(0); setQty(1); setGiftWrap(false); setMessage("");
@@ -41,6 +43,21 @@ export default function ProductDetail() {
     api.get(`/products/${slug}/related`).then(({ data }) => setRelated(data.items)).catch(() => {});
     api.get(`/products/${slug}/reviews`).then(({ data }) => setReviews(data.items)).catch(() => {});
   }, [slug]);
+
+  useEffect(() => {
+    if (localStorage.getItem("artful_token")) {
+      api.get(`/products/${slug}/can-review`).then(({ data }) => setCanReview(data)).catch(() => setCanReview(null));
+    } else setCanReview(null);
+  }, [slug, reviews]);
+
+  const submitReview = async () => {
+    try {
+      const { data } = await api.post(`/products/${slug}/reviews`, rvForm);
+      toast.success(data.message);
+      setCanReview({ can_review: false, already_reviewed: true });
+      setRvForm({ rating: 5, title: "", body: "" });
+    } catch (e) { toast.error(apiError(e)); }
+  };
 
   if (p === null) return <PageLoader />;
   if (p === false) return <div className="container-artful py-24 text-center"><p className="font-serif text-3xl text-plum">Product not found</p><Link to="/shop" className="btn-outline mt-6">Back to Shop</Link></div>;
@@ -144,21 +161,38 @@ export default function ProductDetail() {
         </div>
       </div>
 
-      {reviews.length > 0 && (
-        <div className="container-artful py-8 border-t border-line">
-          <h2 className="font-serif text-2xl text-plum mb-6">Reviews</h2>
-          <div className="space-y-5">
+      <div className="container-artful py-10 border-t border-line" data-testid="reviews-section">
+        <h2 className="section-title mb-8">Customer Reviews</h2>
+        {canReview?.can_review && (
+          <div className="bg-surface p-6 mb-8 max-w-2xl" data-testid="write-review-box">
+            <p className="label-caption mb-3">Write a review · Verified Buyer</p>
+            <div className="flex gap-1 mb-3">
+              {[1, 2, 3, 4, 5].map((n) => (
+                <button key={n} onClick={() => setRvForm({ ...rvForm, rating: n })} data-testid={`rv-star-${n}`}><Star size={22} className={n <= rvForm.rating ? "fill-gold text-gold" : "text-line"} /></button>
+              ))}
+            </div>
+            <input value={rvForm.title} onChange={(e) => setRvForm({ ...rvForm, title: e.target.value })} placeholder="Title (optional)" className="input-field mb-3" data-testid="rv-title" />
+            <textarea value={rvForm.body} onChange={(e) => setRvForm({ ...rvForm, body: e.target.value })} rows={3} placeholder="Share your experience" className="input-field mb-3" data-testid="rv-body" />
+            <button onClick={submitReview} className="btn-primary" data-testid="rv-submit">Submit Review</button>
+          </div>
+        )}
+        {canReview?.already_reviewed && <p className="text-sm text-ok mb-6">Thanks — you've reviewed this product.</p>}
+        {reviews.length > 0 ? (
+          <div className="space-y-5 max-w-2xl">
             {reviews.map((r) => (
               <div key={r.id} className="border-b border-line-subtle pb-4">
-                <div className="flex items-center gap-1">{[...Array(5)].map((_, i) => <Star key={i} size={13} className={i < r.rating ? "fill-gold text-gold" : "text-line"} />)}</div>
-                {r.title && <p className="font-medium text-ink mt-1">{r.title}</p>}
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-0.5">{[...Array(5)].map((_, i) => <Star key={i} size={13} className={i < r.rating ? "fill-gold text-gold" : "text-line"} />)}</div>
+                  {r.verified_buyer && <span className="text-[10px] uppercase tracking-widest2 text-ok flex items-center gap-1"><Check size={11} /> Verified Buyer</span>}
+                </div>
+                {r.title && <p className="font-medium text-ink mt-1.5">{r.title}</p>}
                 <p className="text-sm text-ink-secondary mt-1">{r.body}</p>
                 <p className="text-xs text-ink-muted mt-1">— {r.customer_name}</p>
               </div>
             ))}
           </div>
-        </div>
-      )}
+        ) : <p className="text-ink-secondary">No reviews yet. {canReview?.can_review ? "Be the first to review!" : "Only verified buyers can review."}</p>}
+      </div>
 
       {related.length > 0 && (
         <div className="container-artful py-16 border-t border-line">

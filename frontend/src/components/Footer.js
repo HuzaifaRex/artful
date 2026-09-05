@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { Link } from "react-router-dom";
 import { Instagram, Facebook, Twitter } from "lucide-react";
 import { toast } from "sonner";
+import { useStore } from "../context/StoreContext";
 
 const COLS = [
   { title: "Shop", links: [["All Products", "/shop"], ["New Arrivals", "/collections/new-arrivals"], ["Bestsellers", "/collections/bestsellers"], ["Gifts", "/collections/festive-gifts"]] },
@@ -12,6 +13,9 @@ const COLS = [
 
 export default function Footer() {
   const [email, setEmail] = useState("");
+  const { settings } = useStore();
+  const social = settings?.social || {};
+  const handle = settings?.instagram_handle || "@artful";
   const subscribe = (e) => {
     e.preventDefault();
     if (!email) return;
@@ -45,10 +49,11 @@ export default function Footer() {
         </div>
         <div className="border-t border-cream/15 pt-8 flex flex-col sm:flex-row items-center justify-between gap-4">
           <p className="text-xs text-cream/50">© {new Date().getFullYear()} ARTFUL. All rights reserved. · Prices in ₹ INR</p>
-          <div className="flex items-center gap-5">
-            <a href="#" className="text-cream/60 hover:text-gold" aria-label="Instagram"><Instagram size={18} /></a>
-            <a href="#" className="text-cream/60 hover:text-gold" aria-label="Facebook"><Facebook size={18} /></a>
-            <a href="#" className="text-cream/60 hover:text-gold" aria-label="Twitter"><Twitter size={18} /></a>
+          <div className="flex items-center gap-4">
+            <span className="text-xs text-cream/60">{handle}</span>
+            <a href={social.instagram || "#"} target="_blank" rel="noreferrer" className="text-cream/60 hover:text-gold" aria-label="Instagram"><Instagram size={18} /></a>
+            <a href={social.facebook || "#"} target="_blank" rel="noreferrer" className="text-cream/60 hover:text-gold" aria-label="Facebook"><Facebook size={18} /></a>
+            <a href={social.twitter || "#"} target="_blank" rel="noreferrer" className="text-cream/60 hover:text-gold" aria-label="Twitter"><Twitter size={18} /></a>
           </div>
         </div>
       </div>
