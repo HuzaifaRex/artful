@@ -7,6 +7,7 @@ import { StatusChip, Modal, Field, inputCls, PageHead } from "./ui";
 import { DataTable, KpiCards } from "./DataTable";
 
 const STATUSES = ["Requested", "Approved", "Processing", "Completed", "Rejected"];
+const FILTER_STATUSES = ["Requested", "Approved", "Processing", "Completed", "Rejected", "Cancelled"];
 const PAGE_SIZE = 10;
 
 export default function Refunds() {
@@ -50,7 +51,7 @@ export default function Refunds() {
       <DataTable
         testid="refunds" loading={loading} q={q} setQ={(v) => { setQ(v); setPage(1); }} searchPlaceholder="Search order or reason…"
         page={page} pages={pages} setPage={setPage} rows={rows} empty="No refund requests"
-        filters={[{ key: "status", label: "All statuses", value: status, onChange: (v) => { setStatus(v); setPage(1); }, options: STATUSES }]}
+        filters={[{ key: "status", label: "All statuses", value: status, onChange: (v) => { setStatus(v); setPage(1); }, options: FILTER_STATUSES }]}
         columns={[
           { key: "order_number", label: "Order", render: (r) => <span className="font-medium text-gray-900">{r.order_number}</span> },
           { key: "amount", label: "Amount", render: (r) => inr(r.amount) },
@@ -58,7 +59,9 @@ export default function Refunds() {
           { key: "created_at", label: "Cancelled / Requested on", nowrap: true, render: (r) => formatDateTime(r.created_at) },
           { key: "status", label: "Status", render: (r) => <StatusChip status={r.status} /> },
           { key: "actions", label: "Update", render: (r) => (
-            <select value={r.status} onClick={(e) => e.stopPropagation()} onChange={(e) => update(e, r.id, e.target.value)} className="border border-gray-300 rounded px-2 py-1 text-xs" data-testid={`refund-status-${r.order_number}`}>{STATUSES.map((s) => <option key={s}>{s}</option>)}</select>
+            r.auto
+              ? <button onClick={(e) => { e.stopPropagation(); setCreating({ order_number: r.order_number, amount: r.amount, reason: r.reason }); }} className="text-xs text-plum underline" data-testid={`refund-log-${r.order_number}`}>Log refund</button>
+              : <select value={r.status} onClick={(e) => e.stopPropagation()} onChange={(e) => update(e, r.id, e.target.value)} className="border border-gray-300 rounded px-2 py-1 text-xs" data-testid={`refund-status-${r.order_number}`}>{STATUSES.map((s) => <option key={s}>{s}</option>)}</select>
           ) },
         ]}
       />

@@ -1,0 +1,37 @@
+{
+  "summary": "Iter-5 verifies the 3 reported bug fixes. Backend (pytest 10/10): PUT /api/admin/pages/{id} persists rich HTML markers into public GET /api/pages/{returns,privacy,terms,shipping}; PUT /api/admin/cms/pages/{about,our-story,contact,corporate-gifting} persists body_html reflected in GET /api/cms/page/*; GET /api/admin/refunds surfaces cancelled order ART-2026-00004 as auto row with created_at (ISO date+time), status 'Cancelled', reason from status_history, amount 0 (COD unpaid); POST /api/admin/refunds + PUT /api/admin/refunds/{id} for status change work. Frontend (Playwright): Refunds page renders auto row for ART-2026-00004 → ['ART-2026-00004', '₹0', 'Ordered by mistake', '6 Sept 2026, 05:33 pm', 'Cancelled', 'Log refund'] with data-testid=refund-log-ART-2026-00004 present; KPI cards (Total/Requested/Completed/Refunded ₹) render; search input + status filter (with 'Cancelled' option) render. Legal Pages edit modal opens with CKEditor (.ck-editor__editable contenteditable=true), accepts typed input 'ITER5-UI-LEGAL-EDITABLE'. Site Pages Body Content CKEditor is contenteditable=true, accepts typed input 'ITER5-UI-SITEPAGE-TEST', with tabs About/Our Story/Contact/Corporate Gifting all present. CKEditor v44 licenseKey:'GPL' fix confirmed working.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_artful_iter5.py",
+    "/app/test_reports/pytest/iter5.xml"
+  ],
+  "test_coverage": {
+    "backend_endpoints_tested": [
+      "POST /api/admin/auth/login (200 + token)",
+      "GET+PUT /api/admin/pages/{id} for returns/privacy/terms/shipping -> GET /api/pages/{slug} content persisted",
+      "PUT /api/admin/cms/pages/{about,our-story,contact,corporate-gifting} -> GET /api/cms/page/{slug} body_html persisted",
+      "GET /api/admin/refunds returns cancelled auto row for ART-2026-00004 with created_at date+time",
+      "POST /api/admin/refunds create + PUT /api/admin/refunds/{id} status Approved"
+    ],
+    "frontend_flows_verified": [
+      "Refunds /admin/refunds: KPIs + search + status filter incl. 'Cancelled' + row for ART-2026-00004 amount ₹0 with 'Log refund' button (data-testid=refund-log-ART-2026-00004) and cell '6 Sept 2026, 05:33 pm'",
+      "Legal Pages /admin/pages: Edit modal opens, CKEditor is contenteditable=true, typed text appears in editor",
+      "Site Pages /admin/site-pages: About tab Body Content CKEditor contenteditable=true, typed text appears; all 4 tabs present"
+    ]
+  },
+  "action_items": [],
+  "critical_code_review_comments": [
+    "RichEditor.js correctly sets licenseKey:'GPL' for CKEditor 5 v44 (required as of v44 to render an editable area).",
+    "GET /api/admin/refunds merges auto rows from cancelled/refunded orders; the auto row id 'order-<order_number>' is not a real refund document, so any PUT on /refunds/{that_id} would 404 by design — the UI correctly gates the status dropdown behind r.auto and shows 'Log refund' instead. Good.",
+    "Refund created_at for auto rows is taken from status_history entry, falling back to updated_at/created_at — formatDateTime renders as '6 Sept 2026, 05:33 pm' which is human friendly and includes time as required."
+  ],
+  "updated_files": ["/app/backend/tests/test_artful_iter5.py"],
+  "success_rate": {"backend": "100% (10/10)", "frontend": "100% (3/3 bug fixes verified)"},
+  "test_credentials": "Admin: admin@artful.com / Artful@2026",
+  "seed_data_creation": "Legal pages content appended with ITER5-<SLUG> markers (returns/privacy/terms/shipping). CMS body_html for about/our-story/contact/corporate-gifting overwritten with ITER5-CMS-<slug> marker. A transient TEST refund for ART-2026-00004 was created then deleted so the auto-cancelled row remained visible for UI verification.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "The refunds page uses a single unified /api/admin/refunds endpoint that merges real refund docs with auto rows for orders in Cancelled/Refunded status; auto rows have id 'order-<order_number>' and auto:true and cannot be status-updated (UI shows 'Log refund' button instead). Legal pages edit modal is opened via icon-only Edit button (first button in the last td); use `table tbody tr td:last-child button:first-child`. CKEditor editable region selector: '.ck-editor__editable' with contenteditable='true'.",
+  "rca of the issue": "Bugs (a)/(b): CKEditor 5 v44+ requires a licenseKey to enable the editable area. When missing, the editor renders read-only. Fix: RichEditor.js sets config.licenseKey='GPL'. Bug (c): The refunds table only listed docs from db.refunds; COD cancellations never got a refund doc (since amount=0), so the page appeared empty. Fix: /api/admin/refunds now unions cancelled/refunded orders as auto rows (from status_history) so they always appear with cancellation date/time; UI shows 'Log refund' action instead of a status dropdown for auto rows."
+}

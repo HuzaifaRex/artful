@@ -578,8 +578,28 @@ async def corporate_update(cid: str, payload: dict, admin: dict = Depends(requir
 # ---------------- REFUNDS ----------------
 @router.get("/refunds")
 async def refunds(admin: dict = Depends(require_permission("orders"))):
-    cur = db.refunds.find({}, {"_id": 0}).sort("created_at", -1)
-    return {"items": [r async for r in cur]}
+    refund_docs = [r async for r in db.refunds.find({}, {"_id": 0}).sort("created_at", -1)]
+    have = {r["order_number"] for r in refund_docs}
+    # Also surface cancelled/refunded orders that don't yet have an explicit refund record,
+    # so the page always shows cancellations with their date & time of cancellation.
+    async for o in db.orders.find({"status": {"$in": ["Cancelled", "Refunded"]}}, {"_id": 0}):
+        if o["order_number"] in have:
+            continue
+        cancel_at, note = o.get("updated_at") or o.get("created_at"), "Order cancelled"
+        for h in reversed(o.get("status_history", []) or []):
+            if h.get("status") in ("Cancelled", "Refunded"):
+                cancel_at = h.get("at") or cancel_at
+                note = h.get("note") or note
+                break
+        paid = (o.get("payment") or {}).get("status") == "paid"
+        refund_docs.append({
+            "id": "order-" + o["order_number"], "order_number": o["order_number"],
+            "amount": o["pricing"]["total"] if paid else 0,
+            "reason": note, "status": "Requested" if paid else "Cancelled",
+            "created_at": cancel_at, "auto": True,
+        })
+    refund_docs.sort(key=lambda x: x.get("created_at") or "", reverse=True)
+    return {"items": refund_docs}
 
 
 @router.post("/refunds")

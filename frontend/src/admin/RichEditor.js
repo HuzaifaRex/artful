@@ -10,6 +10,7 @@ export function RichEditor({ value, onChange, testid = "rich-editor" }) {
         editor={ClassicEditor}
         data={value || ""}
         config={{
+          licenseKey: "GPL",
           toolbar: ["heading", "|", "bold", "italic", "link", "bulletedList", "numberedList",
             "|", "blockQuote", "insertTable", "|", "undo", "redo"],
         }}
