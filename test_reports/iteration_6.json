@@ -1,0 +1,20 @@
+{
+  "summary": "Verified the personalization bug fix end-to-end. Placed a COD order via API carrying personalization 'For Aarav ❤' on slug 'personalized-keepsake-box' (order ART-2026-00008); backend GET /api/admin/orders/{n} returns items[0].personalization === 'For Aarav ❤'. Admin UI: logged into /admin/login, opened Payments/Transactions, clicked the order row, and OrderDetailModal shows the personalization line '✎ Message: \"For Aarav ❤\"' with data-testid=admin-order-personalization-0. Also placed a regression order without personalization (ART-2026-00009) — backend returns null personalization and gift_wrap true; UI shows gift-wrap line + shipping address correctly.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": ["/app/backend/tests/test_personalization_bug.py", "/app/test_reports/pytest/iter6.xml"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "OrderDetailModal.js renders it.personalization gated by truthy check — correctly hides empty lines. Fix looks minimal and correct.",
+    "pricing.build_line_items stores personalization as `it.personalization or None` — good, avoids empty strings polluting the priced line.",
+    "StoreContext.addToCart uses personalization in the cart-line key, so two of the same product with different messages remain distinct line items."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "admin@artful.com / Artful@2026; customer OTP phone 9876543210 (dev_otp in response)",
+  "seed_data_creation": "Created 2 COD test orders on 'personalized-keepsake-box': ART-2026-00008 (with personalization 'For Aarav ❤') and ART-2026-00009 (no personalization, gift-wrapped).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "The personalization end-to-end fix (customer message flowing product → cart → checkout → order → admin popup) is verified. Test file /app/backend/tests/test_personalization_bug.py can be reused as regression. Test orders ART-2026-00008/00009 seeded.",
+  "rca of the issue": "Original bug: admin popup did not render item.personalization. Data pipeline (pricing.build_line_items line 34, checkout create_order storing totals['items']) already carried the field; only OrderDetailModal item render was missing. Fix at OrderDetailModal.js line 59 renders '✎ Message: \"…\"' with data-testid conditional on it.personalization — no empty state on unpersonalized items."
+}
