@@ -374,10 +374,31 @@ async def seed():
         {"slug": "contact", "order": 3, "title": "Contact",
          "hero_eyebrow": "Contact", "hero_title": "We'd love to help.",
          "hero_image": "https://images.unsplash.com/photo-1715593947958-ee0ca51de552?crop=entropy&cs=srgb&fm=jpg&q=85&w=1200",
-         "body_html": "<p>Questions about an order, a gift or a bulk enquiry? Our team is here Monday to Saturday, 10am–7pm IST.</p>"},
+         "body_html": "<p>Questions about an order, a gift or a bulk enquiry? Our team is here Monday to Saturday, 10am–7pm IST.</p>",
+         "contact_address": "168, Netaji Subhash Marg, Martand Chowk, Ram Bagh, Indore, Madhya Pradesh 452007",
+         "contact_phone": "+91 8871288853", "contact_whatsapp": "+91 8871288853",
+         "contact_email": "support@artful.com", "office_hours": "Mon – Sat · 10:00 AM – 7:00 PM IST"},
+        {"slug": "corporate-gifting", "order": 4, "title": "Corporate Gifting",
+         "hero_eyebrow": "Corporate Gifting", "hero_title": "Gifting, elevated for business.",
+         "hero_image": "https://images.unsplash.com/photo-1592903297149-37fb25202dfa?crop=entropy&cs=srgb&fm=jpg&q=85&w=1600",
+         "body_html": "<p>Curated, brandable hampers for clients, teams and milestones. Share your requirement and our team will craft a bespoke proposal.</p>"},
     ]
     for cp in CMS_PAGES:
         await db.cms_pages.update_one({"slug": cp["slug"]}, {"$setOnInsert": {"id": str(uuid.uuid4()), **cp}}, upsert=True)
+
+    # Backfill contact fields onto existing contact CMS page (idempotent, no overwrite of admin edits)
+    contact_doc = await db.cms_pages.find_one({"slug": "contact"})
+    if contact_doc:
+        cbackfill = {k: v for k, v in {
+            "contact_address": "168, Netaji Subhash Marg, Martand Chowk, Ram Bagh, Indore, Madhya Pradesh 452007",
+            "contact_phone": "+91 8871288853", "contact_whatsapp": "+91 8871288853",
+            "contact_email": "support@artful.com", "office_hours": "Mon – Sat · 10:00 AM – 7:00 PM IST",
+        }.items() if k not in contact_doc}
+        if cbackfill:
+            await db.cms_pages.update_one({"slug": "contact"}, {"$set": cbackfill})
+
+    # Legal Pages admin should only manage true legal/policy pages — remove marketing/site pages
+    await db.pages.delete_many({"slug": {"$in": ["about", "our-story", "contact", "corporate-gifting"]}})
 
     # 7) Rich-HTML policy pages (convert plain text -> HTML once)
     for pg in await db.pages.find({"content": {"$exists": True}}).to_list(50):

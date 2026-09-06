@@ -3,6 +3,7 @@ import { X } from "lucide-react";
 import { useStore } from "../context/StoreContext";
 import { api, apiError } from "../lib/api";
 import { toast } from "sonner";
+import { sanitizePhone } from "../lib/utils";
 
 export default function AuthModal() {
   const { authOpen, setAuthOpen, loginSuccess } = useStore();
@@ -61,7 +62,7 @@ export default function AuthModal() {
           <form onSubmit={sendOtp} className="space-y-4">
             <div>
               <label className="label-caption block mb-2">Mobile Number</label>
-              <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="10-digit mobile number" className="input-field" data-testid="auth-phone-input" autoFocus />
+              <input value={phone} onChange={(e) => setPhone(sanitizePhone(e.target.value))} inputMode="numeric" placeholder="10-digit mobile number" className="input-field" data-testid="auth-phone-input" autoFocus />
             </div>
             <button className="btn-primary w-full" disabled={loading} data-testid="auth-send-otp-btn">{loading ? "Sending…" : "Send OTP"}</button>
             <div className="flex items-center gap-3 my-2"><div className="flex-1 h-px bg-line" /><span className="text-xs text-ink-muted">or</span><div className="flex-1 h-px bg-line" /></div>

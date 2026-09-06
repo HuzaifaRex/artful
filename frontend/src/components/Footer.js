@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { useStore } from "../context/StoreContext";
 import { api, apiError } from "../lib/api";
 import { popConfetti } from "../lib/confetti";
+import { isValidEmail } from "../lib/utils";
 
 const COLS = [
   { title: "Shop", links: [["All Products", "/shop"], ["New Arrivals", "/collections/new-arrivals"], ["Bestsellers", "/collections/bestsellers"], ["Gifts", "/collections/festive-gifts"]] },
@@ -39,7 +40,7 @@ export default function Footer() {
 
   const subscribe = async (e) => {
     e.preventDefault();
-    if (!email) return;
+    if (!isValidEmail(email)) return toast.error("Please enter a valid email address");
     setLoading(true);
     try {
       const { data } = await api.post("/newsletter/subscribe", { email, source: "footer" });

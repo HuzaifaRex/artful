@@ -1,22 +1,35 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { MapPin, Phone, Mail, Clock, MessageCircle, Instagram, Facebook, Twitter } from "lucide-react";
 import { useStore } from "../context/StoreContext";
 import { api, apiError } from "../lib/api";
 import { toast } from "sonner";
+import { isValidEmail, isValidPhone, sanitizePhone } from "../lib/utils";
 
-const OFFICE_IMG = "https://images.unsplash.com/photo-1715593947958-ee0ca51de552?crop=entropy&cs=srgb&fm=jpg&q=85&w=1200";
+const FALLBACK_IMG = "https://images.unsplash.com/photo-1715593947958-ee0ca51de552?crop=entropy&cs=srgb&fm=jpg&q=85&w=1200";
 
 export default function ContactPage() {
   const { settings } = useStore();
   const s = settings || {};
   const social = s.social || {};
+  const [page, setPage] = useState(null);
   const [form, setForm] = useState({ name: "", email: "", phone: "", message: "" });
   const [sending, setSending] = useState(false);
-  const wa = (s.whatsapp_number || "").replace(/\D/g, "");
+
+  useEffect(() => { api.get("/cms/page/contact").then(({ data }) => setPage(data)).catch(() => setPage({})); }, []);
+
+  const p = page || {};
+  const address = p.contact_address || s.office_address;
+  const phone = p.contact_phone || s.contact_phone;
+  const whatsapp = p.contact_whatsapp || s.whatsapp_number;
+  const email = p.contact_email || s.contact_email;
+  const hours = p.office_hours || s.office_hours;
+  const wa = (whatsapp || "").replace(/\D/g, "");
 
   const submit = async (e) => {
     e.preventDefault();
     if (!form.name || !form.message) return toast.error("Please add your name and message");
+    if (form.email && !isValidEmail(form.email)) return toast.error("Enter a valid email address");
+    if (form.phone && !isValidPhone(form.phone)) return toast.error("Enter a valid 10-digit mobile number");
     setSending(true);
     try {
       const { data } = await api.post("/contact/submit", form);
@@ -27,20 +40,25 @@ export default function ContactPage() {
   };
 
   const rows = [
-    [MapPin, "Visit us", s.office_address],
-    [Phone, "Call us", s.contact_phone],
-    [MessageCircle, "WhatsApp", s.whatsapp_number],
-    [Mail, "Email", s.contact_email],
-    [Clock, "Office hours", s.office_hours],
+    [MapPin, "Visit us", address],
+    [Phone, "Call us", phone],
+    [MessageCircle, "WhatsApp", whatsapp],
+    [Mail, "Email", email],
+    [Clock, "Office hours", hours],
   ];
 
   return (
     <div data-testid="contact-page">
-      <div className="bg-surface py-14"><div className="container-artful text-center"><h1 className="section-title">Get in Touch</h1><p className="text-ink-secondary mt-3 max-w-lg mx-auto">We'd love to hear from you — for orders, gifting help or just to say hello.</p></div></div>
+      <div className="bg-surface py-14"><div className="container-artful text-center">
+        {p.hero_eyebrow && <p className="label-caption mb-3">{p.hero_eyebrow}</p>}
+        <h1 className="section-title">{p.hero_title || "Get in Touch"}</h1>
+        <p className="text-ink-secondary mt-3 max-w-lg mx-auto">We'd love to hear from you — for orders, gifting help or just to say hello.</p>
+      </div></div>
 
       <div className="container-artful py-14 grid lg:grid-cols-2 gap-12 lg:gap-16">
         <div>
-          <div className="relative aspect-[16/10] overflow-hidden mb-8 hover-zoom"><img src={OFFICE_IMG} alt="ARTFUL Studio" className="w-full h-full object-cover" /></div>
+          <div className="relative aspect-[16/10] overflow-hidden mb-8 hover-zoom"><img src={p.hero_image || FALLBACK_IMG} alt="ARTFUL Studio" className="w-full h-full object-cover" /></div>
+          {p.body_html && <div className="prose max-w-none text-ink-secondary mb-8" dangerouslySetInnerHTML={{ __html: p.body_html }} />}
           <div className="space-y-5">
             {rows.map(([Icon, label, val], i) => val && (
               <div key={i} className="flex gap-4" data-testid={`contact-${label.toLowerCase().replace(/\s/g, "-")}`}>
@@ -66,7 +84,7 @@ export default function ContactPage() {
             <form onSubmit={submit} className="space-y-4" data-testid="contact-form">
               <div><label className="label-caption block mb-1.5">Name</label><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="input-field" data-testid="contact-name" /></div>
               <div><label className="label-caption block mb-1.5">Email</label><input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="input-field" data-testid="contact-email" /></div>
-              <div><label className="label-caption block mb-1.5">Phone</label><input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className="input-field" data-testid="contact-phone-input" /></div>
+              <div><label className="label-caption block mb-1.5">Phone</label><input value={form.phone} onChange={(e) => setForm({ ...form, phone: sanitizePhone(e.target.value) })} inputMode="numeric" className="input-field" data-testid="contact-phone-input" /></div>
               <div><label className="label-caption block mb-1.5">Message</label><textarea rows={5} value={form.message} onChange={(e) => setForm({ ...form, message: e.target.value })} className="input-field" data-testid="contact-message" /></div>
               <button disabled={sending} className="btn-primary w-full" data-testid="contact-submit">{sending ? "Sending…" : "Send Message"}</button>
             </form>

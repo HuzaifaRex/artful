@@ -11,7 +11,7 @@ export default function StaticPage({ slug }) {
     <div>
       <div className="bg-surface py-14"><div className="container-artful text-center"><h1 className="section-title">{page.title}</h1></div></div>
       <div className="container-artful py-14 max-w-3xl mx-auto">
-        <div className="prose text-ink-secondary leading-relaxed text-lg whitespace-pre-line">{page.content}</div>
+        <div className="prose prose-lg max-w-none text-ink-secondary leading-relaxed" data-testid="static-page-content" dangerouslySetInnerHTML={{ __html: page.content || "" }} />
       </div>
     </div>
   );

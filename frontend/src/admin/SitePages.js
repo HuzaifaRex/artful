@@ -9,6 +9,15 @@ const PAGES = [
   { slug: "about", label: "About", listKey: "cards", listLabel: "Highlight Cards", listFields: ["icon", "title", "desc"] },
   { slug: "our-story", label: "Our Story", listKey: "chapters", listLabel: "Story Chapters", listFields: ["title", "desc", "image"] },
   { slug: "contact", label: "Contact", listKey: null },
+  { slug: "corporate-gifting", label: "Corporate Gifting", listKey: null },
+];
+
+const CONTACT_FIELDS = [
+  ["contact_address", "Address"],
+  ["contact_phone", "Phone number"],
+  ["contact_whatsapp", "WhatsApp number"],
+  ["contact_email", "Email"],
+  ["office_hours", "Office hours"],
 ];
 
 export default function SitePages() {
@@ -59,6 +68,15 @@ export default function SitePages() {
               <h3 className="font-semibold text-gray-900">Body Content</h3>
               <RichEditor value={doc.body_html} onChange={(v) => set("body_html", v)} testid="sitepage-body" />
             </div>
+
+            {active === "contact" && (
+              <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4" data-testid="sitepage-contact-details">
+                <h3 className="font-semibold text-gray-900">Contact Details</h3>
+                {CONTACT_FIELDS.map(([key, label]) => (
+                  <Field key={key} label={label}><input value={doc[key] || ""} onChange={(e) => set(key, e.target.value)} className={inputCls} data-testid={`sitepage-${key}`} /></Field>
+                ))}
+              </div>
+            )}
 
             {cfg.listKey && (
               <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-3">

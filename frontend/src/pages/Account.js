@@ -4,7 +4,7 @@ import { User, Package, MapPin, Heart, LogOut, Plus, Trash2, Check, X, AlertTria
 import { api, apiError } from "../lib/api";
 import { useStore } from "../context/StoreContext";
 import ProductCard from "../components/ProductCard";
-import { inr, formatDate } from "../lib/utils";
+import { inr, formatDate, isValidPhone, isValidEmail, isValidPincode, sanitizePhone, INDIAN_STATES } from "../lib/utils";
 import { toast } from "sonner";
 
 const NAV = [
@@ -19,6 +19,8 @@ function Profile() {
   const [form, setForm] = useState({ name: customer?.name || "", email: customer?.email || "", phone: customer?.phone || "" });
   const [saving, setSaving] = useState(false);
   const save = async () => {
+    if (form.phone && !isValidPhone(form.phone)) return toast.error("Enter a valid 10-digit mobile number");
+    if (form.email && !isValidEmail(form.email)) return toast.error("Enter a valid email address");
     setSaving(true);
     try { const { data } = await api.put("/customers/me", form); setCustomer((c) => ({ ...c, ...data })); toast.success("Profile updated"); }
     catch (e) { toast.error(apiError(e)); }
@@ -29,7 +31,7 @@ function Profile() {
       <h2 className="font-serif text-2xl text-plum mb-6">Profile</h2>
       <div className="space-y-4">
         <div><label className="label-caption block mb-1.5">Name</label><input value={form.name || ""} onChange={(e) => setForm({ ...form, name: e.target.value })} className="input-field" data-testid="profile-name" /></div>
-        <div><label className="label-caption block mb-1.5">Mobile</label><input value={form.phone || ""} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="Add mobile number" className="input-field" data-testid="profile-phone" /></div>
+        <div><label className="label-caption block mb-1.5">Mobile</label><input value={form.phone || ""} onChange={(e) => setForm({ ...form, phone: sanitizePhone(e.target.value) })} inputMode="numeric" placeholder="Add mobile number" className="input-field" data-testid="profile-phone" /></div>
         <div><label className="label-caption block mb-1.5">Email</label><input value={form.email || ""} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="Add email" className="input-field" data-testid="profile-email" /></div>
         <button onClick={save} disabled={saving} className="btn-primary" data-testid="profile-save">{saving ? "Saving…" : "Save Changes"}</button>
       </div>
@@ -188,6 +190,8 @@ function Addresses() {
   useEffect(() => { load(); }, []);
   const save = async () => {
     for (const f of ["name", "line1", "city", "state", "pincode"]) if (!form[f]) return toast.error("Please complete required fields");
+    if (form.phone && !isValidPhone(form.phone)) return toast.error("Enter a valid 10-digit mobile number");
+    if (!isValidPincode(form.pincode)) return toast.error("Enter a valid 6-digit pincode");
     try { await api.post("/addresses", form); toast.success("Address saved"); setShowForm(false); setForm(EMPTY); load(); }
     catch (e) { toast.error(apiError(e)); }
   };
@@ -197,9 +201,14 @@ function Addresses() {
       <div className="flex justify-between items-center mb-6"><h2 className="font-serif text-2xl text-plum">Addresses</h2><button onClick={() => setShowForm(!showForm)} className="btn-ghost !px-0" data-testid="add-address-btn"><Plus size={15} /> Add New</button></div>
       {showForm && (
         <div className="border border-line p-5 mb-6 grid sm:grid-cols-2 gap-3">
-          {["name", "phone", "line1", "line2", "area", "city", "state", "pincode"].map((f) => (
-            <input key={f} value={form[f]} onChange={(e) => setForm({ ...form, [f]: e.target.value })} placeholder={f === "line1" ? "Address line 1" : f.charAt(0).toUpperCase() + f.slice(1)} className={`input-field ${["line1", "line2"].includes(f) ? "sm:col-span-2" : ""}`} data-testid={`newaddr-${f}`} />
+          {["name", "phone", "line1", "line2", "area", "city"].map((f) => (
+            <input key={f} value={form[f]} onChange={(e) => setForm({ ...form, [f]: f === "phone" ? sanitizePhone(e.target.value) : e.target.value })} inputMode={f === "phone" ? "numeric" : undefined} placeholder={f === "line1" ? "Address line 1" : f.charAt(0).toUpperCase() + f.slice(1)} className={`input-field ${["line1", "line2"].includes(f) ? "sm:col-span-2" : ""}`} data-testid={`newaddr-${f}`} />
           ))}
+          <select value={form.state} onChange={(e) => setForm({ ...form, state: e.target.value })} className="input-field" data-testid="newaddr-state">
+            <option value="">Select State</option>
+            {INDIAN_STATES.map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+          <input value={form.pincode} onChange={(e) => setForm({ ...form, pincode: e.target.value.replace(/\D/g, "").slice(0, 6) })} inputMode="numeric" placeholder="Pincode" className="input-field" data-testid="newaddr-pincode" />
           <label className="flex items-center gap-2 text-sm text-ink-secondary sm:col-span-2"><input type="checkbox" checked={form.is_default} onChange={(e) => setForm({ ...form, is_default: e.target.checked })} className="accent-plum" /> Set as default</label>
           <button onClick={save} className="btn-primary sm:col-span-2" data-testid="save-address-btn">Save Address</button>
         </div>

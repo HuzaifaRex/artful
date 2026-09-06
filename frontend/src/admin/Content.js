@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { StatusChip, Modal, Field, inputCls, PageHead, Empty } from "./ui";
 import { ImageUpload } from "./ImageUpload";
 import { RichEditor } from "./RichEditor";
+import { DataTable } from "./DataTable";
 
 function SlidesEditor({ slides = [], onChange }) {
   const setSlide = (i, k, v) => { const n = [...slides]; n[i] = { ...n[i], [k]: v }; onChange(n); };
@@ -95,33 +96,38 @@ export function HomepageCMS() {
   );
 }
 
+const GEN_PAGE = 10;
 function Generic({ title, endpoint, columns, fields, defaults, testid }) {
   const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [q, setQ] = useState("");
+  const [page, setPage] = useState(1);
   const [editing, setEditing] = useState(null);
-  const load = useCallback(() => adminApi.get(`/${endpoint}`).then(({ data }) => setItems(data.items)).catch(() => {}), [endpoint]);
+  const load = useCallback(() => { setLoading(true); adminApi.get(`/${endpoint}`).then(({ data }) => setItems(data.items)).catch(() => {}).finally(() => setLoading(false)); }, [endpoint]);
   useEffect(() => { load(); }, [load]);
   const save = async () => {
     try { if (editing.id) await adminApi.put(`/${endpoint}/${editing.id}`, editing); else await adminApi.post(`/${endpoint}`, editing); toast.success("Saved"); setEditing(null); load(); }
     catch (e) { toast.error(apiError(e)); }
   };
-  const del = async (it) => { if (!window.confirm("Delete?")) return; await adminApi.delete(`/${endpoint}/${it.id}`); load(); };
+  const del = async (e, it) => { e.stopPropagation(); if (!window.confirm("Delete?")) return; await adminApi.delete(`/${endpoint}/${it.id}`); load(); };
+
+  const displayFields = fields.filter((f) => !["rich", "textarea", "image"].includes(f.type)).slice(0, 3);
+  const searchKeys = displayFields.map((f) => f.key);
+  const filtered = items.filter((it) => !q || searchKeys.some((k) => String(it[k] ?? "").toLowerCase().includes(q.toLowerCase())));
+  const pages = Math.max(1, Math.ceil(filtered.length / GEN_PAGE));
+  const rows = filtered.slice((page - 1) * GEN_PAGE, page * GEN_PAGE);
+
   return (
     <div>
       <PageHead title={title} action={<button onClick={() => setEditing({ ...defaults })} className="bg-plum text-white rounded-md px-4 py-2 text-sm flex items-center gap-2" data-testid={`add-${testid}`}><Plus size={16} /> Add</button>} />
-      <div className="bg-white rounded-lg border border-gray-200 overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead><tr className="text-left text-gray-400 text-xs bg-gray-50 border-b border-gray-200">{columns.map((c) => <th key={c} className="px-4 py-3 font-medium">{c}</th>)}<th className="px-4 py-3 font-medium">Actions</th></tr></thead>
-          <tbody>
-            {items.map((it) => (
-              <tr key={it.id} className="border-b border-gray-50 hover:bg-gray-50">
-                {fields.map((f) => <td key={f.key} className="px-4 py-3 text-gray-700 max-w-xs truncate">{String(it[f.key] ?? "—")}</td>)}
-                <td className="px-4 py-3"><div className="flex gap-2 text-gray-400"><button onClick={() => setEditing(it)} className="hover:text-plum"><Edit size={15} /></button><button onClick={() => del(it)} className="hover:text-red-600"><Trash2 size={15} /></button></div></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {items.length === 0 && <Empty text="Nothing yet" />}
-      </div>
+      <DataTable
+        testid={testid} loading={loading} q={q} setQ={(v) => { setQ(v); setPage(1); }} searchPlaceholder={`Search ${title.toLowerCase()}…`}
+        page={page} pages={pages} setPage={setPage} rows={rows} empty="Nothing yet"
+        columns={[
+          ...displayFields.map((f) => ({ key: f.key, label: f.label, render: (it) => f.key === "status" ? <StatusChip status={it.status} /> : <span className="max-w-xs truncate inline-block">{String(it[f.key] ?? "—")}</span> })),
+          { key: "__actions", label: "Actions", render: (it) => <div className="flex gap-2 text-gray-400" onClick={(e) => e.stopPropagation()}><button onClick={() => setEditing(it)} className="hover:text-plum"><Edit size={15} /></button><button onClick={(e) => del(e, it)} className="hover:text-red-600"><Trash2 size={15} /></button></div> },
+        ]}
+      />
       {editing && (
         <Modal open title={editing.id ? `Edit ${title}` : `Add ${title}`} onClose={() => setEditing(null)} wide>
           <div className="space-y-4">

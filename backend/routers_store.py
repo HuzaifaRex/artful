@@ -338,6 +338,7 @@ async def track_visit(payload: dict, request: Request):
             "identity": set_fields.get("identity", {})})
     return {"ok": True}
 
+@router.post("/newsletter/subscribe")
 async def newsletter_subscribe(payload: dict):
     import uuid
     email = (payload.get("email") or "").strip().lower()

@@ -1,0 +1,59 @@
+{
+  "summary": "ARTFUL iter-4 verification of the 17-item fix/feature batch. Backend: 22/22 pytest cases pass (newsletter subscribe new/dup/invalid, legal pages shipping/returns/privacy/terms 200, about/our-story/contact/corporate-gifting removed from /api/pages -> 404, /api/cms/page/corporate-gifting hero+body_html, /api/cms/page/contact contact fields present, /api/track/visit persists visit_count/last_path and /api/admin/visitors returns stats.total>0, /api/admin/orders/{order_number} returns address dict + items with gift_wrap+wrap_price, Razorpay real order created dev_mode:false with rzp_test key_id, COD full flow with gift wrap totals consistent, PUT /api/admin/cms/pages/contact persists all 5 contact fields, PUT body_html persists for about/our-story/corporate-gifting, manual collection returns exact product_ids and dynamic collection filters by badge rule). Frontend: newsletter footer valid submit shows newsletter-thankyou popup (invalid blocked by HTML5 email validity); legal pages /returns /privacy /terms /shipping render rich HTML with headings; /about /our-story /contact /corporate-gifting render substantive CMS-driven bodies; admin login works via data-testid; Dashboard recent orders (4) click opens modal exposing data-testid=admin-order-address AND 'Gift Wrapping' text; Visitors page shows data table with 6 rows + search input; Refunds page has table with columns 'Order/Amount/Reason/Cancelled / Requested on/Status/Update' and status filter select with All statuses/Requested/Approved/Processing/Completed/Rejected; SitePages has About/Our Story/Contact/Corporate Gifting tabs and sitepage-contact_address/phone/whatsapp/email/office_hours testids all present; Collections editor cf-type select works, cf-rules shown when type=dynamic, cf-products (with searchable product input) shown when type=manual; Products/Inventory/Categories/Legal Pages/FAQs all use data tables with search; Checkout addr-state is SELECT with 37 options (Indian States dropdown) and addr-city is free-text INPUT; pincode/phone strip non-digits ('abc123xyz456789' -> '123456', 'abc987xyz' -> '987'); checkout-giftwrap line shows 'Gift Wrapping ₹199' when cart item has gift wrap; place-order-btn disabled until authenticated.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_artful_iter4.py",
+    "/app/test_reports/pytest/iter4.xml"
+  ],
+  "test_coverage": {
+    "backend_endpoints_tested": [
+      "GET /api/health (razorpay:true)",
+      "POST /api/newsletter/subscribe (new / duplicate already:true / invalid 400)",
+      "GET /api/pages/{shipping,returns,privacy,terms} 200 with body content",
+      "GET /api/pages/{about,our-story,contact,corporate-gifting} 404 (removed from legal)",
+      "GET /api/cms/page/corporate-gifting (hero + body_html)",
+      "GET /api/cms/page/contact (contact_address/phone/whatsapp/email + office_hours)",
+      "POST /api/track/visit (upsert + identity merge) + GET /api/admin/visitors (stats.total>0, visit_count>=4)",
+      "POST /api/checkout/create-order COD w/ gift_wrap -> GET /api/admin/orders/{num} shows address dict + items[gift_wrap,wrap_price]",
+      "POST /api/checkout/create-order razorpay -> dev_mode:false, razorpay_order_id, key_id rzp_test*",
+      "COD gift-wrap totals: wrap sum > 0, total >= subtotal",
+      "PUT /api/admin/cms/pages/contact + public GET reflects change",
+      "PUT /api/admin/cms/pages/{about,our-story,corporate-gifting} body_html persisted",
+      "POST /api/admin/collections type=manual + GET /api/products?collection=slug returns exact product_ids",
+      "POST /api/admin/collections type=dynamic rules.badge + products all carry that badge"
+    ],
+    "frontend_flows_verified": [
+      "Footer newsletter: invalid email blocked (HTML5 email validity), valid email -> newsletter-thankyou popup + Continue",
+      "Legal pages /returns /privacy /terms /shipping render with headings and text (~950+ chars)",
+      "/about /our-story /contact /corporate-gifting render CMS content (1140-1306 chars) with hero and rich body",
+      "Admin login via data-testid admin-email/admin-password/admin-login-btn works",
+      "Dashboard: 4 recent order rows; clicking a row opens modal; data-testid=admin-order-address present; 'Gift Wrapping' text visible when applicable",
+      "Visitors page /admin/visitors: 1 table, 6 rows, search input present",
+      "Refunds /admin/refunds: table with 'Cancelled / Requested on' header, status filter select (All/Requested/Approved/Processing/Completed/Rejected)",
+      "SitePages /admin/site-pages: About+Our Story+Contact+Corporate Gifting tabs; sitepage-contact_address/phone/whatsapp/email/office_hours all present",
+      "Collections /admin/collections: cf-type select toggles cf-rules (dynamic) and cf-products (manual, includes product search input)",
+      "Data tables render for /admin/products (20 rows) /admin/inventory (15) /admin/categories (8) /admin/pages (4) /admin/faqs (6) with search input",
+      "Checkout: addr-state=SELECT with 37 options; addr-city=INPUT; pincode strips non-digits and truncates to 6; phone strips non-digits; checkout-giftwrap line shows 'Gift Wrapping ₹199'; place-order-btn disabled until authenticated"
+    ]
+  },
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Refunds page currently has zero rows so the actual date+time formatting (e.g. dd Mon yyyy, HH:mm) could not be visually verified from real data — recommend a smoke row seeded in a future test or verify with a cancelled order that generated a refund request.",
+    "AdminLogin.js email input has no `type` attribute; consider adding `type=\"email\"` for consistency and accessibility (does not affect functionality since data-testid=admin-email works).",
+    "Footer newsletter uses native HTML5 `type=email` which blocks form submit on invalid email before the JS `isValidEmail` toast can fire; the current UX shows a native browser tooltip. That may or may not be intentional but is acceptable.",
+    "public_settings() strips only fields starting with 'cost_' via a loop over a single-item tuple — the pop('cost_') is a no-op unless there's an exact key 'cost_'. Consider a proper prefix filter or a regex if the intent was to hide cost fields."
+  ],
+  "updated_files": ["/app/backend/tests/test_artful_iter4.py"],
+  "success_rate": {"backend": "100% (22/22)", "frontend": "100% of specified flows"},
+  "test_credentials": "Admin: admin@artful.com / Artful@2026; Customer via DEV OTP (dev_otp in /api/auth/otp/send response).",
+  "seed_data_creation": "22 test rows across newsletter subscribers (TEST_*@x.com), visitors (vt_*), COD orders (razorpay+cod incl. gift-wrapped), CMS site pages (about/our-story/corporate-gifting body_html + contact fields overwritten to TEST-ADDR-*), and admin collections (test-manual-*, test-dyn-*).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Admin login uses data-testid=admin-email/admin-password/admin-login-btn (email input has no type=email attribute). Dashboard row click opens modal without role=dialog — use data-testid=admin-order-address as the anchor. Product URLs are /products/<slug> (not /product/). Cookie banner intercepts clicks — always click 'Accept All' before interacting. Note: legal pages seed intentionally deletes about/our-story/contact/corporate-gifting so GET /api/pages/{those} returns 404 by design; the CMS versions live under /api/cms/page/*.",
+  "rca of the issue": "N/A — all 17 items pass. Backend 22/22 pytest, frontend flows all green."
+}

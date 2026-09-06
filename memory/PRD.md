@@ -62,3 +62,25 @@ Dashboard KPIs + notifications (new/cancel orders), data tables w/ filters every
 
 ## Pending inputs
 - Full Twilio creds to switch SMS/OTP from DEV to live: TWILIO_ACCOUNT_SID (AC…), TWILIO_AUTH_TOKEN (or API key SID+secret), TWILIO_FROM_NUMBER, TWILIO_VERIFY_SERVICE.
+
+---
+
+## Iteration — 2026-06 · 17-item fix/feature batch (COMPLETE)
+Load-in note: `.env` files were missing and were recreated; `pydantic-core` pinned to 2.27.2. Backend health `razorpay:true`.
+
+Implemented & verified (testing agent iter-4: backend 22/22, all frontend flows green):
+1. Form + mobile-number validation across Checkout, Account (profile/address), Contact, Corporate, Auth, Footer (helpers in `lib/utils.js`: isValidEmail/isValidPhone/isValidPincode/sanitizePhone).
+2. Footer newsletter: added missing `POST /api/newsletter/subscribe` route + confirmation popup + email validation.
+3. Admin data tables (search + filters + pagination) applied to Products, Inventory, Categories, Collections, Legal Pages, FAQs, Refunds, Visitors.
+4/12. Visitors page fixed — added frontend `VisitorTracker` (App.js) calling `/api/track/visit` with identity when signed in.
+5. Checkout & Account address: Indian States dropdown + City free-text (`INDIAN_STATES`).
+6. Razorpay TEST-mode Pay Now enabled via configured keys.
+7. Checkout order card shows a Gift Wrapping line when a wrapped item is present.
+8/9. Admin order detail modal now reads `o.address` (shipping address) and shows Gift Wrapping charges.
+10. Collections admin: dynamic Rules editor vs manual product picker.
+11. Refunds admin shows date+time of cancellation (formatDateTime) in a data table.
+13. Legal pages use RichEditor (CKEditor) and render as rich HTML on the website (StaticPage).
+14. Removed about/our-story/contact/corporate-gifting from Legal Pages admin (seed delete_many).
+15. Corporate Gifting added to admin Site Pages + CMS-driven public page.
+16. About/Our Story/Contact public pages now CMS-driven and reflect admin edits.
+17. Contact address/phone/whatsapp/email/office-hours editable in Site Pages and shown on Contact page.

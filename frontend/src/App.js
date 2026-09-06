@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState } from "react";
 import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import { Toaster } from "sonner";
-import { StoreProvider } from "./context/StoreContext";
+import { StoreProvider, useStore } from "./context/StoreContext";
 import { ThemeProvider } from "./context/ThemeContext";
+import { api } from "./lib/api";
 import Layout from "./components/Layout";
 import ScrollToTop from "./components/ScrollToTop";
 import { BrandLoader } from "./components/Loader";
@@ -65,12 +66,30 @@ function RouteLoader() {
   return <BrandLoader minDuration={450} onDone={() => setShow(false)} />;
 }
 
+// Tracks storefront visits (+ identity when signed in) so the admin Visitors page has data.
+function VisitorTracker() {
+  const location = useLocation();
+  const { customer } = useStore();
+  useEffect(() => {
+    if (location.pathname.startsWith("/admin")) return;
+    let vid = localStorage.getItem("artful_visitor_id");
+    if (!vid) {
+      vid = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2));
+      localStorage.setItem("artful_visitor_id", vid);
+    }
+    const identity = customer ? { phone: customer.phone, email: customer.email, name: customer.name } : undefined;
+    api.post("/track/visit", { visitor_id: vid, path: location.pathname, referrer: document.referrer, identity }).catch(() => {});
+  }, [location.pathname, customer]);
+  return null;
+}
+
 export default function App() {
   return (
     <ThemeProvider>
       <StoreProvider>
         <BrowserRouter>
           <ScrollToTop />
+          <VisitorTracker />
           <RouteLoader />
           <Toaster position="top-center" richColors closeButton />
           <Routes>

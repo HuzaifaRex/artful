@@ -3,7 +3,7 @@ import { useNavigate, Link } from "react-router-dom";
 import { Check, Lock, ShieldCheck, Minus, Plus, Trash2 } from "lucide-react";
 import { api, apiError } from "../lib/api";
 import { useStore } from "../context/StoreContext";
-import { inr } from "../lib/utils";
+import { inr, giftWrapTotal, isValidPhone, isValidPincode, sanitizePhone, INDIAN_STATES } from "../lib/utils";
 import { toast } from "sonner";
 
 function loadScript(src) {
@@ -98,6 +98,8 @@ export default function Checkout() {
     for (const f of ["name", "line1", "city", "state", "pincode"]) {
       if (!addr[f]) return toast.error("Please complete your delivery address");
     }
+    if (!isValidPhone(addr.phone)) return toast.error("Enter a valid 10-digit mobile number in the address");
+    if (!isValidPincode(addr.pincode)) return toast.error("Enter a valid 6-digit pincode");
     setPlacing(true);
     try {
       const { data } = await api.post("/checkout/create-order", {
@@ -133,10 +135,22 @@ export default function Checkout() {
     setPlacing(false);
   };
 
+  const setField = (name, value) => {
+    if (name === "phone") value = sanitizePhone(value);
+    if (name === "pincode") value = value.replace(/\D/g, "").slice(0, 6);
+    setAddr({ ...addr, [name]: value });
+  };
   const field = (name, label, req, extra = {}) => (
     <div className={extra.full ? "sm:col-span-2" : ""}>
       <label className="label-caption block mb-1.5">{label}{req && " *"}</label>
-      <input value={addr[name]} onChange={(e) => setAddr({ ...addr, [name]: e.target.value })} className="input-field" data-testid={`addr-${name}`} />
+      {extra.type === "select" ? (
+        <select value={addr[name]} onChange={(e) => setField(name, e.target.value)} className="input-field" data-testid={`addr-${name}`}>
+          <option value="">Select {label}</option>
+          {extra.options.map((o) => <option key={o} value={o}>{o}</option>)}
+        </select>
+      ) : (
+        <input value={addr[name]} onChange={(e) => setField(name, e.target.value)} inputMode={extra.numeric ? "numeric" : undefined} className="input-field" data-testid={`addr-${name}`} />
+      )}
     </div>
   );
 
@@ -157,7 +171,7 @@ export default function Checkout() {
               <div className="pl-10 space-y-3 max-w-sm">
                 {otpStep === "phone" ? (
                   <>
-                    <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Mobile number" className="input-field" data-testid="checkout-phone-input" />
+                    <input value={phone} onChange={(e) => setPhone(sanitizePhone(e.target.value))} inputMode="numeric" placeholder="Mobile number" className="input-field" data-testid="checkout-phone-input" />
                     <button onClick={sendOtp} disabled={authLoading} className="btn-primary w-full" data-testid="checkout-send-otp">{authLoading ? "Sending…" : "Send OTP"}</button>
                     <div className="flex items-center gap-3"><div className="flex-1 h-px bg-line" /><span className="text-xs text-ink-muted">or</span><div className="flex-1 h-px bg-line" /></div>
                     <button onClick={googleLogin} className="btn-outline w-full !text-sm !normal-case !tracking-normal" data-testid="checkout-google"><img src="https://www.google.com/favicon.ico" alt="" className="w-4 h-4" /> Continue with Google</button>
@@ -179,13 +193,13 @@ export default function Checkout() {
             <div className="flex items-center gap-3 mb-5"><span className="w-7 h-7 rounded-full bg-plum text-white flex items-center justify-center text-xs">2</span><h2 className="font-serif text-xl text-ink">Delivery Address</h2></div>
             <div className="grid sm:grid-cols-2 gap-4">
               {field("name", "Full Name", true)}
-              {field("phone", "Mobile", true)}
+              {field("phone", "Mobile", true, { numeric: true })}
               {field("line1", "Flat / House No., Building", true, { full: true })}
               {field("line2", "Apartment / Road (optional)", false, { full: true })}
               {field("area", "Area / Locality", false)}
               {field("city", "City", true)}
-              {field("state", "State", true)}
-              {field("pincode", "Pincode", true)}
+              {field("state", "State", true, { type: "select", options: INDIAN_STATES })}
+              {field("pincode", "Pincode", true, { numeric: true })}
               {field("instructions", "Delivery instructions (optional)", false, { full: true })}
             </div>
           </section>
@@ -237,10 +251,13 @@ export default function Checkout() {
             {applied && <p className="text-xs text-ok mb-3">Coupon {applied} applied</p>}
             {totals && (
               <div className="space-y-2 text-sm border-t border-line pt-4">
-                <div className="flex justify-between text-ink-secondary"><span>Subtotal</span><span>{inr(totals.subtotal)}</span></div>
+                {(() => { const wrap = giftWrapTotal(totals.items); return (<>
+                <div className="flex justify-between text-ink-secondary"><span>Subtotal</span><span>{inr(totals.subtotal - wrap)}</span></div>
+                {wrap > 0 && <div className="flex justify-between text-ink-secondary" data-testid="checkout-giftwrap"><span>Gift Wrapping</span><span>{inr(wrap)}</span></div>}
                 {totals.discount > 0 && <div className="flex justify-between text-ok"><span>Discount</span><span>-{inr(totals.discount)}</span></div>}
                 <div className="flex justify-between text-ink-secondary"><span>Shipping</span><span>{totals.shipping === 0 ? "Free" : inr(totals.shipping)}</span></div>
                 <div className="flex justify-between text-lg text-plum font-medium pt-2 border-t border-line-subtle"><span>Total</span><span data-testid="checkout-total">{inr(totals.total + (method === "cod" ? 99 : 0))}</span></div>
+                </>); })()}
               </div>
             )}
             <button onClick={placeOrder} disabled={!customer || placing} className="btn-primary w-full mt-6" data-testid="place-order-btn">

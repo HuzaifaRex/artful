@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { adminApi } from "../lib/api";
-import { inr, formatDateTime } from "../lib/utils";
+import { inr, formatDateTime, giftWrapTotal } from "../lib/utils";
 import { Modal, StatusChip } from "./ui";
 
 // Shared order detail modal with full customer details — reused by Dashboard & Transactions.
@@ -33,12 +33,17 @@ export default function OrderDetailModal({ orderNumber, onClose }) {
             </div>
             <div className="bg-gray-50 rounded-lg p-4">
               <h4 className="text-xs font-semibold text-gray-500 uppercase mb-2">Shipping Address</h4>
-              {o.shipping_address ? (
-                <p className="text-sm text-gray-600 leading-relaxed">
-                  {o.shipping_address.line1}{o.shipping_address.line2 ? `, ${o.shipping_address.line2}` : ""}<br />
-                  {o.shipping_address.city}, {o.shipping_address.state} — {o.shipping_address.pincode}
-                </p>
-              ) : <p className="text-sm text-gray-400">—</p>}
+              {(() => {
+                const a = o.address || o.shipping_address;
+                return a ? (
+                  <p className="text-sm text-gray-600 leading-relaxed" data-testid="admin-order-address">
+                    {a.name && <><span className="text-gray-900 font-medium">{a.name}</span><br /></>}
+                    {a.line1}{a.line2 ? `, ${a.line2}` : ""}{a.area ? `, ${a.area}` : ""}<br />
+                    {a.city}, {a.state} — {a.pincode}
+                    {a.phone && <><br />Phone: {a.phone}</>}
+                  </p>
+                ) : <p className="text-sm text-gray-400">—</p>;
+              })()}
             </div>
           </div>
 
@@ -48,8 +53,8 @@ export default function OrderDetailModal({ orderNumber, onClose }) {
               {(o.items || []).map((it, i) => (
                 <div key={i} className="flex items-center gap-3 p-3">
                   {it.image && <img src={it.image} alt="" className="w-12 h-14 object-cover rounded bg-gray-100" />}
-                  <div className="flex-1 min-w-0"><p className="text-sm text-gray-900 truncate">{it.name}</p><p className="text-xs text-gray-500">Qty {it.qty} × {inr(it.price)}</p></div>
-                  <span className="text-sm text-gray-900">{inr(it.price * it.qty)}</span>
+                  <div className="flex-1 min-w-0"><p className="text-sm text-gray-900 truncate">{it.name}</p><p className="text-xs text-gray-500">Qty {it.qty} × {inr(it.price)}{it.gift_wrap ? ` · 🎁 Gift wrap +${inr(it.wrap_price || 199)}` : ""}</p></div>
+                  <span className="text-sm text-gray-900">{inr(it.line_total ?? (it.price * it.qty))}</span>
                 </div>
               ))}
             </div>
@@ -63,10 +68,13 @@ export default function OrderDetailModal({ orderNumber, onClose }) {
               {o.payment?.razorpay_payment_id && <p className="text-sm text-gray-600 break-all">Txn: {o.payment.razorpay_payment_id}</p>}
             </div>
             <div className="text-sm text-gray-600 space-y-1">
-              <div className="flex justify-between"><span>Subtotal</span><span>{inr(o.pricing?.subtotal)}</span></div>
+              {(() => { const wrap = giftWrapTotal(o.items); return (<>
+              <div className="flex justify-between"><span>Subtotal</span><span>{inr((o.pricing?.subtotal || 0) - wrap)}</span></div>
+              {wrap > 0 && <div className="flex justify-between text-plum"><span>Gift Wrapping</span><span>{inr(wrap)}</span></div>}
               {o.pricing?.discount ? <div className="flex justify-between text-emerald-700"><span>Discount</span><span>−{inr(o.pricing.discount)}</span></div> : null}
               <div className="flex justify-between"><span>Shipping</span><span>{o.pricing?.shipping ? inr(o.pricing.shipping) : "Free"}</span></div>
               <div className="flex justify-between font-semibold text-gray-900 pt-1 border-t border-gray-100"><span>Total</span><span>{inr(o.pricing?.total)}</span></div>
+              </>); })()}
             </div>
           </div>
         </div>

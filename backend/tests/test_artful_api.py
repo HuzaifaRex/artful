@@ -5,7 +5,7 @@ import pytest
 import requests
 
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/") or \
-           os.environ.get("BASE_URL", "https://artful-craft.preview.emergentagent.com").rstrip("/")
+           os.environ.get("BASE_URL", "https://artful-enhancements.preview.emergentagent.com").rstrip("/")
 API = f"{BASE_URL}/api"
 ADMIN_EMAIL = "admin@artful.com"
 ADMIN_PASSWORD = "Artful@2026"
