@@ -4,11 +4,13 @@ import { CheckCircle2, Package, Truck } from "lucide-react";
 import { api } from "../lib/api";
 import { inr, formatDate } from "../lib/utils";
 import { PageLoader } from "../components/Loader";
+import { burstConfetti } from "../lib/confetti";
 
 export default function OrderSuccess() {
   const { orderNumber } = useParams();
   const [order, setOrder] = useState(null);
   useEffect(() => { api.get(`/orders/${orderNumber}`).then(({ data }) => setOrder(data)).catch(() => setOrder(false)); }, [orderNumber]);
+  useEffect(() => { const t = setTimeout(() => burstConfetti(), 400); return () => clearTimeout(t); }, []);
 
   if (order === null) return <PageLoader />;
 

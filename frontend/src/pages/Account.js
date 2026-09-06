@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Routes, Route, Link, useLocation, useNavigate, useParams } from "react-router-dom";
-import { User, Package, MapPin, Heart, LogOut, Plus, Trash2, Check } from "lucide-react";
+import { User, Package, MapPin, Heart, LogOut, Plus, Trash2, Check, X, AlertTriangle } from "lucide-react";
 import { api, apiError } from "../lib/api";
 import { useStore } from "../context/StoreContext";
 import ProductCard from "../components/ProductCard";
@@ -16,19 +16,75 @@ const NAV = [
 
 function Profile() {
   const { customer, setCustomer } = useStore();
-  const [form, setForm] = useState({ name: customer?.name || "", email: customer?.email || "" });
+  const [form, setForm] = useState({ name: customer?.name || "", email: customer?.email || "", phone: customer?.phone || "" });
+  const [saving, setSaving] = useState(false);
   const save = async () => {
+    setSaving(true);
     try { const { data } = await api.put("/customers/me", form); setCustomer((c) => ({ ...c, ...data })); toast.success("Profile updated"); }
     catch (e) { toast.error(apiError(e)); }
+    setSaving(false);
   };
   return (
     <div className="max-w-md">
       <h2 className="font-serif text-2xl text-plum mb-6">Profile</h2>
       <div className="space-y-4">
         <div><label className="label-caption block mb-1.5">Name</label><input value={form.name || ""} onChange={(e) => setForm({ ...form, name: e.target.value })} className="input-field" data-testid="profile-name" /></div>
-        <div><label className="label-caption block mb-1.5">Mobile</label><input value={customer?.phone || "—"} disabled className="input-field bg-surface" /></div>
-        <div><label className="label-caption block mb-1.5">Email</label><input value={form.email || ""} onChange={(e) => setForm({ ...form, email: e.target.value })} className="input-field" data-testid="profile-email" /></div>
-        <button onClick={save} className="btn-primary" data-testid="profile-save">Save Changes</button>
+        <div><label className="label-caption block mb-1.5">Mobile</label><input value={form.phone || ""} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="Add mobile number" className="input-field" data-testid="profile-phone" /></div>
+        <div><label className="label-caption block mb-1.5">Email</label><input value={form.email || ""} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="Add email" className="input-field" data-testid="profile-email" /></div>
+        <button onClick={save} disabled={saving} className="btn-primary" data-testid="profile-save">{saving ? "Saving…" : "Save Changes"}</button>
+      </div>
+    </div>
+  );
+}
+
+function CancelOrderModal({ orderNumber, onClose, onConfirmed }) {
+  const [agreed, setAgreed] = useState(false);
+  const [reason, setReason] = useState("");
+  const [loading, setLoading] = useState(false);
+  const confirm = async () => {
+    if (!agreed) return toast.error("Please read & accept the T&C and Refund Policy to continue.");
+    setLoading(true);
+    try {
+      const { data } = await api.post(`/orders/${orderNumber}/cancel`, { reason: reason || "Customer request" });
+      toast.success(data.message);
+      onConfirmed();
+    } catch (e) { toast.error(apiError(e)); }
+    setLoading(false);
+  };
+  return (
+    <div className="fixed inset-0 z-[9997] flex items-center justify-center p-4" data-testid="cancel-order-modal">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-cream rounded-2xl max-w-md w-full p-7 shadow-2xl animate-fadeUp">
+        <button onClick={onClose} className="absolute top-4 right-4 text-ink-muted hover:text-plum" data-testid="cancel-modal-close"><X size={20} /></button>
+        <div className="w-14 h-14 rounded-full bg-red-50 text-err flex items-center justify-center mb-5"><AlertTriangle size={26} /></div>
+        <h3 className="font-serif text-2xl text-plum mb-2">Cancel this order?</h3>
+        <p className="text-sm text-ink-secondary leading-relaxed">Order <b className="text-plum">{orderNumber}</b> will be cancelled. If it was prepaid, a refund will be initiated as per our policy.</p>
+
+        <div className="mt-5">
+          <label className="label-caption block mb-1.5">Reason (optional)</label>
+          <select value={reason} onChange={(e) => setReason(e.target.value)} className="input-field" data-testid="cancel-reason">
+            <option value="">Select a reason</option>
+            <option>Ordered by mistake</option>
+            <option>Found a better price</option>
+            <option>Delivery taking too long</option>
+            <option>Changed my mind</option>
+            <option>Other</option>
+          </select>
+        </div>
+
+        <label className="flex items-start gap-3 mt-5 cursor-pointer">
+          <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} className="mt-1 accent-plum w-4 h-4" data-testid="cancel-agree-checkbox" />
+          <span className="text-sm text-ink-secondary leading-relaxed">
+            I have read and agree to the{" "}
+            <Link to="/terms" target="_blank" className="text-plum underline font-medium" data-testid="cancel-terms-link">Terms &amp; Conditions</Link> and{" "}
+            <Link to="/returns" target="_blank" className="text-plum underline font-medium" data-testid="cancel-refund-link">Refund Policy</Link>. <span className="text-err">*</span>
+          </span>
+        </label>
+
+        <div className="flex gap-3 mt-7">
+          <button onClick={onClose} className="btn-outline flex-1" data-testid="cancel-modal-keep">Keep Order</button>
+          <button onClick={confirm} disabled={!agreed || loading} className="btn-primary flex-1 !bg-err hover:!bg-red-800" data-testid="cancel-modal-confirm">{loading ? "Cancelling…" : "Cancel Order"}</button>
+        </div>
       </div>
     </div>
   );
@@ -61,6 +117,7 @@ const STEPS = ["Order Placed", "Confirmed", "Processing", "Packed", "Shipped", "
 function OrderDetail() {
   const { num } = useParams();
   const [o, setO] = useState(null);
+  const [showCancel, setShowCancel] = useState(false);
   const load = () => api.get(`/orders/${num}`).then(({ data }) => setO(data)).catch(() => setO(false));
   useEffect(() => { load(); }, [num]);
   if (!o) return <p className="text-ink-muted">Loading…</p>;
@@ -70,12 +127,6 @@ function OrderDetail() {
   const cancelled = ["Cancelled", "Returned", "Refunded"].includes(o.status);
   const paid = ["paid", "cod_confirmed"].includes(o.payment.status);
   const canCancel = !["Shipped", "Out for Delivery", "Delivered", "Cancelled", "Returned", "Refunded"].includes(o.status);
-
-  const cancel = async () => {
-    if (!window.confirm("Cancel this order?")) return;
-    try { const { data } = await api.post(`/orders/${num}/cancel`, { reason: "Customer request" }); toast.success(data.message); load(); }
-    catch (e) { toast.error(apiError(e)); }
-  };
 
   return (
     <div>
@@ -122,7 +173,8 @@ function OrderDetail() {
         <div className="flex justify-between text-plum font-medium text-lg pt-2 border-t border-line-subtle"><span>Total</span><span>{inr(o.pricing.total)}</span></div>
       </div>
       <div className="mt-6 text-sm text-ink-secondary"><p className="font-medium text-ink mb-1">Delivery Address</p><p>{o.address.name}, {o.address.line1}, {o.address.city}, {o.address.state} — {o.address.pincode}</p></div>
-      {canCancel && <button onClick={cancel} className="btn-outline mt-6 !border-err !text-err hover:!bg-err hover:!text-white" data-testid="cancel-order-btn">Cancel Order</button>}
+      {canCancel && <button onClick={() => setShowCancel(true)} className="btn-outline mt-6 !border-err !text-err hover:!bg-err hover:!text-white" data-testid="cancel-order-btn">Cancel Order</button>}
+      {showCancel && <CancelOrderModal orderNumber={num} onClose={() => setShowCancel(false)} onConfirmed={() => { setShowCancel(false); load(); }} />}
     </div>
   );
 }

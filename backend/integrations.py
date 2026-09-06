@@ -12,6 +12,9 @@ from db import db
 TWILIO_SID = os.environ.get("TWILIO_ACCOUNT_SID") or ""
 TWILIO_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN") or ""
 TWILIO_VERIFY = os.environ.get("TWILIO_VERIFY_SERVICE") or ""
+TWILIO_FROM = os.environ.get("TWILIO_FROM_NUMBER") or ""
+TWILIO_API_KEY_SID = os.environ.get("TWILIO_API_KEY_SID") or ""
+TWILIO_API_KEY_SECRET = os.environ.get("TWILIO_API_KEY_SECRET") or ""
 RZP_KEY = os.environ.get("RAZORPAY_KEY_ID") or ""
 RZP_SECRET = os.environ.get("RAZORPAY_KEY_SECRET") or ""
 EMERGENT_AUTH_BASE = os.environ.get("EMERGENT_AUTH_BASE", "https://demobackend.emergentagent.com/auth/v1/env")
@@ -68,6 +71,32 @@ async def verify_otp(phone: str, code: str):
         return False
     await db.otp_codes.delete_one({"phone": phone})
     return True
+
+
+# ---------------- Transactional SMS ----------------
+def sms_enabled():
+    return bool(TWILIO_SID and TWILIO_TOKEN and TWILIO_FROM)
+
+
+async def send_sms(phone: str, body: str):
+    """Send a transactional SMS. Real via Twilio when configured, else logged (DEV)."""
+    if not phone:
+        return {"sent": False, "dev_mode": True, "message": "No phone on file."}
+    if sms_enabled():
+        try:
+            from twilio.rest import Client
+            if TWILIO_API_KEY_SID and TWILIO_API_KEY_SECRET:
+                client = Client(TWILIO_API_KEY_SID, TWILIO_API_KEY_SECRET, TWILIO_SID)
+            else:
+                client = Client(TWILIO_SID, TWILIO_TOKEN)
+            msg = client.messages.create(to=phone, from_=TWILIO_FROM, body=body)
+            return {"sent": True, "dev_mode": False, "sid": msg.sid}
+        except Exception as e:
+            print(f"[sms] Twilio send failed: {e}")
+            return {"sent": False, "dev_mode": False, "error": str(e)}
+    print(f"[sms][DEV] To {phone}: {body}")
+    return {"sent": True, "dev_mode": True, "message": "SMS not configured — logged only."}
+
 
 
 # ---------------- Razorpay ----------------

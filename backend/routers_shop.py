@@ -111,6 +111,15 @@ async def auth_me(cust: dict = Depends(get_current_customer)):
 @router.put("/customers/me")
 async def update_me(payload: dict, cust: dict = Depends(get_current_customer)):
     upd = {k: payload[k] for k in ("name", "email") if k in payload}
+    if payload.get("phone"):
+        new_phone = norm_phone(payload["phone"])
+        if not PHONE_RE.match(new_phone):
+            raise HTTPException(400, "Please enter a valid mobile number.")
+        if new_phone != cust.get("phone"):
+            clash = await db.customers.find_one({"phone": new_phone, "id": {"$ne": cust["id"]}})
+            if clash:
+                raise HTTPException(409, "This mobile number is already linked to another account.")
+            upd["phone"] = new_phone
     if upd:
         await db.customers.update_one({"id": cust["id"]}, {"$set": upd})
     return customer_public(await db.customers.find_one({"id": cust["id"]}))
@@ -312,6 +321,12 @@ async def _finalize_paid_order(order, payment_id=None, method="razorpay"):
     await db.notifications.insert_one({"id": str(uuid.uuid4()), "type": "new_order",
                                        "title": f"New order {order['order_number']}",
                                        "order_number": order["order_number"], "read": False, "at": now_iso()})
+    cust = await db.customers.find_one({"id": order["customer_id"]}, {"phone": 1, "_id": 0})
+    if cust and cust.get("phone"):
+        total = order["pricing"]["total"]
+        await ig.send_sms(cust["phone"],
+                          f"ARTFUL: Your order {order['order_number']} is confirmed! "
+                          f"Amount Rs.{total}. Track it in your account. Thank you for shopping with us.")
 
 
 @router.post("/checkout/verify-payment")
@@ -441,4 +456,12 @@ async def cancel_order(order_number: str, payload: dict, cust: dict = Depends(ge
         await db.refunds.insert_one({"id": str(uuid.uuid4()), "order_number": o["order_number"],
             "amount": o["pricing"]["total"], "reason": "Order cancelled by customer",
             "status": "Requested", "created_at": now_iso()})
+    await db.notifications.insert_one({"id": str(uuid.uuid4()), "type": "cancel_order",
+        "title": f"Order {o['order_number']} cancelled", "order_number": o["order_number"],
+        "read": False, "at": now_iso()})
+    if cust.get("phone"):
+        refund_note = " A refund has been initiated." if o["payment"]["status"] == "paid" else ""
+        await ig.send_sms(cust["phone"],
+                          f"ARTFUL: Your order {o['order_number']} has been cancelled.{refund_note} "
+                          f"Need help? Reach us on WhatsApp +91 8871288853.")
     return {"ok": True, "message": "Your order has been cancelled." + (" A refund has been initiated." if o["payment"]["status"] == "paid" else "")}

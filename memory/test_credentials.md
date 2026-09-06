@@ -8,8 +8,9 @@
 
 ## Customer (passwordless — OTP)
 - Login via mobile OTP at checkout or `/account`.
-- Twilio is NOT configured yet → **DEV OTP mode**: `POST /api/auth/otp/send` returns `dev_otp` in the response (also shown in the UI). Use that code to verify.
+- Twilio is NOT fully configured yet → **DEV OTP mode**: `POST /api/auth/otp/send` returns `dev_otp` in the response (also shown in the UI). Use that code to verify.
 - Example test phone: `9876543210` (auto-normalised to `+919876543210`).
+- Transactional SMS (order confirmation/cancellation) uses `send_sms()` → **DEV mode logs to backend stdout** until Twilio messaging is configured. To enable real SMS set `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` (or `TWILIO_API_KEY_SID`+`TWILIO_API_KEY_SECRET`), `TWILIO_FROM_NUMBER` (and `TWILIO_VERIFY_SERVICE` for OTP) in `/app/backend/.env`.
 
 ## Payments
 - Razorpay is NOT configured yet → **DEV checkout mode**. Orders use `POST /api/checkout/mock-pay` (clearly marked DEMO, no real charge). COD is also available.

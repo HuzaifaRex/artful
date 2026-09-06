@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { MapPin, Phone, Mail, Clock, MessageCircle, Instagram, Facebook, Twitter } from "lucide-react";
 import { useStore } from "../context/StoreContext";
+import { api, apiError } from "../lib/api";
 import { toast } from "sonner";
 
 const OFFICE_IMG = "https://images.unsplash.com/photo-1715593947958-ee0ca51de552?crop=entropy&cs=srgb&fm=jpg&q=85&w=1200";
@@ -9,10 +10,21 @@ export default function ContactPage() {
   const { settings } = useStore();
   const s = settings || {};
   const social = s.social || {};
-  const [form, setForm] = useState({ name: "", email: "", message: "" });
+  const [form, setForm] = useState({ name: "", email: "", phone: "", message: "" });
+  const [sending, setSending] = useState(false);
   const wa = (s.whatsapp_number || "").replace(/\D/g, "");
 
-  const submit = (e) => { e.preventDefault(); if (!form.name || !form.message) return toast.error("Please add your name and message"); toast.success("Thank you! We'll respond within 1–2 business days."); setForm({ name: "", email: "", message: "" }); };
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!form.name || !form.message) return toast.error("Please add your name and message");
+    setSending(true);
+    try {
+      const { data } = await api.post("/contact/submit", form);
+      toast.success(data.message);
+      setForm({ name: "", email: "", phone: "", message: "" });
+    } catch (err) { toast.error(apiError(err)); }
+    setSending(false);
+  };
 
   const rows = [
     [MapPin, "Visit us", s.office_address],
@@ -54,8 +66,9 @@ export default function ContactPage() {
             <form onSubmit={submit} className="space-y-4" data-testid="contact-form">
               <div><label className="label-caption block mb-1.5">Name</label><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="input-field" data-testid="contact-name" /></div>
               <div><label className="label-caption block mb-1.5">Email</label><input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="input-field" data-testid="contact-email" /></div>
+              <div><label className="label-caption block mb-1.5">Phone</label><input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className="input-field" data-testid="contact-phone-input" /></div>
               <div><label className="label-caption block mb-1.5">Message</label><textarea rows={5} value={form.message} onChange={(e) => setForm({ ...form, message: e.target.value })} className="input-field" data-testid="contact-message" /></div>
-              <button className="btn-primary w-full" data-testid="contact-submit">Send Message</button>
+              <button disabled={sending} className="btn-primary w-full" data-testid="contact-submit">{sending ? "Sending…" : "Send Message"}</button>
             </form>
           </div>
         </div>

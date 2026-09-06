@@ -1,5 +1,6 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
+  darkMode: "class",
   content: ["./src/**/*.{js,jsx}", "./public/index.html"],
   theme: {
     extend: {
@@ -17,16 +18,16 @@ module.exports = {
           soft: "#E9D8A6",
         },
         accent: "#B56576",
-        cream: "#FAF7F2",
-        surface: "#F5EFF0",
+        cream: "rgb(var(--c-cream) / <alpha-value>)",
+        surface: "rgb(var(--c-surface) / <alpha-value>)",
         ink: {
-          DEFAULT: "#211B1E",
-          secondary: "#594E53",
-          muted: "#8C7E85",
+          DEFAULT: "rgb(var(--c-ink) / <alpha-value>)",
+          secondary: "rgb(var(--c-ink-secondary) / <alpha-value>)",
+          muted: "rgb(var(--c-ink-muted) / <alpha-value>)",
         },
         line: {
-          DEFAULT: "#E6DDD9",
-          subtle: "#F0E8E4",
+          DEFAULT: "rgb(var(--c-line) / <alpha-value>)",
+          subtle: "rgb(var(--c-line-subtle) / <alpha-value>)",
         },
         ok: "#2D6A4F",
         warn: "#E07A5F",

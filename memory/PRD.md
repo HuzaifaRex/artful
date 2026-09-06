@@ -33,3 +33,32 @@ Build ARTFUL, a premium artistic lifestyle & thoughtful-gifting D2C platform: po
 
 ## Credentials
 See /app/memory/test_credentials.md
+
+---
+
+## Phase 1 — Storefront Overhaul (Completed 2026-06-06)
+Env fix on load-in: recreated missing `backend/.env` & `frontend/.env`, pinned `pydantic-core==2.27.2` (was 2.46.5, incompatible with pydantic 2.10.4).
+
+Implemented & tested (backend 16/16, frontend flows 100%):
+- Brand logos (plum/cream) in header & footer; favicon; page `<title>`/meta.
+- Light/Dark theme (CSS-variable driven) with header toggle, persisted in localStorage.
+- Global scrollbar hidden (width 0) across site & admin.
+- Branded page loader (centered logo + % counter, CSS auto-hide + interaction/timer dismissal). `?noloader=1` disables it for inspection/screenshot tooling.
+- India-focused cookie consent (Accept All / Reject Optional / Cookie Settings), DPDP note, consent-gated analytics/marketing, reopen from footer.
+- Header nav "About" -> /about (was /our-story).
+- Admin-controllable hero CAROUSEL (embla) with per-slide TRUST BADGES (7-Day Returns, Best Quality, Best Price, etc.) — data in `homepage_sections.hero.slides`.
+- Clickable CATEGORY MARQUEE right after hero (icons per category).
+- Redesigned "Why ARTFUL" values section; old newsletter section replaced by meaningful "ARTFUL Promise" band.
+- Confetti on order-success; newsletter thank-you popup with confetti.
+- Newsletter subscribe + contact form now persist to DB (feed admin in Phase 2) via /api/newsletter/subscribe & /api/contact/submit (+ notifications).
+- Contact page details -> Indore address, +91 8871288853 (call/whatsapp), support@artful.com (from settings).
+- Checkout: qty +/- and remove controls in order summary (totals recompute).
+- Profile: edit name, phone (with uniqueness/validation) and email.
+- Cancel-order modal with required T&C + Refund Policy checkbox (links to /terms & /returns), reason select.
+- Twilio SMS wired for order confirmation & cancellation via `integrations.send_sms()` — **DEV MODE (MOCKED): logs to backend stdout** until real Twilio messaging creds provided. OTP still DEV mode.
+
+## Phase 2 — Admin (Backlog, not started)
+Dashboard KPIs + notifications (new/cancel orders), data tables w/ filters everywhere, fix Customers data + detail view + KPIs, Visitors page (login identity capture), Newsletter subscribers page, Support/contact messages page, recent-order click-through to detail w/ customer, remove Banner page, CKEditor for policy/About/Our Story/Contact CMS, Payments & Transactions list+detail, product section assignment (new arrival/best seller), admin design polish. Also: admin UI for editing hero carousel slides & trust badges (data model already supports `slides`).
+
+## Pending inputs
+- Full Twilio creds to switch SMS/OTP from DEV to live: TWILIO_ACCOUNT_SID (AC…), TWILIO_AUTH_TOKEN (or API key SID+secret), TWILIO_FROM_NUMBER, TWILIO_VERIFY_SERVICE.

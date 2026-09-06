@@ -301,3 +301,37 @@ async def corporate_inquiry(payload: dict):
            "message": payload.get("message"), "status": "New", "created_at": now_iso()}
     await db.corporate_inquiries.insert_one(doc)
     return {"ok": True, "message": "Thank you. Our team will be in touch shortly."}
+
+
+
+@router.post("/newsletter/subscribe")
+async def newsletter_subscribe(payload: dict):
+    import uuid
+    email = (payload.get("email") or "").strip().lower()
+    if not email or "@" not in email:
+        raise HTTPException(400, "Please enter a valid email address.")
+    existing = await db.newsletter_subscribers.find_one({"email": email})
+    if existing:
+        return {"ok": True, "already": True, "message": "You're already on the list."}
+    await db.newsletter_subscribers.insert_one({
+        "id": str(uuid.uuid4()), "email": email, "source": payload.get("source", "footer"),
+        "status": "Subscribed", "created_at": now_iso()})
+    await db.notifications.insert_one({"id": str(uuid.uuid4()), "type": "newsletter",
+        "title": f"New newsletter signup: {email}", "read": False, "at": now_iso()})
+    return {"ok": True, "already": False, "message": "You're on the list — welcome to ARTFUL."}
+
+
+@router.post("/contact/submit")
+async def contact_submit(payload: dict):
+    import uuid
+    name = (payload.get("name") or "").strip()
+    message = (payload.get("message") or "").strip()
+    if not name or not message:
+        raise HTTPException(400, "Please add your name and message.")
+    doc = {"id": str(uuid.uuid4()), "name": name, "email": (payload.get("email") or "").strip(),
+           "phone": (payload.get("phone") or "").strip(), "subject": payload.get("subject", ""),
+           "message": message, "status": "Open", "created_at": now_iso()}
+    await db.support_messages.insert_one(doc)
+    await db.notifications.insert_one({"id": str(uuid.uuid4()), "type": "support",
+        "title": f"New contact message from {name}", "read": False, "at": now_iso()})
+    return {"ok": True, "message": "Thank you! We'll respond within 1–2 business days."}

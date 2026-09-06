@@ -268,3 +268,87 @@ async def seed():
     if await db.search_corrections.count_documents({}) == 0:
         for c in CORRECTIONS:
             await db.search_corrections.insert_one({"id": str(uuid.uuid4()), **c})
+
+    # ---------------- Phase-1 migrations (idempotent) ----------------
+    # 1) Force ARTFUL India contact details
+    await db.settings.update_one({"id": "store"}, {"$set": {
+        "office_address": "168, Netaji Subhash Marg, Martand Chowk, Ram Bagh, Indore, Madhya Pradesh 452007",
+        "contact_phone": "+91 8871288853",
+        "whatsapp_number": "+91 8871288853",
+        "contact_email": "support@artful.com",
+    }})
+
+    # 2) Hero → admin-controlled carousel slides with per-slide trust badges
+    hero = await db.homepage_sections.find_one({"key": "hero"})
+    if hero and not hero.get("slides"):
+        slides = [
+            {"id": str(uuid.uuid4()),
+             "heading": "Thoughtfully made. Beautifully given.",
+             "subheading": "Handcrafted lifestyle objects and bespoke gift boxes, created to elevate life's gentle celebrations.",
+             "image": HERO, "eyebrow": "Artisanal · Handcrafted · Gifting",
+             "cta_text": "Shop Gifts", "cta_link": "/collections/bestsellers",
+             "cta_secondary_text": "Explore Collections", "cta_secondary_link": "/collections",
+             "badges": [
+                 {"icon": "RefreshCw", "label": "7-Day Easy Returns"},
+                 {"icon": "Award", "label": "Best Quality"},
+                 {"icon": "BadgeIndianRupee", "label": "Best Price"},
+             ]},
+            {"id": str(uuid.uuid4()),
+             "heading": "Make it unmistakably theirs.",
+             "subheading": "Add a name, initials or a handwritten note. Personalisation that turns a gift into a keepsake.",
+             "image": DECOR[2], "eyebrow": "Personalised · Made to Order",
+             "cta_text": "Shop Personalised", "cta_link": "/collections/personalized-gifts-collection",
+             "cta_secondary_text": "How It Works", "cta_secondary_link": "/our-story",
+             "badges": [
+                 {"icon": "PenTool", "label": "Custom Engraving"},
+                 {"icon": "Gift", "label": "Gift-Ready Packaging"},
+                 {"icon": "Truck", "label": "Fast Dispatch"},
+             ]},
+            {"id": str(uuid.uuid4()),
+             "heading": "Gifting for every occasion.",
+             "subheading": "From birthdays to corporate hampers — curated edits that make choosing effortless.",
+             "image": GIFTBOX[1], "eyebrow": "Curated Edits",
+             "cta_text": "Explore Occasions", "cta_link": "/collections/festive-gifts",
+             "cta_secondary_text": "Corporate Gifting", "cta_secondary_link": "/corporate-gifting",
+             "badges": [
+                 {"icon": "ShieldCheck", "label": "100% Trusted"},
+                 {"icon": "Star", "label": "Loved by 1000+"},
+                 {"icon": "HeartHandshake", "label": "Handpicked"},
+             ]},
+        ]
+        await db.homepage_sections.update_one({"key": "hero"}, {"$set": {"slides": slides}})
+
+    # 3) Richer "Why ARTFUL" values with icons
+    await db.homepage_sections.update_one({"key": "why_artful"}, {"$set": {
+        "heading": "Why ARTFUL",
+        "subheading": "Small-batch craft, thoughtful details, and a promise on every order.",
+        "items": [
+            {"title": "Handcrafted", "desc": "Made in small batches by independent Indian artisans.", "icon": "Hand"},
+            {"title": "Thoughtful Packaging", "desc": "Every order arrives gift-ready, beautifully wrapped.", "icon": "Gift"},
+            {"title": "Made Personal", "desc": "Add names, initials and handwritten notes.", "icon": "PenTool"},
+            {"title": "Made to Last", "desc": "Considered materials chosen to be treasured.", "icon": "ShieldCheck"},
+        ],
+    }})
+
+    # 4) Replace the generic newsletter section with a meaningful "promise" band
+    await db.homepage_sections.update_one({"key": "newsletter"}, {"$set": {
+        "type": "promise", "enabled": True,
+        "heading": "The ARTFUL Promise",
+        "subheading": "Every piece is backed by craft, care and a commitment to make gifting effortless.",
+        "items": [
+            {"title": "7-Day Easy Returns", "desc": "Changed your mind? Return within 7 days.", "icon": "RefreshCw"},
+            {"title": "Secure Payments", "desc": "UPI, cards & net banking — safely processed.", "icon": "Lock"},
+            {"title": "Pan-India Delivery", "desc": "Carefully packed and shipped across India.", "icon": "Truck"},
+            {"title": "Real Human Support", "desc": "Talk to us on WhatsApp for gifting help.", "icon": "HeartHandshake"},
+        ],
+    }})
+
+    # 5) Give categories clickable icons for the marquee
+    CAT_ICONS = {
+        "artistic-gifts": "Sparkles", "personalized-gifts": "PenTool", "home-decor": "Home",
+        "stationery": "NotebookPen", "jewellery": "Gem", "candles": "Flame",
+        "desk-accessories": "Briefcase", "wall-art": "Frame",
+    }
+    for slug, icon in CAT_ICONS.items():
+        await db.categories.update_one({"slug": slug, "icon": {"$exists": False}}, {"$set": {"icon": icon}})
+

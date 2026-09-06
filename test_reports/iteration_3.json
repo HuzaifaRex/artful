@@ -1,0 +1,58 @@
+{
+  "summary": "ARTFUL Phase-1 storefront verification: newsletter/contact/settings/CMS/categories/customer profile/order flow (DEV OTP + mock-pay + SMS DEV log) + cancel-order (with SMS DEV log). 16/16 backend pytest cases pass. Frontend flows verified end-to-end: header logo + theme toggle (persists across reload) + nav-about → /about, cookie consent (accept/settings/save + footer reopen), hero carousel with next/prev/dots + trust badges (7-Day Easy Returns / Best Quality / Best Price), category marquee (16 chips, click navigates to /categories/<slug>), Why ARTFUL 4 value cards, ARTFUL Promise section, newsletter footer form → thank-you popup with Continue button, contact page shows Indore address + phone + support email + form submits with success toast, checkout qty +/- controls update total (₹1,399 → ₹2,798), profile edit (name/phone/email) saves, cancel-order modal on /account/orders/:num shows Terms (/terms) + Refund (/returns) links, checkbox gates confirm button (disabled → enabled), order transitions to Cancelled, /order-success/:num shows confetti canvas + order number. Scrollbar width = 0 as required.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "ContactPage", "issues": ["data-testid='contact-email' is applied to a wrapper <div> rather than the actual <input> — Playwright fill() fails on that testid. Consider moving the testid onto the <input> for reliable automation. Not user-facing; contact form still submits via other selectors."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase1_storefront.py",
+    "/app/test_reports/pytest/phase1.xml"
+  ],
+  "test_coverage": {
+    "backend_endpoints_tested": [
+      "POST /api/newsletter/subscribe (new/duplicate/invalid)",
+      "POST /api/contact/submit (ok / missing name / missing message)",
+      "GET /api/settings (office_address, contact_phone, whatsapp_number, contact_email)",
+      "GET /api/cms/homepage (hero.slides >=3 w/ badges, promise section, why_artful/values items with icons)",
+      "GET /api/categories (icon field present)",
+      "POST /api/auth/otp/send + verify (dev_mode dev_otp)",
+      "POST /api/checkout/create-order (razorpay/dev) + /api/checkout/mock-pay ({order_id})",
+      "POST /api/orders/{order_number}/cancel + backend log verification of [sms][DEV] confirmed & cancelled lines for +919876543210",
+      "PUT /api/customers/me (name/email/phone update; invalid phone 400; conflict 409)"
+    ],
+    "frontend_flows_verified": [
+      "Home: logo, footer-logo, theme-toggle (light→dark persists reload), nav-about → /about",
+      "Cookie: banner shows on fresh visit, Settings → Save hides it, persists reload, footer-cookie-settings reopens",
+      "Hero: hero-section, hero-next/prev, hero-dots(3), hero-trust-badges: '7-Day Easy Returns / Best Quality / Best Price'",
+      "Category marquee: 16 chips, marquee-cat-artistic-gifts navigates to /categories/artistic-gifts",
+      "Why ARTFUL: value-card-0..3 present; artful-promise-section present",
+      "Newsletter footer: submit → newsletter-thankyou popup + Continue button",
+      "Contact page: Indore address + +91 8871288853 + support@artful.com visible, form submits with thank-you text",
+      "Checkout /checkout: checkout-qty-inc/dec/remove present, incrementing qty updates total (₹1,399 → ₹2,798)",
+      "Profile /account: profile-name/phone/email/save present + save shows success",
+      "Cancel modal /account/orders/:num: cancel-order-btn → cancel-order-modal, checkbox required (confirm disabled true→false), terms href=/terms, refund href=/returns, confirm cancels order (status=Cancelled)",
+      "Order success /order-success/:num: renders order number, confetti canvas present",
+      "Scrollbar width = 0"
+    ]
+  },
+  "action_items": [
+    "(Nice-to-have) Move data-testid='contact-email' from wrapper div onto the underlying <input> for stable automation."
+  ],
+  "critical_code_review_comments": [
+    "mock-pay endpoint accepts {order_id} (uuid) not {order_number}; if Razorpay is enabled, mock-pay returns 400 — spec text mentions 'create-order then mock-pay' but current DEV order flow with COD is what most tests exercise. Consider normalising mock-pay to accept order_number too, since the frontend and admin operate on order_number everywhere else.",
+    "In routers_shop.update_me: PHONE_RE only validates when payload.phone is truthy; setting phone to empty string via {phone:''} is silently ignored (no clear/unlink). Fine if intentional.",
+    "CategoryMarquee has 16 chips — several duplicates (Artistic Gifts appears twice due to marquee looping) is expected for continuous scroll effect; not a bug."
+  ],
+  "updated_files": ["/app/backend/tests/test_phase1_storefront.py"],
+  "success_rate": {"backend": "100% (16/16)", "frontend": "100% of specified flows"},
+  "test_credentials": "Customer via DEV OTP; POST /api/auth/otp/send {phone:'9876543210'} → dev_otp field in response.",
+  "seed_data_creation": "Created ~5 test COD orders (ART-2026-00003..5+) and several TEST_ newsletter/contact rows during testing.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Order detail path is /account/orders/:num (NOT /orders/:num). mock-pay payload key is 'order_id' (UUID from GET /api/orders/{num}.id), not 'order_number'. Auth token key in localStorage is 'artful_token'. Cookie banner appears on every fresh browser (no consent stored) — use ?noloader=1 to bypass the BrandLoader.",
+  "rca of the issue": "N/A — no bugs. One minor testability nit only (contact-email testid on wrapper div)."
+}

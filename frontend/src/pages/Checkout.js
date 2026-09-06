@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { Check, Lock, ShieldCheck } from "lucide-react";
+import { Check, Lock, ShieldCheck, Minus, Plus, Trash2 } from "lucide-react";
 import { api, apiError } from "../lib/api";
 import { useStore } from "../context/StoreContext";
 import { inr } from "../lib/utils";
@@ -18,7 +18,7 @@ function loadScript(src) {
 const EMPTY_ADDR = { name: "", phone: "", line1: "", line2: "", area: "", city: "", state: "", pincode: "", instructions: "" };
 
 export default function Checkout() {
-  const { cart, cartPayload, customer, loginSuccess, clearCart } = useStore();
+  const { cart, cartPayload, customer, loginSuccess, clearCart, updateQty, removeItem } = useStore();
   const navigate = useNavigate();
   const [totals, setTotals] = useState(null);
   const [coupon, setCoupon] = useState("");
@@ -209,12 +209,24 @@ export default function Checkout() {
         <div className="lg:col-span-1">
           <div className="bg-surface p-6 sticky top-28">
             <h3 className="font-serif text-2xl text-plum mb-5">Your Order</h3>
-            <div className="space-y-3 max-h-56 overflow-y-auto mb-5">
+            <div className="space-y-4 max-h-72 overflow-y-auto mb-5 pr-1">
               {cart.map((i) => (
-                <div key={i.key} className="flex gap-3 text-sm">
-                  <img src={i.image} alt="" className="w-12 h-14 object-cover bg-white" />
-                  <div className="flex-1"><p className="text-ink leading-tight">{i.name}</p><p className="text-ink-muted text-xs">Qty {i.qty}</p></div>
-                  <span className="text-plum">{inr(i.price * i.qty)}</span>
+                <div key={i.key} className="flex gap-3 text-sm" data-testid={`checkout-item-${i.key}`}>
+                  <img src={i.image} alt="" className="w-14 h-16 object-cover bg-cream shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-ink leading-tight line-clamp-2">{i.name}</p>
+                    <div className="flex items-center justify-between mt-2">
+                      <div className="inline-flex items-center border border-line rounded-full">
+                        <button onClick={() => i.qty > 1 ? updateQty(i.key, i.qty - 1) : removeItem(i.key)} className="w-7 h-7 flex items-center justify-center text-plum hover:bg-surface rounded-l-full" data-testid={`checkout-qty-dec-${i.key}`} aria-label="Decrease">
+                          {i.qty > 1 ? <Minus size={13} /> : <Trash2 size={13} />}
+                        </button>
+                        <span className="w-8 text-center text-plum font-medium" data-testid={`checkout-qty-${i.key}`}>{i.qty}</span>
+                        <button onClick={() => updateQty(i.key, i.qty + 1)} className="w-7 h-7 flex items-center justify-center text-plum hover:bg-surface rounded-r-full" data-testid={`checkout-qty-inc-${i.key}`} aria-label="Increase"><Plus size={13} /></button>
+                      </div>
+                      <span className="text-plum font-medium">{inr(i.price * i.qty)}</span>
+                    </div>
+                  </div>
+                  <button onClick={() => removeItem(i.key)} className="text-ink-muted hover:text-err self-start" data-testid={`checkout-remove-${i.key}`} aria-label="Remove"><Trash2 size={15} /></button>
                 </div>
               ))}
             </div>

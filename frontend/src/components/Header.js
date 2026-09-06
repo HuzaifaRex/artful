@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Search, User, Heart, ShoppingBag, Menu, X } from "lucide-react";
+import { Search, User, Heart, ShoppingBag, Menu, X, Sun, Moon } from "lucide-react";
 import { useStore } from "../context/StoreContext";
+import { useTheme } from "../context/ThemeContext";
 
 const NAV = [
   { label: "Shop", to: "/shop" },
@@ -10,8 +11,26 @@ const NAV = [
   { label: "New Arrivals", to: "/collections/new-arrivals" },
   { label: "Bestsellers", to: "/collections/bestsellers" },
   { label: "Corporate Gifting", to: "/corporate-gifting" },
-  { label: "About", to: "/our-story" },
+  { label: "About", to: "/about" },
 ];
+
+function Logo({ className = "" }) {
+  return (
+    <>
+      <img src="/logo-plum.webp" alt="ARTFUL" className={`dark:hidden ${className}`} />
+      <img src="/logo-cream.webp" alt="ARTFUL" className={`hidden dark:block ${className}`} />
+    </>
+  );
+}
+
+function ThemeToggle() {
+  const { isDark, toggle } = useTheme();
+  return (
+    <button onClick={toggle} className="p-2 text-plum hover:text-accent transition-colors" data-testid="theme-toggle" aria-label="Toggle theme" title={isDark ? "Switch to light" : "Switch to dark"}>
+      {isDark ? <Sun size={19} /> : <Moon size={19} />}
+    </button>
+  );
+}
 
 export default function Header() {
   const { cartCount, wishlist, setSearchOpen, setCartOpen, setAuthOpen, customer, settings } = useStore();
@@ -44,8 +63,8 @@ export default function Header() {
               <Menu size={22} />
             </button>
 
-            <Link to="/" className="font-serif text-3xl lg:text-4xl font-medium text-plum tracking-tight lg:flex-none absolute left-1/2 -translate-x-1/2 lg:static lg:translate-x-0" data-testid="logo">
-              Artful
+            <Link to="/" className="lg:flex-none absolute left-1/2 -translate-x-1/2 lg:static lg:translate-x-0" data-testid="logo">
+              <Logo className="h-6 lg:h-7 w-auto" />
             </Link>
 
             <nav className="hidden lg:flex items-center gap-7 xl:gap-9">
@@ -56,7 +75,8 @@ export default function Header() {
               ))}
             </nav>
 
-            <div className="flex items-center gap-1 sm:gap-3">
+            <div className="flex items-center gap-1 sm:gap-2">
+              <ThemeToggle />
               <button className="p-2 text-plum hover:text-accent transition-colors" onClick={() => setSearchOpen(true)} data-testid="search-trigger" aria-label="Search">
                 <Search size={20} />
               </button>
@@ -82,7 +102,7 @@ export default function Header() {
           <div className="absolute inset-0 bg-black/40" onClick={() => setMenuOpen(false)} />
           <div className="absolute left-0 top-0 bottom-0 w-[82%] max-w-sm bg-cream animate-slideIn p-6 overflow-y-auto">
             <div className="flex items-center justify-between mb-8">
-              <span className="font-serif text-3xl text-plum">Artful</span>
+              <Logo className="h-6 w-auto" />
               <button onClick={() => setMenuOpen(false)} className="p-2 text-plum" data-testid="mobile-menu-close"><X size={22} /></button>
             </div>
             <nav className="flex flex-col gap-1">
