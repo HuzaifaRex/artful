@@ -8,6 +8,12 @@ import { ImageUpload, MultiImageUpload } from "./ImageUpload";
 
 const BADGES = ["New", "Bestseller", "Limited", "Sale", "Featured"];
 const STATUSES = ["Draft", "Active", "Out of Stock", "Archived"];
+const SECTIONS = [
+  { key: "new-arrivals", label: "New Arrivals" },
+  { key: "bestsellers", label: "Best Sellers" },
+  { key: "featured", label: "Featured" },
+  { key: "trending", label: "Trending" },
+];
 
 /* ---------------- PRODUCTS ---------------- */
 export function Products() {

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import Response
 from typing import Optional
 from db import db, clean
@@ -59,6 +59,7 @@ async def list_products(
     category: Optional[str] = None, collection: Optional[str] = None,
     q: Optional[str] = None, occasion: Optional[str] = None, recipient: Optional[str] = None,
     material: Optional[str] = None, color: Optional[str] = None, badge: Optional[str] = None,
+    section: Optional[str] = None,
     min_price: Optional[int] = None, max_price: Optional[int] = None,
     in_stock: Optional[bool] = None, on_sale: Optional[bool] = None,
     sort: str = "featured", page: int = 1, page_size: int = 12,
@@ -66,6 +67,8 @@ async def list_products(
     query = {"status": {"$in": ["Active", "Out of Stock"]}}
     if category:
         query["category_slug"] = category
+    if section:
+        query["sections"] = section
     if occasion:
         query["occasion"] = occasion
     if recipient:
@@ -273,6 +276,14 @@ async def page(slug: str):
     return p
 
 
+@router.get("/cms/page/{slug}")
+async def cms_page(slug: str):
+    p = await db.cms_pages.find_one({"slug": slug}, {"_id": 0})
+    if not p:
+        raise HTTPException(404, "Page not found.")
+    return p
+
+
 @router.get("/faqs")
 async def faqs():
     cur = db.faqs.find({"status": "Active"}, {"_id": 0}).sort("order", 1)
@@ -304,7 +315,29 @@ async def corporate_inquiry(payload: dict):
 
 
 
-@router.post("/newsletter/subscribe")
+@router.post("/track/visit")
+async def track_visit(payload: dict, request: Request):
+    import uuid
+    vid = (payload.get("visitor_id") or "").strip()
+    if not vid:
+        return {"ok": False}
+    ua = request.headers.get("user-agent", "")[:300]
+    ident = payload.get("identity") or {}
+    ident = {k: ident.get(k) for k in ("phone", "email", "name") if ident.get(k)}
+    existing = await db.visitors.find_one({"visitor_id": vid})
+    set_fields = {"last_seen": now_iso(), "last_path": payload.get("path", "/"),
+                  "referrer": payload.get("referrer") or (existing or {}).get("referrer"), "ua": ua}
+    if ident:
+        set_fields["identity"] = {**((existing or {}).get("identity") or {}), **ident}
+    if existing:
+        await db.visitors.update_one({"visitor_id": vid},
+            {"$set": set_fields, "$inc": {"visit_count": 1}})
+    else:
+        await db.visitors.insert_one({"id": str(uuid.uuid4()), "visitor_id": vid,
+            "first_seen": now_iso(), "visit_count": 1, **set_fields,
+            "identity": set_fields.get("identity", {})})
+    return {"ok": True}
+
 async def newsletter_subscribe(payload: dict):
     import uuid
     email = (payload.get("email") or "").strip().lower()

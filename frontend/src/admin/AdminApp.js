@@ -3,7 +3,7 @@ import { Routes, Route, NavLink, useNavigate, Navigate } from "react-router-dom"
 import {
   LayoutDashboard, Package, FolderTree, Layers, Boxes, Star, ShoppingCart, Users,
   Ticket, Search as SearchIcon, FileText, Image, Briefcase, Settings as SettingsIcon,
-  ScrollText, LogOut, Menu, X, ShieldCheck,
+  ScrollText, LogOut, Menu, X, ShieldCheck, CreditCard, Mail, MessageSquare, Eye, Globe, Bell,
 } from "lucide-react";
 import { adminApi } from "../lib/api";
 import Dashboard from "./Dashboard";
@@ -14,27 +14,40 @@ import { Coupons } from "./Marketing";
 import Campaigns from "./Campaigns";
 import Refunds from "./Refunds";
 import SearchAdmin from "./SearchAdmin";
-import { HomepageCMS, Banners, Pages, FAQs } from "./Content";
+import { HomepageCMS, Pages, FAQs } from "./Content";
 import { Settings, AdminUsers, AuditLogs, Corporate } from "./Settings";
+import Transactions from "./Transactions";
+import SitePages from "./SitePages";
+import { Newsletter, Support, Visitors } from "./Leads";
 
 const NAV = [
   { section: null, items: [["", "Dashboard", LayoutDashboard]] },
   { section: "Catalog", items: [["products", "Products", Package], ["categories", "Categories", FolderTree], ["collections", "Collections", Layers], ["inventory", "Inventory", Boxes], ["reviews", "Reviews", Star]] },
-  { section: "Sales", items: [["orders", "Orders", ShoppingCart], ["refunds", "Refunds", Ticket], ["customers", "Customers", Users]] },
+  { section: "Sales", items: [["orders", "Orders", ShoppingCart], ["transactions", "Payments", CreditCard], ["refunds", "Refunds", Ticket], ["customers", "Customers", Users]] },
+  { section: "Leads", items: [["visitors", "Visitors", Eye], ["newsletter", "Newsletter", Mail], ["support", "Support Inbox", MessageSquare]] },
   { section: "Marketing", items: [["coupons", "Coupons & Discounts", Ticket], ["campaigns", "Campaigns", Image], ["search", "Search Rules", SearchIcon]] },
-  { section: "Content", items: [["homepage", "Homepage CMS", LayoutDashboard], ["banners", "Banners", Image], ["pages", "Pages", FileText], ["faqs", "FAQs", FileText]] },
+  { section: "Content", items: [["homepage", "Homepage CMS", LayoutDashboard], ["site-pages", "Site Pages", Globe], ["pages", "Legal Pages", FileText], ["faqs", "FAQs", FileText]] },
   { section: "Business", items: [["corporate", "Corporate", Briefcase], ["settings", "Settings", SettingsIcon], ["admin-users", "Admin Users", ShieldCheck], ["audit", "Audit Logs", ScrollText]] },
 ];
 
 export default function AdminApp() {
   const [admin, setAdmin] = useState(undefined);
   const [open, setOpen] = useState(false);
+  const [unread, setUnread] = useState(0);
   const navigate = useNavigate();
 
   useEffect(() => {
     if (!localStorage.getItem("artful_admin_token")) { setAdmin(null); return; }
     adminApi.get("/auth/me").then(({ data }) => setAdmin(data)).catch(() => setAdmin(null));
   }, []);
+
+  useEffect(() => {
+    if (!admin) return;
+    const poll = () => adminApi.get("/notifications").then(({ data }) => setUnread(data.unread)).catch(() => {});
+    poll();
+    const t = setInterval(poll, 20000);
+    return () => clearInterval(t);
+  }, [admin]);
 
   if (admin === undefined) return <div className="min-h-screen bg-admin-bg flex items-center justify-center text-plum">Loading…</div>;
   if (admin === null) return <Navigate to="/admin/login" replace />;
@@ -83,6 +96,13 @@ export default function AdminApp() {
           <span className="font-serif text-2xl">Artful</span>
           <button onClick={logout}><LogOut size={18} /></button>
         </header>
+        <div className="hidden lg:flex items-center justify-end gap-4 px-8 py-3 bg-white border-b border-gray-200 sticky top-0 z-20">
+          <NavLink to="/admin" className="relative text-gray-500 hover:text-plum" data-testid="admin-notification-bell" title="Notifications">
+            <Bell size={19} />
+            {unread > 0 && <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[10px] min-w-[16px] h-4 px-1 rounded-full flex items-center justify-center">{unread}</span>}
+          </NavLink>
+          <span className="text-sm text-gray-600">{admin.admin?.email}</span>
+        </div>
         <main className="p-5 sm:p-8 max-w-7xl">
           <Routes>
             <Route index element={<Dashboard />} />
@@ -92,13 +112,17 @@ export default function AdminApp() {
             <Route path="inventory" element={<Inventory />} />
             <Route path="reviews" element={<Reviews />} />
             <Route path="orders" element={<Orders />} />
+            <Route path="transactions" element={<Transactions />} />
             <Route path="refunds" element={<Refunds />} />
             <Route path="customers" element={<Customers />} />
+            <Route path="visitors" element={<Visitors />} />
+            <Route path="newsletter" element={<Newsletter />} />
+            <Route path="support" element={<Support />} />
             <Route path="coupons" element={<Coupons />} />
             <Route path="campaigns" element={<Campaigns />} />
             <Route path="search" element={<SearchAdmin />} />
             <Route path="homepage" element={<HomepageCMS />} />
-            <Route path="banners" element={<Banners />} />
+            <Route path="site-pages" element={<SitePages />} />
             <Route path="pages" element={<Pages />} />
             <Route path="faqs" element={<FAQs />} />
             <Route path="corporate" element={<Corporate />} />

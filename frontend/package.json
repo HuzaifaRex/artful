@@ -3,6 +3,8 @@
   "version": "1.0.0",
   "private": true,
   "dependencies": {
+    "@ckeditor/ckeditor5-build-classic": "^44.3.0",
+    "@ckeditor/ckeditor5-react": "^11.2.0",
     "axios": "^1.7.9",
     "canvas-confetti": "^1.9.4",
     "clsx": "^2.1.1",

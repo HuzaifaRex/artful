@@ -1,24 +1,38 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { Search, Download } from "lucide-react";
+import { Search, Download, Users, UserPlus, Crown, IndianRupee } from "lucide-react";
 import { adminApi, apiError, API } from "../lib/api";
 import { toast } from "sonner";
 import { inr, formatDate } from "../lib/utils";
 import { StatusChip, Modal, inputCls, PageHead, Empty } from "./ui";
+import { KpiCards } from "./DataTable";
 
 export default function Customers() {
   const [items, setItems] = useState([]);
+  const [stats, setStats] = useState({});
   const [q, setQ] = useState("");
+  const [status, setStatusFilter] = useState("");
   const [open, setOpen] = useState(null);
-  const load = useCallback(() => adminApi.get(`/customers?q=${encodeURIComponent(q)}&page_size=100`).then(({ data }) => setItems(data.items)).catch(() => {}), [q]);
+  const load = useCallback(() => adminApi.get(`/customers?q=${encodeURIComponent(q)}&status=${status}&page_size=100`).then(({ data }) => { setItems(data.items); setStats(data.stats || {}); }).catch(() => {}), [q, status]);
   useEffect(() => { const t = setTimeout(load, 250); return () => clearTimeout(t); }, [load]);
 
   const openDetail = async (c) => { const { data } = await adminApi.get(`/customers/${c.id}`); setOpen(data); };
-  const setStatus = async (id, status) => { await adminApi.put(`/customers/${id}/status`, { status }); toast.success("Updated"); load(); setOpen(null); };
+  const setStatus = async (id, st) => { await adminApi.put(`/customers/${id}/status`, { status: st }); toast.success("Updated"); load(); setOpen(null); };
 
   return (
     <div>
-      <PageHead title="Customers" subtitle={`${items.length} customers`} action={<button onClick={() => window.open(`${API}/admin/export/customers`, "_blank")} className="border border-gray-300 rounded-md px-4 py-2 text-sm flex items-center gap-2 text-gray-700"><Download size={15} /> Export</button>} />
-      <div className="relative mb-4 max-w-sm"><Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search customers…" className={inputCls + " pl-9"} data-testid="customer-search" /></div>
+      <PageHead title="Customers" subtitle={`${stats.total || 0} customers`} action={<button onClick={() => window.open(`${API}/admin/export/customers`, "_blank")} className="border border-gray-300 rounded-md px-4 py-2 text-sm flex items-center gap-2 text-gray-700"><Download size={15} /> Export</button>} />
+      <KpiCards cards={[
+        { label: "Total Customers", value: stats.total || 0, icon: Users },
+        { label: "New (30 days)", value: stats.new_month || 0, icon: UserPlus },
+        { label: "VIP", value: stats.vip || 0, icon: Crown, sub: `${stats.blocked || 0} blocked` },
+        { label: "Avg Spend", value: inr(stats.avg_spend || 0), icon: IndianRupee, sub: `${inr(stats.total_spend || 0)} lifetime` },
+      ]} />
+      <div className="flex flex-wrap gap-3 mb-4">
+        <div className="relative flex-1 min-w-[220px] max-w-sm"><Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search customers…" className={inputCls + " pl-9"} data-testid="customer-search" /></div>
+        <select value={status} onChange={(e) => setStatusFilter(e.target.value)} className={inputCls + " max-w-[180px]"} data-testid="customer-status-filter">
+          <option value="">All statuses</option><option value="Active">Active</option><option value="VIP">VIP</option><option value="Blocked">Blocked</option>
+        </select>
+      </div>
       <div className="bg-white rounded-lg border border-gray-200 overflow-x-auto">
         <table className="w-full text-sm">
           <thead><tr className="text-left text-gray-400 text-xs bg-gray-50 border-b border-gray-200"><th className="px-4 py-3 font-medium">Name</th><th className="px-4 py-3 font-medium">Mobile</th><th className="px-4 py-3 font-medium">Email</th><th className="px-4 py-3 font-medium">Orders</th><th className="px-4 py-3 font-medium">Spend</th><th className="px-4 py-3 font-medium">Status</th></tr></thead>

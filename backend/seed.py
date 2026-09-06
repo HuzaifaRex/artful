@@ -352,3 +352,48 @@ async def seed():
     for slug, icon in CAT_ICONS.items():
         await db.categories.update_one({"slug": slug, "icon": {"$exists": False}}, {"$set": {"icon": icon}})
 
+    # 6) Seed admin-editable CMS pages (About / Our Story / Contact) if missing
+    CMS_PAGES = [
+        {"slug": "about", "order": 1, "title": "About",
+         "hero_eyebrow": "About ARTFUL", "hero_title": "Art, emotion and thoughtful gifting — together.",
+         "hero_image": "https://images.unsplash.com/photo-1766499670904-edab815e8fe3?crop=entropy&cs=srgb&fm=jpg&q=85&w=1600",
+         "body_html": "<h2>A home for beautiful, meaningful objects</h2><p>ARTFUL curates handcrafted lifestyle pieces and bespoke gift boxes designed to be given and treasured. We believe the most meaningful gifts carry a story — of the hands that made them and the moment they mark.</p><p>From hand-thrown ceramics to personalised keepsakes, each piece is chosen for its craft and quiet beauty.</p>",
+         "cards": [
+            {"icon": "Sparkles", "title": "Artful by design", "desc": "Every object is chosen for its craft, character and quiet beauty."},
+            {"icon": "HandHeart", "title": "Made by makers", "desc": "We work directly with independent artisans and small studios."},
+            {"icon": "Gift", "title": "Made to be given", "desc": "Thoughtful packaging and personalisation on every eligible piece."},
+            {"icon": "Leaf", "title": "Made to last", "desc": "Considered materials, chosen to be kept and treasured."}]},
+        {"slug": "our-story", "order": 2, "title": "Our Story",
+         "hero_eyebrow": "Our Story", "hero_title": "Crafted with intention, given with love.",
+         "hero_image": "https://images.unsplash.com/photo-1595351298020-038700609878?crop=entropy&cs=srgb&fm=jpg&q=85&w=1600",
+         "body_html": "<p>ARTFUL began with a simple belief — that the most meaningful gifts carry a story. We set out to find objects with soul and share them with people who feel the same.</p>",
+         "chapters": [
+            {"title": "The beginning", "desc": "ARTFUL began with a simple belief — that the most meaningful gifts carry a story.", "image": "https://images.unsplash.com/photo-1534953342533-7711c98712be?crop=entropy&cs=srgb&fm=jpg&q=85&w=1000"},
+            {"title": "The makers", "desc": "We partner with independent artisans and small studios, championing slow, small-batch craft.", "image": "https://images.unsplash.com/photo-1522065893269-6fd20f6d7438?crop=entropy&cs=srgb&fm=jpg&q=85&w=1000"},
+            {"title": "The gift", "desc": "We obsess over the unboxing — considered packaging, a handwritten note, the option to make it personal.", "image": "https://images.unsplash.com/photo-1534953342533-7711c98712be?crop=entropy&cs=srgb&fm=jpg&q=85&w=1000"}]},
+        {"slug": "contact", "order": 3, "title": "Contact",
+         "hero_eyebrow": "Contact", "hero_title": "We'd love to help.",
+         "hero_image": "https://images.unsplash.com/photo-1715593947958-ee0ca51de552?crop=entropy&cs=srgb&fm=jpg&q=85&w=1200",
+         "body_html": "<p>Questions about an order, a gift or a bulk enquiry? Our team is here Monday to Saturday, 10am–7pm IST.</p>"},
+    ]
+    for cp in CMS_PAGES:
+        await db.cms_pages.update_one({"slug": cp["slug"]}, {"$setOnInsert": {"id": str(uuid.uuid4()), **cp}}, upsert=True)
+
+    # 7) Rich-HTML policy pages (convert plain text -> HTML once)
+    for pg in await db.pages.find({"content": {"$exists": True}}).to_list(50):
+        c = pg.get("content", "")
+        if c and "<" not in c:
+            html = "".join(f"<p>{para.strip()}</p>" for para in c.split("\n\n") if para.strip())
+            await db.pages.update_one({"id": pg["id"]}, {"$set": {"content": html}})
+
+    # 8) Default product SECTION assignment so New Arrivals / Bestsellers rails stay populated
+    if await db.products.count_documents({"sections": {"$exists": True, "$ne": []}}) == 0:
+        newest = await db.products.find({"status": "Active"}, {"id": 1, "_id": 0}).sort("created_at", -1).limit(8).to_list(8)
+        best = await db.products.find({"status": "Active"}, {"id": 1, "_id": 0}).sort("sales_count", -1).limit(8).to_list(8)
+        for p in newest:
+            await db.products.update_one({"id": p["id"]}, {"$addToSet": {"sections": "new-arrivals"}})
+        for p in best:
+            await db.products.update_one({"id": p["id"]}, {"$addToSet": {"sections": "bestsellers"}})
+        for p in best[:6]:
+            await db.products.update_one({"id": p["id"]}, {"$addToSet": {"sections": "featured"}})
+

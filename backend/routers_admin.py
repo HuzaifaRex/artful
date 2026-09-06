@@ -152,6 +152,7 @@ async def create_product(payload: dict, request: Request, admin: dict = Depends(
            "stock": int(payload.get("stock", 0)), "reserved": 0,
            "low_stock_threshold": int(payload.get("low_stock_threshold", 5)),
            "status": payload.get("status", "Draft"), "badges": payload.get("badges", []),
+           "sections": payload.get("sections", []),
            "occasion": payload.get("occasion", []), "recipient": payload.get("recipient", []),
            "rating": 0, "review_count": 0, "variants": payload.get("variants", []),
            "personalization": payload.get("personalization", {"enabled": False}),
@@ -399,21 +400,61 @@ async def order_note(order_number: str, payload: dict, admin: dict = Depends(req
 
 
 # ---------------- CUSTOMERS ----------------
+async def _augment_customer(c):
+    cid = c["id"]
+    agg = await db.orders.aggregate([
+        {"$match": {"customer_id": cid}},
+        {"$group": {"_id": None, "count": {"$sum": 1},
+                    "spend": {"$sum": {"$cond": [{"$in": ["$payment.status", ["paid", "cod_confirmed"]]}, "$pricing.total", 0]}},
+                    "last": {"$max": "$created_at"}}}
+    ]).to_list(1)
+    stats = agg[0] if agg else {}
+    c["order_count"] = stats.get("count", 0)
+    c["total_spend"] = round(stats.get("spend", 0))
+    c["last_order_at"] = stats.get("last")
+    c.setdefault("status", "Active")
+    c.pop("wishlist", None)
+    return c
+
+
 @router.get("/customers")
-async def admin_customers(q: str = "", page: int = 1, page_size: int = 20,
+async def admin_customers(q: str = "", status: str = "", sort: str = "newest",
+                          page: int = 1, page_size: int = 20,
                           admin: dict = Depends(require_permission("customers"))):
     query = {}
     if q:
         query["$or"] = [{"name": {"$regex": q, "$options": "i"}},
                         {"phone": {"$regex": q, "$options": "i"}},
                         {"email": {"$regex": q, "$options": "i"}}]
+    if status:
+        query["status"] = status
     total = await db.customers.count_documents(query)
-    cur = db.customers.find(query, {"_id": 0}).sort("created_at", -1).skip((page-1)*page_size).limit(page_size)
-    items = []
-    async for c in cur:
-        c.pop("wishlist", None)
-        items.append(c)
-    return {"items": items, "total": total, "page": page, "pages": max(1, (total + page_size - 1)//page_size)}
+    sort_field = {"newest": "created_at"}.get(sort, "created_at")
+    cur = db.customers.find(query, {"_id": 0}).sort(sort_field, -1).skip((page-1)*page_size).limit(page_size)
+    items = [await _augment_customer(c) async for c in cur]
+    if sort == "spend":
+        items.sort(key=lambda x: x.get("total_spend", 0), reverse=True)
+    elif sort == "orders":
+        items.sort(key=lambda x: x.get("order_count", 0), reverse=True)
+
+    now = datetime.now(timezone.utc)
+    month = (now - timedelta(days=30)).isoformat()
+    all_ids = [c["id"] async for c in db.customers.find({}, {"id": 1, "_id": 0})]
+    paid_agg = await db.orders.aggregate([
+        {"$match": {"payment.status": {"$in": ["paid", "cod_confirmed"]}}},
+        {"$group": {"_id": None, "spend": {"$sum": "$pricing.total"}, "cnt": {"$sum": 1}}}
+    ]).to_list(1)
+    total_spend = round(paid_agg[0]["spend"]) if paid_agg else 0
+    stats = {
+        "total": len(all_ids),
+        "new_month": await db.customers.count_documents({"created_at": {"$gte": month}}),
+        "vip": await db.customers.count_documents({"status": "VIP"}),
+        "blocked": await db.customers.count_documents({"status": "Blocked"}),
+        "total_spend": total_spend,
+        "avg_spend": round(total_spend / len(all_ids)) if all_ids else 0,
+    }
+    return {"items": items, "total": total, "page": page, "stats": stats,
+            "pages": max(1, (total + page_size - 1)//page_size)}
 
 
 @router.get("/customers/{cid}")
@@ -421,6 +462,7 @@ async def admin_customer(cid: str, admin: dict = Depends(require_permission("cus
     c = await db.customers.find_one({"id": cid}, {"_id": 0})
     if not c:
         raise HTTPException(404, "Customer not found.")
+    c = await _augment_customer(c)
     orders = [clean(o) async for o in db.orders.find({"customer_id": cid}, {"_id": 0}).sort("created_at", -1)]
     addresses = [clean(a) async for a in db.addresses.find({"customer_id": cid}, {"_id": 0})]
     return {"customer": c, "orders": orders, "addresses": addresses}
@@ -478,6 +520,29 @@ async def cms_update_section(sid: str, payload: dict, admin: dict = Depends(requ
     fields = {k: v for k, v in payload.items() if k not in ("id", "_id")}
     await db.homepage_sections.update_one({"id": sid}, {"$set": fields})
     return clean(await db.homepage_sections.find_one({"id": sid}))
+
+
+# ---------------- CMS SITE PAGES (About / Our Story / Contact) ----------------
+@router.get("/cms/pages")
+async def cms_pages_list(admin: dict = Depends(require_permission("content"))):
+    cur = db.cms_pages.find({}, {"_id": 0}).sort("order", 1)
+    return {"items": [c async for c in cur]}
+
+
+@router.get("/cms/pages/{slug}")
+async def cms_page_get(slug: str, admin: dict = Depends(require_permission("content"))):
+    p = await db.cms_pages.find_one({"slug": slug}, {"_id": 0})
+    if not p:
+        raise HTTPException(404, "Page not found.")
+    return p
+
+
+@router.put("/cms/pages/{slug}")
+async def cms_page_update(slug: str, payload: dict, request: Request, admin: dict = Depends(require_permission("content"))):
+    fields = {k: v for k, v in payload.items() if k not in ("id", "_id", "slug")}
+    await db.cms_pages.update_one({"slug": slug}, {"$set": fields}, upsert=True)
+    await audit(admin, "update", "cms_page", slug, request=request)
+    return clean(await db.cms_pages.find_one({"slug": slug}))
 
 
 # ---------------- SEARCH ANALYTICS ----------------
@@ -552,6 +617,125 @@ async def audit_logs(page: int = 1, page_size: int = 40, admin: dict = Depends(r
     cur = db.audit_logs.find({}, {"_id": 0}).sort("at", -1).skip((page-1)*page_size).limit(page_size)
     return {"items": [c async for c in cur], "total": total,
             "pages": max(1, (total + page_size - 1)//page_size)}
+
+
+# ---------------- LEADS: NEWSLETTER / SUPPORT / VISITORS ----------------
+@router.get("/newsletter-subscribers")
+async def newsletter_subscribers(q: str = "", page: int = 1, page_size: int = 30,
+                                 admin: dict = Depends(require_permission("customers"))):
+    query = {}
+    if q:
+        query["email"] = {"$regex": q, "$options": "i"}
+    total = await db.newsletter_subscribers.count_documents(query)
+    cur = db.newsletter_subscribers.find(query, {"_id": 0}).sort("created_at", -1).skip((page-1)*page_size).limit(page_size)
+    month = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+    stats = {"total": await db.newsletter_subscribers.count_documents({}),
+             "new_month": await db.newsletter_subscribers.count_documents({"created_at": {"$gte": month}})}
+    return {"items": [c async for c in cur], "total": total, "stats": stats,
+            "pages": max(1, (total + page_size - 1)//page_size)}
+
+
+@router.delete("/newsletter-subscribers/{sid}")
+async def delete_subscriber(sid: str, admin: dict = Depends(require_permission("customers"))):
+    await db.newsletter_subscribers.delete_one({"id": sid})
+    return {"ok": True}
+
+
+@router.get("/support-messages")
+async def support_messages(q: str = "", status: str = "", page: int = 1, page_size: int = 30,
+                           admin: dict = Depends(require_permission("customers"))):
+    query = {}
+    if status:
+        query["status"] = status
+    if q:
+        query["$or"] = [{"name": {"$regex": q, "$options": "i"}},
+                        {"email": {"$regex": q, "$options": "i"}},
+                        {"message": {"$regex": q, "$options": "i"}}]
+    total = await db.support_messages.count_documents(query)
+    cur = db.support_messages.find(query, {"_id": 0}).sort("created_at", -1).skip((page-1)*page_size).limit(page_size)
+    stats = {"total": await db.support_messages.count_documents({}),
+             "open": await db.support_messages.count_documents({"status": "Open"})}
+    return {"items": [c async for c in cur], "total": total, "stats": stats,
+            "pages": max(1, (total + page_size - 1)//page_size)}
+
+
+@router.put("/support-messages/{mid}")
+async def update_support_message(mid: str, payload: dict, admin: dict = Depends(require_permission("customers"))):
+    upd = {}
+    if payload.get("status"):
+        upd["status"] = payload["status"]
+    if payload.get("reply") is not None:
+        upd["admin_reply"] = payload["reply"]
+        upd["replied_at"] = now_iso()
+    await db.support_messages.update_one({"id": mid}, {"$set": upd})
+    return {"ok": True}
+
+
+@router.get("/visitors")
+async def visitors(q: str = "", identified: str = "", page: int = 1, page_size: int = 30,
+                   admin: dict = Depends(require_permission("customers"))):
+    query = {}
+    if identified == "yes":
+        query["$or"] = [{"identity.phone": {"$exists": True, "$ne": None}},
+                        {"identity.email": {"$exists": True, "$ne": None}}]
+    if q:
+        query["$or"] = [{"identity.phone": {"$regex": q, "$options": "i"}},
+                        {"identity.email": {"$regex": q, "$options": "i"}},
+                        {"identity.name": {"$regex": q, "$options": "i"}}]
+    total = await db.visitors.count_documents(query)
+    cur = db.visitors.find(query, {"_id": 0}).sort("last_seen", -1).skip((page-1)*page_size).limit(page_size)
+    day = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+    stats = {"total": await db.visitors.count_documents({}),
+             "identified": await db.visitors.count_documents({"$or": [{"identity.phone": {"$ne": None}}, {"identity.email": {"$ne": None}}]}),
+             "today": await db.visitors.count_documents({"last_seen": {"$gte": day}})}
+    return {"items": [c async for c in cur], "total": total, "stats": stats,
+            "pages": max(1, (total + page_size - 1)//page_size)}
+
+
+# ---------------- PAYMENTS / TRANSACTIONS ----------------
+@router.get("/transactions")
+async def transactions(q: str = "", status: str = "", method: str = "", page: int = 1, page_size: int = 20,
+                       admin: dict = Depends(require_permission("orders"))):
+    query = {}
+    if status:
+        query["payment.status"] = status
+    if method:
+        query["payment.method"] = method
+    if q:
+        query["$or"] = [{"order_number": {"$regex": q, "$options": "i"}},
+                        {"customer.name": {"$regex": q, "$options": "i"}},
+                        {"customer.phone": {"$regex": q, "$options": "i"}}]
+    total = await db.orders.count_documents(query)
+    cur = db.orders.find(query, {"_id": 0}).sort("created_at", -1).skip((page-1)*page_size).limit(page_size)
+    items = []
+    async for o in cur:
+        o = clean(o)
+        items.append({"order_number": o["order_number"], "customer": o.get("customer"),
+                      "amount": o["pricing"]["total"], "payment": o.get("payment", {}),
+                      "status": o.get("status"), "created_at": o.get("created_at")})
+    paid_agg = await db.orders.aggregate([
+        {"$match": {"payment.status": {"$in": ["paid", "cod_confirmed"]}}},
+        {"$group": {"_id": None, "sum": {"$sum": "$pricing.total"}}}]).to_list(1)
+    refunded_agg = await db.refunds.aggregate([
+        {"$match": {"status": "Completed"}}, {"$group": {"_id": None, "sum": {"$sum": "$amount"}}}]).to_list(1)
+    stats = {
+        "captured": round(paid_agg[0]["sum"]) if paid_agg else 0,
+        "refunded": round(refunded_agg[0]["sum"]) if refunded_agg else 0,
+        "paid_count": await db.orders.count_documents({"payment.status": {"$in": ["paid", "cod_confirmed"]}}),
+        "pending_count": await db.orders.count_documents({"payment.status": {"$in": ["created", "cod_pending"]}}),
+        "failed_count": await db.orders.count_documents({"payment.status": "failed"}),
+    }
+    return {"items": items, "total": total, "stats": stats,
+            "pages": max(1, (total + page_size - 1)//page_size)}
+
+
+@router.get("/transactions/{order_number}")
+async def transaction_detail(order_number: str, admin: dict = Depends(require_permission("orders"))):
+    o = await db.orders.find_one({"order_number": order_number}, {"_id": 0})
+    if not o:
+        raise HTTPException(404, "Transaction not found.")
+    refunds = [clean(r) async for r in db.refunds.find({"order_number": order_number}, {"_id": 0})]
+    return {"order": clean(o), "refunds": refunds}
 
 
 # ---------------- NOTIFICATIONS ----------------
