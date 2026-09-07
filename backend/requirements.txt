@@ -15,4 +15,5 @@ email-validator==2.2.0
 PyJWT==2.10.1
 setuptools<81
 requests==2.32.3
+cloudinary==1.46.2
 
