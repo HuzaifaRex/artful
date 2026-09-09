@@ -69,7 +69,7 @@ def _company_settings(settings):
         "name": _clean_text(settings.get("store_name") or "ARTFUL"),
         "address": _clean_text(
             settings.get("office_address")
-            or "168, Netaji Subhash Marg, Martand Chowk, Ram Bagh, Indore, Madhya Pradesh 452007"
+            or "168, Netaji Subhash Marg, Martand Chowk, <br/>Ram Bagh, Indore, Madhya Pradesh 452007"
         ),
         "phone": _clean_text(settings.get("contact_phone") or "+91 8871288853"),
         "email": _clean_text(settings.get("contact_email") or "support@artful.com"),
@@ -112,6 +112,7 @@ def build_invoice_pdf(order, settings):
         fontSize=25,
         leading=28,
         textColor=PLUM,
+        alignment=TA_RIGHT,
         spaceAfter=2,
     ))
     styles.add(ParagraphStyle(
