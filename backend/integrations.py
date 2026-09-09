@@ -17,7 +17,6 @@ TWILIO_API_KEY_SID = os.environ.get("TWILIO_API_KEY_SID") or ""
 TWILIO_API_KEY_SECRET = os.environ.get("TWILIO_API_KEY_SECRET") or ""
 RZP_KEY = os.environ.get("RAZORPAY_KEY_ID") or ""
 RZP_SECRET = os.environ.get("RAZORPAY_KEY_SECRET") or ""
-RZP_WEBHOOK_SECRET = os.environ.get("RAZORPAY_WEBHOOK_SECRET") or ""
 EMERGENT_AUTH_BASE = os.environ.get("EMERGENT_AUTH_BASE", "https://demobackend.emergentagent.com/auth/v1/env")
 
 
@@ -25,12 +24,6 @@ def twilio_enabled():
     return bool(TWILIO_SID and TWILIO_TOKEN and TWILIO_VERIFY)
 
 
-def razorpay_enabled():
-    return bool(RZP_KEY and RZP_SECRET)
-
-
-def razorpay_webhook_enabled():
-    return bool(RZP_KEY and RZP_SECRET and RZP_WEBHOOK_SECRET)
 
 
 # ---------------- OTP ----------------
@@ -105,81 +98,105 @@ async def send_sms(phone: str, body: str):
 
 
 # ---------------- Razorpay ----------------
-def create_payment_order(amount_rupees: int, receipt: str):
-    amount_paise = int(round(amount_rupees * 100))
-    if razorpay_enabled():
-        import razorpay
-        client = razorpay.Client(auth=(RZP_KEY, RZP_SECRET))
-        order = client.order.create({"amount": amount_paise, "currency": "INR",
-                                      "receipt": receipt[:40], "payment_capture": 1})
-        return {"dev_mode": False, "razorpay_order_id": order["id"], "amount": amount_paise,
-                "key_id": RZP_KEY, "currency": "INR"}
-    return {"dev_mode": True, "razorpay_order_id": f"dev_order_{receipt[:24]}", "amount": amount_paise,
-            "key_id": None, "currency": "INR",
-            "message": "Razorpay keys not configured — DEV checkout. No real payment is processed."}
 
+def razorpay_enabled():
+    return bool(RZP_KEY and RZP_SECRET)
 
-def verify_payment_signature(order_id: str, payment_id: str, signature: str) -> bool:
-    """Verify a Razorpay Checkout signature using the server-side order id."""
-    if not razorpay_enabled() or not order_id or not payment_id or not signature:
-        return False
-    body = f"{order_id}|{payment_id}"
-    expected = hmac.new(RZP_SECRET.encode(), body.encode(), hashlib.sha256).hexdigest()
-    return hmac.compare_digest(expected, signature)
-
-
-def verify_webhook_signature(raw_body: bytes, signature: str) -> bool:
-    """Verify Razorpay's X-Razorpay-Signature over the raw request body."""
-    if not razorpay_webhook_enabled() or not signature:
-        return False
-    expected = hmac.new(
-        RZP_WEBHOOK_SECRET.encode(), raw_body, hashlib.sha256
-    ).hexdigest()
-    return hmac.compare_digest(expected, signature)
+def razorpay_webhook_enabled():
+    return bool(RZP_WEBHOOK_SECRET)
 
 
 def _razorpay_client():
     if not razorpay_enabled():
         raise RuntimeError("Razorpay is not configured.")
     import razorpay
-    client = razorpay.Client(auth=(RZP_KEY, RZP_SECRET))
-    client.enable_retry(True)
-    return client
+    return razorpay.Client(auth=(RZP_KEY, RZP_SECRET))
 
 
-def fetch_payment(payment_id: str) -> dict:
-    """Fetch a payment from Razorpay for server-side status validation."""
+def create_payment_order(amount_rupees, receipt):
+    """Create a server-side Razorpay Order for the exact cart total."""
+    amount_paise = int(round(float(amount_rupees) * 100))
+    if amount_paise <= 0:
+        raise ValueError("Payment amount must be greater than zero.")
+
+    if razorpay_enabled():
+        client = _razorpay_client()
+        order = client.order.create({
+            "amount": amount_paise,
+            "currency": "INR",
+            "receipt": (receipt or "order")[:40],
+            "payment_capture": 1,
+        })
+        return {
+            "dev_mode": False,
+            "razorpay_order_id": order["id"],
+            "amount": amount_paise,
+            "key_id": RZP_KEY,
+            "currency": "INR",
+        }
+
+    return {
+        "dev_mode": True,
+        "razorpay_order_id": f"dev_order_{(receipt or '')[:24]}",
+        "amount": amount_paise,
+        "key_id": None,
+        "currency": "INR",
+        "message": "Razorpay keys not configured — DEV checkout. No real payment is processed.",
+    }
+
+
+def verify_payment_signature(order_id, payment_id, signature):
+    """Verify Checkout signature with the server-stored Razorpay order id."""
+    if not razorpay_enabled() or not order_id or not payment_id or not signature:
+        return False
+    body = f"{order_id}|{payment_id}"
+    expected = hmac.new(
+        RZP_SECRET.encode("utf-8"),
+        body.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    return hmac.compare_digest(expected, signature)
+
+
+def verify_webhook_signature(raw_body, signature):
+    """Verify X-Razorpay-Signature against the raw request body."""
+    if not razorpay_webhook_enabled() or not signature:
+        return False
+    expected = hmac.new(
+        RZP_WEBHOOK_SECRET.encode("utf-8"),
+        raw_body,
+        hashlib.sha256,
+    ).hexdigest()
+    return hmac.compare_digest(expected, signature)
+
+
+def fetch_payment(payment_id):
+    """Fetch a payment from Razorpay for server-side status verification."""
+    if not payment_id:
+        raise ValueError("Missing Razorpay payment id.")
     return _razorpay_client().payment.fetch(payment_id)
 
 
-def fetch_order(order_id: str) -> dict:
-    """Fetch a Razorpay order from the API."""
-    return _razorpay_client().order.fetch(order_id)
+def capture_payment(payment_id, amount_paise):
+    """Capture an authorized payment for the exact server-calculated amount."""
+    if not payment_id:
+        raise ValueError("Missing Razorpay payment id.")
+    return _razorpay_client().payment.capture(payment_id, {"amount": int(amount_paise), "currency": "INR"})
 
 
-def fetch_order_with_payments(order_id: str) -> dict:
-    """Fetch a Razorpay order including its payment collection."""
-    return _razorpay_client().order.fetch(
-        order_id, data={"expand[]": "payments"}
-    )
-
-
-def create_refund(
-    payment_id: str, amount_paise: int, receipt: str, idempotency_key: str
-) -> dict:
-    """Create a normal Razorpay refund with an idempotency key."""
+def create_refund(payment_id, amount_paise, receipt, idempotency_key):
+    """Create a normal Razorpay refund with retry-safe idempotency."""
     if not razorpay_enabled():
         raise RuntimeError("Razorpay is not configured.")
     if not payment_id:
         raise ValueError("Missing Razorpay payment id.")
-    if amount_paise <= 0:
+    if int(amount_paise) <= 0:
         raise ValueError("Refund amount must be greater than zero.")
 
-    # The SDK supports normal refunds, while the REST API supports the
-    # X-Refund-Idempotency header that prevents duplicate refunds on retries.
-    auth = (RZP_KEY, RZP_SECRET)
+    import httpx
+
     payload = {
-        "amount": amount_paise,
+        "amount": int(amount_paise),
         "speed": "normal",
         "receipt": (receipt or "refund")[:40],
     }
@@ -190,21 +207,22 @@ def create_refund(
     with httpx.Client(timeout=20.0) as client:
         response = client.post(
             f"https://api.razorpay.com/v1/payments/{payment_id}/refund",
-            auth=auth,
+            auth=(RZP_KEY, RZP_SECRET),
             json=payload,
             headers=headers,
         )
 
-    if response.status_code >= 400:
-        try:
-            details = response.json()
-        except ValueError:
-            details = {}
-        error = (details.get("error") or {}) if isinstance(details, dict) else {}
-        description = error.get("description") or "Razorpay refund request failed."
-        raise RuntimeError(description)
+    try:
+        data = response.json()
+    except ValueError:
+        data = {}
 
-    return response.json()
+    if response.status_code >= 400:
+        err = data.get("error") if isinstance(data, dict) else None
+        description = (err or {}).get("description") if isinstance(err, dict) else None
+        raise RuntimeError(description or "Razorpay refund request failed.")
+
+    return data
 
 
 # ---------------- Emergent Google Auth ----------------
