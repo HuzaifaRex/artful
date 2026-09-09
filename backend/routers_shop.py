@@ -1,3 +1,5 @@
+import asyncio
+import json
 import re
 import uuid
 from datetime import datetime, timezone
@@ -297,7 +299,9 @@ async def _finalize_paid_order(order, payment_id=None, method="razorpay"):
     guard = await db.orders.update_one(
         {"id": order["id"], "payment.status": {"$nin": ["paid", "cod_confirmed"]}},
         {"$set": {"payment.status": "paid" if method != "cod" else "cod_confirmed",
-                  "payment.payment_id": payment_id, "payment.method": method,
+                  "payment.payment_id": payment_id,
+                  "payment.razorpay_payment_id": payment_id if method != "cod" else None,
+                  "payment.method": method,
                   "status": "Confirmed", "updated_at": now_iso()},
          "$push": {"status_history": {"status": "Confirmed", "at": now_iso(),
                                       "note": "Payment confirmed." if method != "cod" else "COD order confirmed."}}})
@@ -329,6 +333,21 @@ async def _finalize_paid_order(order, payment_id=None, method="razorpay"):
                           f"Amount Rs.{total}. Track it in your account. Thank you for shopping with us.")
 
 
+async def _mark_payment_failed(order, reason="Payment failed."):
+    """Mark an unpaid order failed and release its reservation exactly once."""
+    guard = await db.orders.update_one(
+        {"id": order["id"], "payment.status": {"$nin": ["paid", "cod_confirmed", "failed"]}},
+        {"$set": {"payment.status": "failed", "status": "Failed", "updated_at": now_iso()},
+         "$push": {"status_history": {"status": "Failed", "at": now_iso(), "note": reason}}})
+    if guard.modified_count == 0:
+        return False
+    for line in order.get("items", []):
+        await db.products.update_one(
+            {"id": line["product_id"]}, {"$inc": {"reserved": -line["qty"]}}
+        )
+    return True
+
+
 @router.post("/checkout/verify-payment")
 async def verify_payment(payload: dict, cust: dict = Depends(get_current_customer)):
     order = await db.orders.find_one({"id": payload.get("order_id"), "customer_id": cust["id"]})
@@ -338,19 +357,150 @@ async def verify_payment(payload: dict, cust: dict = Depends(get_current_custome
         return {"success": True, "order": order_public(order)}  # idempotent
     if not ig.razorpay_enabled():
         raise HTTPException(400, "Payment gateway not configured. Use the demo checkout instead.")
-    ok = ig.verify_payment_signature(payload.get("razorpay_order_id"),
-                                     payload.get("razorpay_payment_id"),
-                                     payload.get("razorpay_signature"))
-    if not ok:
-        await db.orders.update_one({"id": order["id"]}, {"$set": {"payment.status": "failed",
-                                   "status": "Failed", "updated_at": now_iso()},
-                                   "$push": {"status_history": {"status": "Failed", "at": now_iso(),
-                                             "note": "Payment verification failed."}}})
-        for l in order["items"]:
-            await db.products.update_one({"id": l["product_id"]}, {"$inc": {"reserved": -l["qty"]}})
-        raise HTTPException(400, "Payment could not be verified. If money was deducted it will be refunded.")
-    await _finalize_paid_order(order, payment_id=payload.get("razorpay_payment_id"))
+
+    stored_rzp_order_id = (order.get("payment") or {}).get("razorpay_order_id")
+    callback_rzp_order_id = payload.get("razorpay_order_id")
+    payment_id = payload.get("razorpay_payment_id")
+    signature = payload.get("razorpay_signature")
+
+    # Razorpay explicitly requires the signature to be generated with the
+    # server-side order id, not the order id merely returned by the browser.
+    if not stored_rzp_order_id or callback_rzp_order_id != stored_rzp_order_id:
+        raise HTTPException(400, "Payment verification failed.")
+
+    if not ig.verify_payment_signature(stored_rzp_order_id, payment_id, signature):
+        raise HTTPException(400, "Payment verification failed. If money was deducted, contact support.")
+
+    expected_amount = int(round(float(order["pricing"]["total"]) * 100))
+    try:
+        payment = await asyncio.to_thread(ig.fetch_payment, payment_id)
+        rzp_order = await asyncio.to_thread(ig.fetch_order, stored_rzp_order_id)
+    except Exception:
+        # Do not mark failed on a transient Razorpay API/network error.
+        # The webhook remains the source of truth for eventual finalisation.
+        raise HTTPException(502, "Payment is being verified. Please check your order shortly.")
+
+    if payment.get("id") != payment_id or payment.get("order_id") != stored_rzp_order_id:
+        raise HTTPException(400, "Payment verification failed.")
+
+    if (payment.get("currency") or "").upper() != "INR" or int(payment.get("amount") or 0) != expected_amount:
+        raise HTTPException(400, "Payment amount verification failed.")
+
+    if payment.get("status") != "captured":
+        if payment.get("status") == "failed":
+            raise HTTPException(400, "Payment failed. Please try again.")
+        raise HTTPException(409, "Payment is not captured yet. Please wait a moment and refresh your order.")
+
+    rzp_status = rzp_order.get("status")
+    amount_paid = int(rzp_order.get("amount_paid") or 0)
+    if rzp_status != "paid" and amount_paid < expected_amount:
+        raise HTTPException(409, "Payment is not fully confirmed yet. Please wait a moment.")
+
+    await _finalize_paid_order(order, payment_id=payment_id)
     return {"success": True, "order": order_public(await db.orders.find_one({"id": order["id"]}))}
+
+
+@router.post("/payments/razorpay/webhook")
+async def razorpay_webhook(request: Request):
+    """Handle Razorpay payment/refund webhooks without customer authentication."""
+    raw_body = await request.body()
+    signature = request.headers.get("X-Razorpay-Signature", "")
+    if not ig.verify_webhook_signature(raw_body, signature):
+        raise HTTPException(400, "Invalid webhook signature.")
+    try:
+        event = json.loads(raw_body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        raise HTTPException(400, "Invalid webhook payload.")
+
+    event_name = event.get("event")
+    payload = event.get("payload") or {}
+
+    if event_name in ("payment.captured", "payment.failed"):
+        entity = ((payload.get("payment") or {}).get("entity") or {})
+        rzp_order_id = entity.get("order_id")
+        if rzp_order_id:
+            order = await db.orders.find_one({"payment.razorpay_order_id": rzp_order_id})
+        else:
+            order = None
+
+        if order:
+            if event_name == "payment.captured":
+                expected_amount = int(round(float(order["pricing"]["total"]) * 100))
+                if ((entity.get("status") != "captured") or
+                        (entity.get("currency") or "").upper() != "INR" or
+                        int(entity.get("amount") or 0) != expected_amount):
+                    return {"ok": True, "ignored": "payment_validation_failed"}
+                await _finalize_paid_order(order, payment_id=entity.get("id"))
+            else:
+                await db.orders.update_one(
+                    {"id": order["id"], "payment.status": {"$nin": ["paid", "cod_confirmed"]}},
+                    {"$set": {
+                        "payment.last_attempt_status": "failed",
+                        "payment.last_attempt_id": entity.get("id"),
+                        "updated_at": now_iso(),
+                     },
+                     "$push": {"status_history": {
+                         "status": "Payment Attempt Failed",
+                         "at": now_iso(),
+                         "note": "Razorpay reported a failed payment attempt."
+                     }}}
+                )
+
+    elif event_name == "order.paid":
+        entity = ((payload.get("order") or {}).get("entity") or {})
+        rzp_order_id = entity.get("id")
+        order = await db.orders.find_one({"payment.razorpay_order_id": rzp_order_id}) if rzp_order_id else None
+        if order and order["payment"]["status"] not in ("paid", "cod_confirmed"):
+            try:
+                remote_order = await asyncio.to_thread(ig.fetch_order_with_payments, rzp_order_id)
+                payments = ((remote_order.get("payments") or {}).get("items") or [])
+                captured = next((p for p in payments if p.get("status") == "captured"), None)
+                expected_amount = int(round(float(order["pricing"]["total"]) * 100))
+                if (captured and captured.get("order_id") == rzp_order_id and
+                    int(captured.get("amount") or 0) == expected_amount and
+                    (captured.get("currency") or "").upper() == "INR"):
+                    await _finalize_paid_order(order, payment_id=captured.get("id"))
+                else:
+                    raise HTTPException(500, "Unable to verify paid order yet.")
+            except HTTPException:
+                raise
+            except Exception:
+                raise HTTPException(500, "Unable to verify paid order yet.")
+
+    elif event_name in ("refund.created", "refund.processed", "refund.failed"):
+        entity = ((payload.get("refund") or {}).get("entity") or {})
+        refund_id = entity.get("id")
+        payment_id = entity.get("payment_id")
+        status_map = {"refund.created": "Processing", "refund.processed": "Completed", "refund.failed": "Failed"}
+        local_status = status_map[event_name]
+        query = {}
+        if refund_id:
+            query["razorpay_refund_id"] = refund_id
+        if payment_id and not query:
+            query["payment_id"] = payment_id
+        if query:
+            refund = await db.refunds.find_one(query)
+            if refund:
+                update = {"status": local_status, "razorpay_status": entity.get("status")}
+                if entity.get("id"):
+                    update["razorpay_refund_id"] = entity["id"]
+                await db.refunds.update_one({"id": refund["id"]}, {"$set": update})
+                if local_status == "Completed":
+                    r_order = await db.orders.find_one({"order_number": refund["order_number"]})
+                    if r_order:
+                        completed = [r async for r in db.refunds.find(
+                            {"order_number": refund["order_number"], "status": "Completed"},
+                            {"amount": 1, "_id": 0}
+                        )]
+                        total_refunded = sum(float(r.get("amount", 0) or 0) for r in completed)
+                        if total_refunded + 1e-9 >= float(r_order["pricing"]["total"]):
+                            await db.orders.update_one(
+                                {"id": r_order["id"]},
+                                {"$set": {"status": "Refunded", "updated_at": now_iso()},
+                                 "$push": {"status_history": {"status": "Refunded", "at": now_iso(), "note": "Refund fully processed by Razorpay."}}}
+                            )
+
+    return {"ok": True}
 
 
 @router.post("/checkout/mock-pay")
@@ -455,13 +605,15 @@ async def cancel_order(order_number: str, payload: dict, cust: dict = Depends(ge
     if o["payment"]["status"] == "paid":
         await db.refunds.insert_one({"id": str(uuid.uuid4()), "order_number": o["order_number"],
             "amount": o["pricing"]["total"], "reason": "Order cancelled by customer",
-            "status": "Requested", "created_at": now_iso()})
+            "status": "Requested", "payment_id": (o.get("payment") or {}).get("payment_id") or
+                       (o.get("payment") or {}).get("razorpay_payment_id"),
+            "created_at": now_iso()})
     await db.notifications.insert_one({"id": str(uuid.uuid4()), "type": "cancel_order",
         "title": f"Order {o['order_number']} cancelled", "order_number": o["order_number"],
         "read": False, "at": now_iso()})
     if cust.get("phone"):
-        refund_note = " A refund has been initiated." if o["payment"]["status"] == "paid" else ""
+        refund_note = " A refund request has been created." if o["payment"]["status"] == "paid" else ""
         await ig.send_sms(cust["phone"],
                           f"ARTFUL: Your order {o['order_number']} has been cancelled.{refund_note} "
                           f"Need help? Reach us on WhatsApp +91 8871288853.")
-    return {"ok": True, "message": "Your order has been cancelled." + (" A refund has been initiated." if o["payment"]["status"] == "paid" else "")}
+    return {"ok": True, "message": "Your order has been cancelled." + (" A refund request has been created." if o["payment"]["status"] == "paid" else "")}

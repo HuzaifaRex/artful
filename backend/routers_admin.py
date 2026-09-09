@@ -1,3 +1,4 @@
+import asyncio
 import re
 import io
 import os
@@ -7,6 +8,7 @@ from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, HTTPException, Request, Depends, UploadFile, File
 from fastapi.responses import StreamingResponse
 from db import db, clean
+import integrations as ig
 from security import (verify_password, hash_password, create_token, get_current_admin,
                       require_permission, now_iso, ROLE_PERMISSIONS)
 
@@ -607,11 +609,35 @@ async def create_refund(payload: dict, request: Request, admin: dict = Depends(r
     o = await db.orders.find_one({"order_number": payload.get("order_number")})
     if not o:
         raise HTTPException(404, "Order not found.")
-    amount = min(float(payload.get("amount", 0)), o["pricing"]["total"])
-    doc = {"id": str(uuid.uuid4()), "order_number": o["order_number"], "amount": amount,
-           "reason": payload.get("reason"), "status": "Requested", "created_at": now_iso()}
+    payment = o.get("payment") or {}
+    if payment.get("status") != "paid":
+        raise HTTPException(400, "Only captured Razorpay payments can be refunded.")
+    payment_id = payment.get("payment_id") or payment.get("razorpay_payment_id")
+    if not payment_id:
+        raise HTTPException(400, "Razorpay payment id is missing for this order.")
+
+    try:
+        amount = float(payload.get("amount", 0))
+    except (TypeError, ValueError):
+        raise HTTPException(400, "Refund amount is invalid.")
+    if amount <= 0:
+        raise HTTPException(400, "Refund amount must be greater than zero.")
+
+    existing = [r async for r in db.refunds.find(
+        {"order_number": o["order_number"], "status": {"$ne": "Rejected"}},
+        {"amount": 1, "_id": 0}
+    )]
+    already_committed = sum(float(r.get("amount", 0) or 0) for r in existing)
+    remaining = max(0.0, float(o["pricing"]["total"]) - already_committed)
+    if amount > remaining + 1e-9:
+        raise HTTPException(400, f"Maximum refundable amount remaining is ₹{remaining:.2f}.")
+
+    doc = {"id": str(uuid.uuid4()), "order_number": o["order_number"], "amount": round(amount, 2),
+           "reason": payload.get("reason"), "status": "Requested", "payment_id": payment_id,
+           "created_at": now_iso()}
     await db.refunds.insert_one(doc)
-    await audit(admin, "refund_request", "order", o["order_number"], after={"amount": amount}, request=request)
+    await audit(admin, "refund_request", "order", o["order_number"],
+                 after={"amount": round(amount, 2), "payment_id": payment_id}, request=request)
     return clean(doc)
 
 
@@ -621,13 +647,73 @@ async def update_refund(rid: str, payload: dict, request: Request, admin: dict =
     if not r:
         raise HTTPException(404, "Refund not found.")
     status = payload.get("status")
-    await db.refunds.update_one({"id": rid}, {"$set": {"status": status}})
+    allowed = {"Requested", "Approved", "Processing", "Completed", "Rejected"}
+    if status not in allowed:
+        raise HTTPException(400, "Invalid refund status.")
+    if r.get("status") == "Completed":
+        raise HTTPException(400, "A completed refund cannot be changed.")
+
     if status == "Completed":
-        await db.orders.update_one({"order_number": r["order_number"]},
-            {"$set": {"status": "Refunded", "updated_at": now_iso()},
-             "$push": {"status_history": {"status": "Refunded", "at": now_iso(), "note": "Refund completed."}}})
-    await audit(admin, "refund_update", "refund", rid, after={"status": status}, request=request)
-    return {"ok": True}
+        if r.get("razorpay_refund_id") and (r.get("razorpay_status") or "").lower() in {"pending", "processed"}:
+            raise HTTPException(400, "This refund has already been submitted to Razorpay. Wait for its final status.")
+        if (r.get("razorpay_status") or "").lower() == "failed":
+            raise HTTPException(400, "This Razorpay refund previously failed. Create a new refund request to retry.")
+
+        o = await db.orders.find_one({"order_number": r["order_number"]})
+        if not o:
+            raise HTTPException(404, "Order not found.")
+        payment = o.get("payment") or {}
+        if payment.get("status") != "paid":
+            raise HTTPException(400, "The order is not in a refundable payment state.")
+        payment_id = r.get("payment_id") or payment.get("payment_id") or payment.get("razorpay_payment_id")
+        if not payment_id:
+            raise HTTPException(400, "Razorpay payment id is missing for this refund.")
+
+        amount_paise = int(round(float(r.get("amount", 0)) * 100))
+        if amount_paise <= 0:
+            raise HTTPException(400, "Refund amount must be greater than zero.")
+        idempotency_key = f"artful-refund-{rid}"
+        try:
+            refund = await asyncio.to_thread(
+                ig.create_refund, payment_id, amount_paise,
+                f"{r['order_number']}-{rid}", idempotency_key
+            )
+        except Exception as e:
+            raise HTTPException(502, f"Razorpay refund could not be created: {e}")
+
+        razorpay_status = (refund.get("status") or "pending").lower()
+        local_status = "Completed" if razorpay_status == "processed" else "Processing"
+        if razorpay_status == "failed":
+            local_status = "Rejected"
+
+        await db.refunds.update_one({"id": rid}, {"$set": {
+            "status": local_status,
+            "payment_id": payment_id,
+            "razorpay_refund_id": refund.get("id"),
+            "razorpay_status": razorpay_status,
+            "updated_at": now_iso(),
+        }})
+
+        if local_status == "Completed":
+            completed = [x async for x in db.refunds.find(
+                {"order_number": r["order_number"], "status": "Completed"},
+                {"amount": 1, "_id": 0}
+            )]
+            total_refunded = sum(float(x.get("amount", 0) or 0) for x in completed)
+            if total_refunded + 1e-9 >= float(o["pricing"]["total"]):
+                await db.orders.update_one({"id": o["id"]},
+                    {"$set": {"status": "Refunded", "updated_at": now_iso()},
+                     "$push": {"status_history": {"status": "Refunded", "at": now_iso(),
+                                                     "note": "Refund fully processed by Razorpay."}}})
+    else:
+        await db.refunds.update_one({"id": rid}, {"$set": {"status": status, "updated_at": now_iso()}})
+
+    latest = await db.refunds.find_one({"id": rid}, {"_id": 0})
+    await audit(admin, "refund_update", "refund", rid,
+                 after={"status": (latest or {}).get("status", status),
+                        "razorpay_refund_id": (latest or {}).get("razorpay_refund_id")},
+                 request=request)
+    return {"ok": True, "refund": clean(latest) if latest else None}
 
 
 # ---------------- AUDIT LOGS ----------------
