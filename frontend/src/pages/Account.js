@@ -4,6 +4,7 @@ import { User, Package, MapPin, Heart, LogOut, Plus, Trash2, Check, X, AlertTria
 import { api, apiError } from "../lib/api";
 import { useStore } from "../context/StoreContext";
 import ProductCard from "../components/ProductCard";
+import InvoiceDownloadButton from "../components/InvoiceDownloadButton";
 import { inr, formatDate, isValidPhone, isValidEmail, isValidPincode, sanitizePhone, INDIAN_STATES } from "../lib/utils";
 import { toast } from "sonner";
 
@@ -175,7 +176,10 @@ function OrderDetail() {
         <div className="flex justify-between text-plum font-medium text-lg pt-2 border-t border-line-subtle"><span>Total</span><span>{inr(o.pricing.total)}</span></div>
       </div>
       <div className="mt-6 text-sm text-ink-secondary"><p className="font-medium text-ink mb-1">Delivery Address</p><p>{o.address.name}, {o.address.line1}, {o.address.city}, {o.address.state} — {o.address.pincode}</p></div>
-      {canCancel && <button onClick={() => setShowCancel(true)} className="btn-outline mt-6 !border-err !text-err hover:!bg-err hover:!text-white" data-testid="cancel-order-btn">Cancel Order</button>}
+      <div className="flex flex-wrap gap-3 mt-6">
+        <InvoiceDownloadButton orderNumber={num} />
+        {canCancel && <button onClick={() => setShowCancel(true)} className="btn-outline !border-err !text-err hover:!bg-err hover:!text-white" data-testid="cancel-order-btn">Cancel Order</button>}
+      </div>
       {showCancel && <CancelOrderModal orderNumber={num} onClose={() => setShowCancel(false)} onConfirmed={() => { setShowCancel(false); load(); }} />}
     </div>
   );

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { adminApi } from "../lib/api";
 import { inr, formatDateTime, giftWrapTotal } from "../lib/utils";
 import { Modal, StatusChip } from "./ui";
+import InvoiceDownloadButton from "../components/InvoiceDownloadButton";
 
 // Shared order detail modal with full customer details — reused by Dashboard & Transactions.
 export default function OrderDetailModal({ orderNumber, onClose }) {
@@ -21,7 +22,14 @@ export default function OrderDetailModal({ orderNumber, onClose }) {
               <StatusChip status={o.payment?.status} />
               <span className="text-xs text-gray-400">{formatDateTime(o.created_at)}</span>
             </div>
-            <span className="text-xl font-semibold text-gray-900">{inr(o.pricing?.total)}</span>
+            <div className="flex items-center gap-3">
+              <InvoiceDownloadButton
+                orderNumber={orderNumber}
+                admin
+                className="inline-flex items-center gap-2 border border-gray-300 rounded-md px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+              />
+              <span className="text-xl font-semibold text-gray-900">{inr(o.pricing?.total)}</span>
+            </div>
           </div>
 
           <div className="grid sm:grid-cols-2 gap-6">
