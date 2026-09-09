@@ -17,7 +17,6 @@ TWILIO_API_KEY_SID = os.environ.get("TWILIO_API_KEY_SID") or ""
 TWILIO_API_KEY_SECRET = os.environ.get("TWILIO_API_KEY_SECRET") or ""
 RZP_KEY = os.environ.get("RAZORPAY_KEY_ID") or ""
 RZP_SECRET = os.environ.get("RAZORPAY_KEY_SECRET") or ""
-RZP_WEBHOOK_SECRET = os.environ.get("RAZORPAY_WEBHOOK_SECRET") or ""
 EMERGENT_AUTH_BASE = os.environ.get("EMERGENT_AUTH_BASE", "https://demobackend.emergentagent.com/auth/v1/env")
 
 
@@ -27,10 +26,6 @@ def twilio_enabled():
 
 def razorpay_enabled():
     return bool(RZP_KEY and RZP_SECRET)
-
-
-def razorpay_webhook_enabled():
-    return bool(RZP_KEY and RZP_SECRET and RZP_WEBHOOK_SECRET)
 
 
 # ---------------- OTP ----------------
@@ -120,91 +115,11 @@ def create_payment_order(amount_rupees: int, receipt: str):
 
 
 def verify_payment_signature(order_id: str, payment_id: str, signature: str) -> bool:
-    """Verify a Razorpay Checkout signature using the server-side order id."""
-    if not razorpay_enabled() or not order_id or not payment_id or not signature:
+    if not razorpay_enabled():
         return False
     body = f"{order_id}|{payment_id}"
     expected = hmac.new(RZP_SECRET.encode(), body.encode(), hashlib.sha256).hexdigest()
-    return hmac.compare_digest(expected, signature)
-
-
-def verify_webhook_signature(raw_body: bytes, signature: str) -> bool:
-    """Verify Razorpay's X-Razorpay-Signature over the raw request body."""
-    if not razorpay_webhook_enabled() or not signature:
-        return False
-    expected = hmac.new(
-        RZP_WEBHOOK_SECRET.encode(), raw_body, hashlib.sha256
-    ).hexdigest()
-    return hmac.compare_digest(expected, signature)
-
-
-def _razorpay_client():
-    if not razorpay_enabled():
-        raise RuntimeError("Razorpay is not configured.")
-    import razorpay
-    client = razorpay.Client(auth=(RZP_KEY, RZP_SECRET))
-    client.enable_retry(True)
-    return client
-
-
-def fetch_payment(payment_id: str) -> dict:
-    """Fetch a payment from Razorpay for server-side status validation."""
-    return _razorpay_client().payment.fetch(payment_id)
-
-
-def fetch_order(order_id: str) -> dict:
-    """Fetch a Razorpay order from the API."""
-    return _razorpay_client().order.fetch(order_id)
-
-
-def fetch_order_with_payments(order_id: str) -> dict:
-    """Fetch a Razorpay order including its payment collection."""
-    return _razorpay_client().order.fetch(
-        order_id, data={"expand[]": "payments"}
-    )
-
-
-def create_refund(
-    payment_id: str, amount_paise: int, receipt: str, idempotency_key: str
-) -> dict:
-    """Create a normal Razorpay refund with an idempotency key."""
-    if not razorpay_enabled():
-        raise RuntimeError("Razorpay is not configured.")
-    if not payment_id:
-        raise ValueError("Missing Razorpay payment id.")
-    if amount_paise <= 0:
-        raise ValueError("Refund amount must be greater than zero.")
-
-    # The SDK supports normal refunds, while the REST API supports the
-    # X-Refund-Idempotency header that prevents duplicate refunds on retries.
-    auth = (RZP_KEY, RZP_SECRET)
-    payload = {
-        "amount": amount_paise,
-        "speed": "normal",
-        "receipt": (receipt or "refund")[:40],
-    }
-    headers = {
-        "Content-Type": "application/json",
-        "X-Refund-Idempotency": idempotency_key,
-    }
-    with httpx.Client(timeout=20.0) as client:
-        response = client.post(
-            f"https://api.razorpay.com/v1/payments/{payment_id}/refund",
-            auth=auth,
-            json=payload,
-            headers=headers,
-        )
-
-    if response.status_code >= 400:
-        try:
-            details = response.json()
-        except ValueError:
-            details = {}
-        error = (details.get("error") or {}) if isinstance(details, dict) else {}
-        description = error.get("description") or "Razorpay refund request failed."
-        raise RuntimeError(description)
-
-    return response.json()
+    return hmac.compare_digest(expected, signature or "")
 
 
 # ---------------- Emergent Google Auth ----------------
