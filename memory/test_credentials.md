@@ -9,7 +9,7 @@
 - Test phone: `9876543210`
 
 ## Payments — Razorpay (TEST mode)
-- Key ID: `rzp_test_TYIXd8zUjqE7NF` (configured in backend/.env)
+- Key ID: `rzp_test_TZw03BnRZ4j4q9` (configured in backend/.env)
 - COD checkout can be used for full end-to-end order success without the gateway modal.
 
 _Last updated: 2026-06 (load-in .env recreated; pydantic-core pinned to 2.27.2)._
