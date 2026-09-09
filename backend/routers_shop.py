@@ -3,7 +3,7 @@ import json
 import re
 import uuid
 from datetime import datetime, timezone
-from fastapi import APIRouter, HTTPException, Request, Depends
+from fastapi import APIRouter, HTTPException, Request, Depends, BackgroundTasks
 from db import db, clean
 from security import (create_token, get_current_customer, optional_customer, now_iso)
 from pricing import compute_totals, validate_coupon, build_line_items
@@ -418,48 +418,123 @@ def _payment_amount(order):
     return int(round(float(order["pricing"]["total"]) * 100))
 
 
-async def _fetch_payment_with_retry(payment_id, attempts=4):
-    last_exc = None
-    for attempt in range(attempts):
-        try:
-            return await asyncio.to_thread(ig.fetch_payment, payment_id)
-        except Exception as exc:
-            last_exc = exc
-            if attempt < attempts - 1:
-                await asyncio.sleep(0.75 * (attempt + 1))
-    raise last_exc or RuntimeError("Unable to fetch Razorpay payment.")
+async def _reconcile_payment(order_id, payment_id):
+    """Reconcile the payment with Razorpay without blocking the customer response."""
+    try:
+        payment = await asyncio.to_thread(ig.fetch_payment, payment_id)
+        order = await db.orders.find_one({"id": order_id})
+        if not order:
+            return
+
+        stored_order_id = (order.get("payment") or {}).get("razorpay_order_id")
+        expected_amount = _payment_amount(order)
+        status = (payment.get("status") or "").lower()
+
+        update = {
+            "payment.reconciliation_status": status or "unknown",
+            "payment.reconciled_at": now_iso(),
+        }
+
+        if payment.get("order_id") != stored_order_id:
+            update["payment.reconciliation_error"] = "Razorpay order id mismatch."
+        elif (payment.get("currency") or "").upper() != "INR":
+            update["payment.reconciliation_error"] = "Unexpected payment currency."
+        elif int(payment.get("amount") or 0) != expected_amount:
+            update["payment.reconciliation_error"] = "Payment amount mismatch."
+        else:
+            update["payment.razorpay_payment_status"] = status
+
+        # Webhooks are the durable source of truth for later state changes.
+        # If Razorpay reports captured and a webhook/callback was missed, finalize here.
+        if (
+            not update.get("payment.reconciliation_error")
+            and status == "captured"
+            and (order.get("payment") or {}).get("status") not in ("paid", "cod_confirmed")
+        ):
+            await _finalize_paid_order(order, payment_id=payment_id, method="razorpay")
+
+        await db.orders.update_one({"id": order_id}, {"$set": update})
+    except Exception as exc:
+        print(f"[razorpay] background reconciliation failed for order {order_id}: {exc}")
 
 
-async def _finalize_from_verified_payment(order, payment):
-    """Validate a fetched Razorpay payment and finalize only when captured."""
-    stored_order_id = (order.get("payment") or {}).get("razorpay_order_id")
-    expected_amount = _payment_amount(order)
+async def _finalize_paid_order(order, payment_id=None, method="razorpay"):
+    """Idempotently finalize a captured payment or COD order."""
+    guard = await db.orders.update_one(
+        {"id": order["id"], "payment.status": {"$nin": ["paid", "cod_confirmed"]}},
+        {"$set": {
+            "payment.status": "paid" if method != "cod" else "cod_confirmed",
+            "payment.payment_id": payment_id,
+            "payment.razorpay_payment_id": payment_id if method != "cod" else None,
+            "payment.method": method,
+            "status": "Confirmed", "updated_at": now_iso(),
+        },
+         "$push": {"status_history": {
+             "status": "Confirmed", "at": now_iso(),
+             "note": "Payment confirmed." if method != "cod" else "COD order confirmed.",
+         }}}
+    )
+    if guard.modified_count == 0:
+        return
 
-    if not payment or payment.get("id") is None:
-        raise HTTPException(502, "Payment could not be verified yet. Please try again.")
-    if payment.get("id") is None or payment.get("order_id") != stored_order_id:
-        raise HTTPException(400, "Payment verification failed.")
-    if (payment.get("currency") or "").upper() != "INR":
-        raise HTTPException(400, "Payment currency verification failed.")
-    if int(payment.get("amount") or 0) != expected_amount:
-        raise HTTPException(400, "Payment amount verification failed.")
+    for line in order["items"]:
+        await db.products.update_one(
+            {"id": line["product_id"]},
+            {"$inc": {"reserved": -line["qty"], "stock": -line["qty"], "sales_count": line["qty"]}},
+        )
+        await db.inventory_transactions.insert_one({
+            "id": str(uuid.uuid4()), "product_id": line["product_id"], "change": -line["qty"],
+            "reason": f"Order {order['order_number']}", "at": now_iso(),
+        })
+        prod = await db.products.find_one({"id": line["product_id"]}, {"stock": 1, "status": 1, "_id": 0})
+        if prod and prod.get("stock", 0) <= 0 and prod.get("status") == "Active":
+            await db.products.update_one({"id": line["product_id"]}, {"$set": {"status": "Out of Stock"}})
 
-    status = (payment.get("status") or "").lower()
-    if status == "failed":
-        await _mark_payment_failed(order, "Razorpay reported a failed payment.")
-        raise HTTPException(402, "Payment failed. Please try again.")
-    if status == "refunded":
-        await _mark_payment_failed(order, "Razorpay payment was refunded before order confirmation.")
-        raise HTTPException(402, "Payment was refunded and the order was not confirmed.")
-    if status != "captured":
-        raise HTTPException(409, "Payment is authorized and awaiting capture. Please wait a moment and try again.")
+    if order["pricing"].get("coupon_code"):
+        await db.coupons.update_one(
+            {"code": order["pricing"]["coupon_code"]},
+            {"$inc": {"used_count": 1}},
+        )
+    await db.customers.update_one(
+        {"id": order["customer_id"]},
+        {"$set": {"status": "Active"}, "$inc": {
+            "order_count": 1, "total_spend": order["pricing"]["total"]}},
+    )
+    await db.notifications.insert_one({
+        "id": str(uuid.uuid4()), "type": "new_order",
+        "title": f"New order {order['order_number']}",
+        "order_number": order["order_number"], "read": False, "at": now_iso(),
+    })
+    customer = await db.customers.find_one({"id": order["customer_id"]}, {"phone": 1, "_id": 0})
+    if customer and customer.get("phone"):
+        # Do not hold the payment response on a third-party SMS provider.
+        asyncio.create_task(
+            ig.send_sms(
+                customer["phone"],
+                f"ARTFUL: Your order {order['order_number']} is confirmed! "
+                f"Amount Rs.{order['pricing']['total']}. Track it in your account. Thank you for shopping with us.",
+            )
+        )
 
-    await _finalize_paid_order(order, payment_id=payment["id"], method="razorpay")
-    return await db.orders.find_one({"id": order["id"]})
+
+async def _mark_payment_failed(order, reason="Payment failed."):
+    """Mark an unpaid order failed and release its reservation once."""
+    guard = await db.orders.update_one(
+        {"id": order["id"], "payment.status": {"$nin": ["paid", "cod_confirmed", "failed"]}},
+        {"$set": {"payment.status": "failed", "status": "Failed", "updated_at": now_iso()},
+         "$push": {"status_history": {"status": "Failed", "at": now_iso(), "note": reason}}},
+    )
+    if guard.modified_count == 0:
+        return False
+    for line in order.get("items", []):
+        await db.products.update_one(
+            {"id": line["product_id"]}, {"$inc": {"reserved": -line["qty"]}}
+        )
+    return True
 
 
 @router.post("/checkout/verify-payment")
-async def verify_payment(payload: dict, cust: dict = Depends(get_current_customer)):
+async def verify_payment(payload: dict, background_tasks: BackgroundTasks, cust: dict = Depends(get_current_customer)):
     order = await db.orders.find_one({"id": payload.get("order_id"), "customer_id": cust["id"]})
     if not order:
         raise HTTPException(404, "Order not found.")
@@ -473,32 +548,24 @@ async def verify_payment(payload: dict, cust: dict = Depends(get_current_custome
     payment_id = payload.get("razorpay_payment_id")
     signature = payload.get("razorpay_signature")
 
-    # The signature MUST be generated with the order id stored on our server.
+    # Always verify against the Razorpay order id stored on our server.
     if not stored_rzp_order_id or callback_rzp_order_id != stored_rzp_order_id:
         raise HTTPException(400, "Payment verification failed.")
     if not ig.verify_payment_signature(stored_rzp_order_id, payment_id, signature):
+        await _mark_payment_failed(order, "Payment signature verification failed.")
         raise HTTPException(400, "Payment verification failed. If money was deducted, contact support.")
 
     try:
-        # Razorpay can briefly report an authorized payment before capture completes.
-        # Retry the read a few times to avoid showing a false verification error to the customer.
-        payment = await _fetch_payment_with_retry(payment_id)
-        if (payment.get("status") or "").lower() == "authorized":
-            try:
-                payment = await asyncio.to_thread(
-                    ig.capture_payment, payment_id, _payment_amount(order)
-                )
-            except Exception as capture_exc:
-                print(f"[razorpay] capture attempt for {order['order_number']}: {capture_exc}")
-                # Another request (or Dashboard auto-capture) may have captured it meanwhile.
-                payment = await _fetch_payment_with_retry(payment_id, attempts=3)
-        verified_order = await _finalize_from_verified_payment(order, payment)
+        # Fast user-facing path: signature verification is authoritative for the Checkout
+        # success callback. Final reconciliation is done asynchronously and through webhooks.
+        await _finalize_paid_order(order, payment_id=payment_id, method="razorpay")
+        verified_order = await db.orders.find_one({"id": order["id"]})
+        background_tasks.add_task(_reconcile_payment, order["id"], payment_id)
     except HTTPException:
         raise
     except Exception as exc:
-        # Do not mark a paid-looking order failed on a temporary API/network error.
-        print(f"[razorpay] verification failed for {order['order_number']}: {exc}")
-        raise HTTPException(502, "Payment verification is temporarily unavailable. Your payment has not been marked failed; please check your order in a moment.")
+        print(f"[razorpay] fast verification/finalization failed for {order['order_number']}: {exc}")
+        raise HTTPException(502, "Payment was verified, but your order could not be confirmed yet. Please check your order shortly.")
 
     return {"success": True, "order": order_public(verified_order)}
 
@@ -516,7 +583,15 @@ async def razorpay_webhook(request: Request):
     except (UnicodeDecodeError, json.JSONDecodeError):
         raise HTTPException(400, "Invalid webhook payload.")
 
+    event_id = request.headers.get("x-razorpay-event-id")
     event_name = payload.get("event") or ""
+
+    # Razorpay can retry the same event. Keep a lightweight event marker so duplicate
+    # deliveries can be acknowledged without repeating external side effects.
+    if event_id:
+        duplicate = await db.payment_webhook_events.find_one({"event_id": event_id})
+        if duplicate:
+            return {"ok": True}
 
     if event_name == "payment.captured":
         payment = ((payload.get("payload") or {}).get("payment") or {}).get("entity") or {}
@@ -533,9 +608,7 @@ async def razorpay_webhook(request: Request):
         rzp_order_id = payment.get("order_id")
         order = await db.orders.find_one({"payment.razorpay_order_id": rzp_order_id}) if rzp_order_id else None
         if order and order["payment"]["status"] not in ("paid", "cod_confirmed"):
-            # A payment.failed event can legitimately be followed by payment.captured
-            # (for example after a retry/late authorization). Record the attempt only;
-            # do not release stock or permanently fail the order here.
+            # A payment.failed event may be followed by payment.captured after a retry.
             await db.orders.update_one(
                 {"id": order["id"], "payment.status": {"$nin": ["paid", "cod_confirmed"]}},
                 {"$set": {
@@ -600,6 +673,13 @@ async def razorpay_webhook(request: Request):
                                  "note": "Refund fully processed by Razorpay.",
                              }}},
                         )
+
+    if event_id:
+        try:
+            await db.payment_webhook_events.insert_one({"event_id": event_id, "event": event_name, "received_at": now_iso()})
+        except Exception as exc:
+            # Duplicate insert race is harmless; the event has already been handled.
+            print(f"[razorpay] webhook event marker not stored: {exc}")
 
     return {"ok": True}
 
