@@ -32,27 +32,28 @@ import NotFound from "./pages/NotFound";
 import AdminLogin from "./admin/AdminLogin";
 import AdminApp from "./admin/AdminApp";
 
-// Branded loader on first load + on every storefront route change.
+// Show one branded loader only when the storefront is first opened.
+// Route changes never show another loader. Admin routes never show it.
 function RouteLoader() {
   const location = useLocation();
   const noLoader = typeof window !== "undefined" && window.location.search.includes("noloader");
-  const [show, setShow] = useState(!window.location.pathname.startsWith("/admin") && !noLoader);
   const isAdmin = location.pathname.startsWith("/admin");
-  const isFirst = useRef(true);
+  const [show, setShow] = useState(
+    typeof window !== "undefined" && !isAdmin && !noLoader
+  );
 
   useEffect(() => {
-    if (location.pathname.startsWith("/admin") || noLoader) { setShow(false); return; }
-    const duration = isFirst.current ? 900 : 450;
-    isFirst.current = false;
-    setShow(true);
+    if (isAdmin || noLoader || !show) return;
+
     const hide = () => setShow(false);
-    const t = setTimeout(hide, duration);
-    // Also dismiss on the first interaction (robust even if timers are throttled).
+    const t = setTimeout(hide, 900);
     const opts = { once: true, passive: true };
+
     window.addEventListener("pointerdown", hide, opts);
     window.addEventListener("keydown", hide, opts);
     window.addEventListener("wheel", hide, opts);
     window.addEventListener("touchstart", hide, opts);
+
     return () => {
       clearTimeout(t);
       window.removeEventListener("pointerdown", hide);
@@ -60,10 +61,10 @@ function RouteLoader() {
       window.removeEventListener("wheel", hide);
       window.removeEventListener("touchstart", hide);
     };
-  }, [location.pathname]);
+  }, []);
 
   if (isAdmin || !show) return null;
-  return <BrandLoader minDuration={450} onDone={() => setShow(false)} />;
+  return <BrandLoader minDuration={900} onDone={() => setShow(false)} />;
 }
 
 // Tracks storefront visits (+ identity when signed in) so the admin Visitors page has data.

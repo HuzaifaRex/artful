@@ -46,26 +46,17 @@ export function BrandLoader({ onDone, minDuration = 900 }) {
   );
 }
 
-export function Spinner({ className = "" }) {
-  return <div className={`inline-block w-6 h-6 border-2 border-plum/30 border-t-plum rounded-full animate-spin ${className}`} />;
+// Kept as exports for compatibility. The site uses only the initial BrandLoader.
+export function Spinner() {
+  return null;
 }
 
+// Page-level loading indicators are intentionally disabled.
 export function PageLoader() {
-  return (
-    <div className="min-h-[55vh] flex flex-col items-center justify-center gap-4" data-testid="page-loader">
-      <img src={LOGO_LIGHT} alt="ARTFUL" className="dark:hidden w-32 animate-pulse-soft" />
-      <img src={LOGO_DARK} alt="ARTFUL" className="hidden dark:block w-32 animate-pulse-soft" />
-      <Spinner />
-    </div>
-  );
+  return null;
 }
 
+// Product skeletons are intentionally disabled.
 export function ProductSkeleton() {
-  return (
-    <div className="animate-pulse">
-      <div className="aspect-[4/5] bg-surface" />
-      <div className="h-4 bg-surface mt-4 w-3/4 mx-auto" />
-      <div className="h-3 bg-surface mt-2 w-1/3 mx-auto" />
-    </div>
-  );
+  return null;
 }

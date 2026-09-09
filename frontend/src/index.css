@@ -98,6 +98,15 @@ body {
 @keyframes pulse-soft { 0%,100% { opacity: 1; } 50% { opacity: 0.55; } }
 .animate-pulse-soft { animation: pulse-soft 1.6s ease-in-out infinite; }
 
+/* Loader policy: only the initial branded loader is allowed. */
+.animate-spin {
+  display: none !important;
+}
+
+.animate-pulse {
+  display: none !important;
+}
+
 /* CSS-driven loader auto-hide (runs on the document timeline even if JS is busy) */
 @keyframes loader-out {
   0%, 72% { opacity: 1; visibility: visible; }
