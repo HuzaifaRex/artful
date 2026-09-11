@@ -87,9 +87,15 @@ export default function ProductDetail() {
   const handleAdd = () => addToCart(p, qty, opts());
   const handleBuy = () => { addToCart(p, qty, opts()); navigate("/checkout"); };
 
-  const checkPin = () => {
+  const checkPin = async () => {
     if (pincode.length !== 6) return toast.error("Enter a valid 6-digit pincode");
-    setPinResult({ serviceable: true, days: "3–5" });
+    try {
+      const { data } = await api.get(`/delivery-estimate?pincode=${pincode}`);
+      setPinResult(data);
+    } catch (e) {
+      setPinResult(null);
+      toast.error(apiError(e));
+    }
   };
 
   return (
@@ -166,7 +172,12 @@ export default function ProductDetail() {
               <input value={pincode} onChange={(e) => setPincode(e.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="Enter pincode" className="input-field flex-1" data-testid="pincode-input" />
               <button onClick={checkPin} className="btn-primary !px-6" data-testid="pincode-check">Check</button>
             </div>
-            {pinResult && <p className="text-sm text-ok mt-2 flex items-center gap-1"><Check size={14} /> Delivers in {pinResult.days} business days</p>}
+            {pinResult && (
+              <div className="text-sm text-ok mt-2 flex items-start gap-1.5" data-testid="delivery-estimate">
+                <Check size={14} className="mt-0.5 shrink-0" />
+                <span>{pinResult.dispatch_text} · {pinResult.delivery_text}</span>
+              </div>
+            )}
           </div>
 
           <div className="mt-8">

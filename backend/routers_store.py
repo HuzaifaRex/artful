@@ -268,6 +268,68 @@ async def public_settings():
     return s
 
 
+# ---------- Delivery estimate ----------
+def _business_days_text(days: int) -> str:
+    days = max(0, int(days))
+    if days == 0:
+        return "today"
+    return f"{days} business day" if days == 1 else f"{days} business days"
+
+
+def _delivery_estimate_for_pincode(pincode: str, settings: dict) -> dict:
+    logic = settings.get("delivery_logic") or {}
+    default = logic.get("default") or {}
+    dispatch_days = max(0, int(default.get("dispatch_days", 2) or 0))
+    delivery_min = max(0, int(default.get("delivery_min_days", 3) or 0))
+    delivery_max = max(delivery_min, int(default.get("delivery_max_days", 5) or 0))
+    matched = None
+
+    rules = logic.get("pincode_rules") or []
+    # Most-specific matching prefix wins (e.g. 452007 beats 452).
+    for rule in sorted(rules, key=lambda r: len(str(r.get("prefix") or "")), reverse=True):
+        prefix = "".join(ch for ch in str(rule.get("prefix") or "") if ch.isdigit())
+        if prefix and pincode.startswith(prefix):
+            matched = rule
+            break
+
+    if matched:
+        dispatch_days = max(0, int(matched.get("dispatch_days", dispatch_days) or 0))
+        delivery_min = max(0, int(matched.get("delivery_min_days", delivery_min) or 0))
+        delivery_max = max(delivery_min, int(matched.get("delivery_max_days", delivery_max) or 0))
+
+    dispatch_text = (
+        "Dispatches today" if dispatch_days == 0
+        else f"Dispatches within {_business_days_text(dispatch_days)}"
+    )
+    delivery_text = (
+        f"Delivery in {delivery_min} business day"
+        if delivery_min == delivery_max == 1
+        else f"Delivery in {delivery_min}–{delivery_max} business days"
+    )
+
+    return {
+        "serviceable": True,
+        "pincode": pincode,
+        "label": (matched or {}).get("label") or "Pan-India service",
+        "dispatch_days": dispatch_days,
+        "delivery_min_days": delivery_min,
+        "delivery_max_days": delivery_max,
+        "dispatch_text": dispatch_text,
+        "delivery_text": delivery_text,
+        "summary": f"{dispatch_text} · {delivery_text}",
+    }
+
+
+@router.get("/delivery-estimate")
+async def delivery_estimate(pincode: str = Query(..., min_length=6, max_length=6)):
+    pincode = "".join(ch for ch in pincode if ch.isdigit())
+    if len(pincode) != 6 or pincode[0] == "0":
+        raise HTTPException(400, "Enter a valid 6-digit Indian pincode.")
+
+    settings = await db.settings.find_one({"id": "store"}, {"_id": 0}) or {}
+    return _delivery_estimate_for_pincode(pincode, settings)
+
+
 @router.get("/pages/{slug}")
 async def page(slug: str):
     p = await db.pages.find_one({"slug": slug, "status": "Active"}, {"_id": 0})

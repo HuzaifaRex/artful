@@ -33,6 +33,7 @@ export default function Checkout() {
   const [addr, setAddr] = useState(EMPTY_ADDR);
   const [method, setMethod] = useState("razorpay");
   const [placing, setPlacing] = useState(false);
+  const [deliveryEstimate, setDeliveryEstimate] = useState(null);
 
   const validate = useCallback(async (c) => {
     if (cart.length === 0) return;
@@ -53,6 +54,25 @@ export default function Checkout() {
       }).catch(() => {});
     }
   }, [customer]);
+
+  useEffect(() => {
+    const pin = addr.pincode || "";
+    if (pin.length !== 6) {
+      setDeliveryEstimate(null);
+      return undefined;
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        const { data } = await api.get(`/delivery-estimate?pincode=${pin}`);
+        setDeliveryEstimate(data);
+      } catch {
+        setDeliveryEstimate(null);
+      }
+    }, 200);
+
+    return () => clearTimeout(timer);
+  }, [addr.pincode]);
 
   if (cart.length === 0) {
     return <div className="container-artful py-24 text-center"><h1 className="section-title mb-4">Your cart is empty</h1><Link to="/shop" className="btn-primary">Shop Now</Link></div>;
@@ -202,6 +222,15 @@ export default function Checkout() {
               {field("pincode", "Pincode", true, { numeric: true })}
               {field("instructions", "Delivery instructions (optional)", false, { full: true })}
             </div>
+            {deliveryEstimate && (
+              <div className="mt-4 bg-surface p-4" data-testid="checkout-delivery-estimate">
+                <p className="label-caption mb-1.5">Delivery Estimate</p>
+                <p className="text-sm text-ok flex items-center gap-1.5">
+                  <Check size={14} /> {deliveryEstimate.dispatch_text} · {deliveryEstimate.delivery_text}
+                </p>
+                {deliveryEstimate.label && <p className="text-xs text-ink-muted mt-1">{deliveryEstimate.label}</p>}
+              </div>
+            )}
           </section>
 
           {/* Payment */}
