@@ -1,11 +1,11 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
-import { Heart, Minus, Plus, ChevronDown, Truck, Gift, Star, Check, UploadCloud, X, PlayCircle } from "lucide-react";
+import { Heart, Minus, Plus, ChevronDown, Truck, Gift, Star, Check } from "lucide-react";
 import { api, apiError } from "../lib/api";
 import { useStore } from "../context/StoreContext";
 import ProductCard from "../components/ProductCard";
 import { PageLoader } from "../components/Loader";
-import { inr, discountPct, getBulkUnitPrice } from "../lib/utils";
+import { inr, discountPct } from "../lib/utils";
 import { toast } from "sonner";
 
 function Accordion({ title, children, open }) {
@@ -35,8 +35,7 @@ export default function ProductDetail() {
   const [pincode, setPincode] = useState("");
   const [pinResult, setPinResult] = useState(null);
   const [canReview, setCanReview] = useState(null);
-  const [rvForm, setRvForm] = useState({ rating: 5, title: "", body: "", image_url: "" });
-  const [reviewImageBusy, setReviewImageBusy] = useState(false);
+  const [rvForm, setRvForm] = useState({ rating: 5, title: "", body: "" });
 
   useEffect(() => {
     setP(null); setActiveImg(0); setQty(1); setGiftWrap(false); setMessage("");
@@ -51,23 +50,28 @@ export default function ProductDetail() {
     } else setCanReview(null);
   }, [slug, reviews]);
 
-  const uploadReviewImage = async (file) => {
-    if (!file) return;
-    if (!file.type.startsWith("image/")) return toast.error("Please choose an image file.");
-    if (file.size > 8 * 1024 * 1024) return toast.error("Review image must be 8MB or smaller.");
-    const fd = new FormData(); fd.append("file", file); setReviewImageBusy(true);
-    try { const { data } = await api.post("/reviews/upload", fd, { headers: { "Content-Type": "multipart/form-data" } }); setRvForm((x) => ({ ...x, image_url: data.url })); toast.success("Photo added"); }
-    catch (e) { toast.error(apiError(e, "Image upload failed")); }
-    setReviewImageBusy(false);
-  };
+  useEffect(() => {
+    if (pincode.length !== 6) {
+      setPinResult(null);
+      return undefined;
+    }
+    const timer = setTimeout(async () => {
+      try {
+        const { data } = await api.get(`/delivery-estimate?pincode=${pincode}`);
+        setPinResult(data);
+      } catch {
+        setPinResult(null);
+      }
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [pincode]);
 
   const submitReview = async () => {
-    if (!rvForm.body.trim()) return toast.error("Please write your review.");
     try {
       const { data } = await api.post(`/products/${slug}/reviews`, rvForm);
       toast.success(data.message);
       setCanReview({ can_review: false, already_reviewed: true });
-      setRvForm({ rating: 5, title: "", body: "", image_url: "" });
+      setRvForm({ rating: 5, title: "", body: "" });
     } catch (e) { toast.error(apiError(e)); }
   };
 
@@ -77,8 +81,6 @@ export default function ProductDetail() {
   const available = (p.stock || 0) - (p.reserved || 0);
   const soldOut = p.status === "Out of Stock" || available <= 0;
   const disc = discountPct(p.price, p.compare_at_price);
-  const bulkPrice = getBulkUnitPrice(p, qty);
-  const bulkActive = bulkPrice < Number(p.price || 0);
   const saved = wishlist.includes(p.id);
 
   const opts = () => ({ gift_wrap: giftWrap, personalization: message.trim() || null });
@@ -110,7 +112,6 @@ export default function ProductDetail() {
             {disc && <span className="absolute top-4 left-4 bg-accent text-white text-xs px-3 py-1.5 uppercase tracking-widest2">-{disc}%</span>}
           </div>
         </div>
-        {p.video && <div className="mt-4 border border-line p-3 bg-surface"><div className="flex items-center gap-2 mb-2 text-xs uppercase tracking-widest text-ink-muted"><PlayCircle size={15} /> Product Video</div><video src={p.video} controls playsInline preload="metadata" className="w-full max-h-[520px] bg-black object-contain" /></div>}
 
         {/* Info */}
         <div className="lg:py-4">
@@ -120,7 +121,7 @@ export default function ProductDetail() {
             <div className="flex items-center gap-1 mt-3">{[...Array(5)].map((_, i) => <Star key={i} size={15} className={i < Math.round(p.rating) ? "fill-gold text-gold" : "text-line"} />)}<span className="text-xs text-ink-muted ml-2">{p.rating} ({p.review_count})</span></div>
           )}
           <div className="flex items-baseline gap-3 mt-5">
-            <span className="text-2xl text-plum font-medium" data-testid="pdp-price">{inr(bulkPrice)}</span>
+            <span className="text-2xl text-plum font-medium" data-testid="pdp-price">{inr(p.price)}</span>
             {p.compare_at_price > p.price && <span className="text-ink-muted line-through">{inr(p.compare_at_price)}</span>}
             <span className="text-xs text-ink-muted">(incl. of taxes)</span>
           </div>
@@ -137,16 +138,6 @@ export default function ProductDetail() {
               <label className="label-caption flex items-center gap-2 mb-2"><Gift size={14} /> {p.personalization.label || "Personalize this gift"}</label>
               <input value={message} onChange={(e) => setMessage(e.target.value.slice(0, p.personalization.char_limit || 30))} placeholder="Add a name or short message" className="input-field" data-testid="personalization-input" maxLength={p.personalization.char_limit || 30} />
               <p className="text-xs text-ink-muted mt-1">{message.length}/{p.personalization.char_limit || 30} characters</p>
-            </div>
-          )}
-
-          {p.bulk_order?.enabled && (p.bulk_order?.tiers || []).length > 0 && (
-            <div className="mt-6 border border-line bg-surface p-4" data-testid="bulk-order-box">
-              <div className="flex items-center justify-between mb-3"><div><p className="text-sm font-medium text-ink">Bulk Order Pricing</p><p className="text-xs text-ink-muted">Buy more, pay less per piece.</p></div>{bulkActive && <span className="text-xs text-ok font-medium">Bulk price applied</span>}</div>
-              <div className="space-y-1.5 text-sm">
-                {(p.bulk_order.tiers || []).slice().sort((a, b) => Number(a.min_quantity) - Number(b.min_quantity)).map((t) => <div key={`${t.min_quantity}-${t.price}`} className={`flex justify-between ${qty >= Number(t.min_quantity) ? "text-plum font-medium" : "text-ink-secondary"}`}><span>{Number(t.min_quantity)}+ pieces</span><span>{inr(t.price)} / piece</span></div>)}
-              </div>
-              {qty < Number(p.bulk_order.min_quantity || 1) && <p className="text-xs text-ink-muted mt-3">Order {Number(p.bulk_order.min_quantity) - qty} more to unlock bulk pricing.</p>}
             </div>
           )}
 
@@ -198,18 +189,6 @@ export default function ProductDetail() {
             </div>
             <input value={rvForm.title} onChange={(e) => setRvForm({ ...rvForm, title: e.target.value })} placeholder="Title (optional)" className="input-field mb-3" data-testid="rv-title" />
             <textarea value={rvForm.body} onChange={(e) => setRvForm({ ...rvForm, body: e.target.value })} rows={3} placeholder="Share your experience" className="input-field mb-3" data-testid="rv-body" />
-            {rvForm.image_url ? (
-              <div className="mb-3 inline-flex relative">
-                <img src={rvForm.image_url} alt="Your review" className="w-28 h-28 object-cover rounded border border-line" />
-                <button type="button" onClick={() => setRvForm({ ...rvForm, image_url: "" })} className="absolute -top-2 -right-2 w-7 h-7 rounded-full bg-plum text-white flex items-center justify-center"><X size={14} /></button>
-              </div>
-            ) : (
-              <label className="inline-flex items-center gap-2 text-xs text-plum border border-line px-3 py-2 cursor-pointer mb-3">
-                <UploadCloud size={15} /> {reviewImageBusy ? "Uploading…" : "Add photo"}
-                <input type="file" accept="image/*" hidden disabled={reviewImageBusy} onChange={(e) => uploadReviewImage(e.target.files?.[0])} />
-              </label>
-            )}
-            <p className="text-xs text-ink-muted mb-3">Your review photo will be published only after admin approval.</p>
             <button onClick={submitReview} className="btn-primary" data-testid="rv-submit">Submit Review</button>
           </div>
         )}
@@ -224,7 +203,6 @@ export default function ProductDetail() {
                 </div>
                 {r.title && <p className="font-medium text-ink mt-1.5">{r.title}</p>}
                 <p className="text-sm text-ink-secondary mt-1">{r.body}</p>
-                {r.image_url && <img src={r.image_url} alt="Customer review" className="mt-3 w-32 h-32 object-cover rounded border border-line" />}
                 <p className="text-xs text-ink-muted mt-1">— {r.customer_name}</p>
               </div>
             ))}

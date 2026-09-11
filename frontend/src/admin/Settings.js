@@ -11,6 +11,28 @@ export function Settings() {
   useEffect(() => { load(); }, []);
   const set = (k, v) => setS((p) => ({ ...p, [k]: v }));
   const setSocial = (k, v) => setS((p) => ({ ...p, social: { ...(p.social || {}), [k]: v } }));
+  const setDelivery = (next) => setS((p) => ({ ...p, delivery_logic: next }));
+  const updateDeliveryDefault = (k, v) => {
+    const current = s.delivery_logic || { default: { dispatch_days: 2, delivery_min_days: 3, delivery_max_days: 5 }, pincode_rules: [] };
+    setDelivery({
+      ...current,
+      default: { ...(current.default || { dispatch_days: 2, delivery_min_days: 3, delivery_max_days: 5 }), [k]: Number(v) },
+    });
+  };
+  const updateDeliveryRule = (index, key, value) => {
+    const current = s.delivery_logic || { default: { dispatch_days: 2, delivery_min_days: 3, delivery_max_days: 5 }, pincode_rules: [] };
+    const rules = [...(current.pincode_rules || [])];
+    rules[index] = { ...rules[index], [key]: key === "prefix" || key === "label" ? value : Number(value) };
+    setDelivery({ ...current, pincode_rules: rules });
+  };
+  const addDeliveryRule = () => {
+    const current = s.delivery_logic || { default: { dispatch_days: 2, delivery_min_days: 3, delivery_max_days: 5 }, pincode_rules: [] };
+    setDelivery({ ...current, pincode_rules: [...(current.pincode_rules || []), { prefix: "", label: "", dispatch_days: 2, delivery_min_days: 3, delivery_max_days: 5 }] });
+  };
+  const removeDeliveryRule = (index) => {
+    const current = s.delivery_logic || { default: { dispatch_days: 2, delivery_min_days: 3, delivery_max_days: 5 }, pincode_rules: [] };
+    setDelivery({ ...current, pincode_rules: (current.pincode_rules || []).filter((_, i) => i !== index) });
+  };
   const save = async () => { try { await adminApi.put("/settings", s); toast.success("Settings saved"); } catch (e) { toast.error(apiError(e)); } };
   if (!s) return null;
   return (
@@ -81,6 +103,34 @@ export function Settings() {
             </Field>
           </div>
           <p className="text-xs text-gray-500 mt-2">Only Instagram, Pinterest and YouTube are displayed on the storefront.</p>
+        </div>
+        <div className="pt-2">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <h3 className="font-semibold text-gray-900 text-sm">Delivery & Dispatch Timing</h3>
+              <p className="text-xs text-gray-500 mt-1">Pan-India estimate uses the most-specific PIN prefix rule; default applies when no rule matches.</p>
+            </div>
+            <button type="button" onClick={addDeliveryRule} className="border border-gray-300 text-gray-700 rounded-md px-3 py-2 text-xs flex items-center gap-1">
+              <Plus size={14} /> Add PIN Rule
+            </button>
+          </div>
+          <div className="grid sm:grid-cols-3 gap-4 mb-5">
+            <Field label="Default Dispatch (business days)"><input type="number" min="0" value={s.delivery_logic?.default?.dispatch_days ?? 2} onChange={(e) => updateDeliveryDefault("dispatch_days", e.target.value)} className={inputCls} /></Field>
+            <Field label="Default Minimum Delivery (business days)"><input type="number" min="0" value={s.delivery_logic?.default?.delivery_min_days ?? 3} onChange={(e) => updateDeliveryDefault("delivery_min_days", e.target.value)} className={inputCls} /></Field>
+            <Field label="Default Maximum Delivery (business days)"><input type="number" min="0" value={s.delivery_logic?.default?.delivery_max_days ?? 5} onChange={(e) => updateDeliveryDefault("delivery_max_days", e.target.value)} className={inputCls} /></Field>
+          </div>
+          {(s.delivery_logic?.pincode_rules || []).map((rule, i) => (
+            <div key={i} className="grid sm:grid-cols-5 gap-3 border border-gray-200 rounded-md p-3 mb-3">
+              <Field label="PIN Prefix"><input inputMode="numeric" maxLength={6} value={rule.prefix || ""} onChange={(e) => updateDeliveryRule(i, "prefix", e.target.value.replace(/\D/g, "").slice(0, 6))} className={inputCls} placeholder="e.g. 452" /></Field>
+              <Field label="Rule Label"><input value={rule.label || ""} onChange={(e) => updateDeliveryRule(i, "label", e.target.value)} className={inputCls} placeholder="e.g. Indore zone" /></Field>
+              <Field label="Dispatch"><input type="number" min="0" value={rule.dispatch_days ?? 2} onChange={(e) => updateDeliveryRule(i, "dispatch_days", e.target.value)} className={inputCls} /></Field>
+              <Field label="Delivery Min"><input type="number" min="0" value={rule.delivery_min_days ?? 3} onChange={(e) => updateDeliveryRule(i, "delivery_min_days", e.target.value)} className={inputCls} /></Field>
+              <div className="flex items-end gap-2">
+                <Field label="Delivery Max"><input type="number" min="0" value={rule.delivery_max_days ?? 5} onChange={(e) => updateDeliveryRule(i, "delivery_max_days", e.target.value)} className={inputCls} /></Field>
+                <button type="button" onClick={() => removeDeliveryRule(i)} className="h-10 px-3 border border-gray-300 rounded-md text-xs text-red-600 mb-0.5">Remove</button>
+              </div>
+            </div>
+          ))}
         </div>
         <Field label="SEO Title"><input value={s.seo_title || ""} onChange={(e) => set("seo_title", e.target.value)} className={inputCls} /></Field>
         <Field label="SEO Description"><textarea rows={2} value={s.seo_description || ""} onChange={(e) => set("seo_description", e.target.value)} className={inputCls} /></Field>
