@@ -4,6 +4,7 @@ import { adminApi, apiError } from "../lib/api";
 import { toast } from "sonner";
 import { PageHead, Field, inputCls } from "./ui";
 import { RichEditor } from "./RichEditor";
+import { ImageUpload } from "./ImageUpload";
 
 const PAGES = [
   { slug: "about", label: "About", listKey: "cards", listLabel: "Highlight Cards", listFields: ["icon", "title", "desc"] },
@@ -61,7 +62,7 @@ export default function SitePages() {
               <h3 className="font-semibold text-gray-900">Hero</h3>
               <Field label="Eyebrow"><input value={doc.hero_eyebrow || ""} onChange={(e) => set("hero_eyebrow", e.target.value)} className={inputCls} data-testid="sitepage-eyebrow" /></Field>
               <Field label="Title"><input value={doc.hero_title || ""} onChange={(e) => set("hero_title", e.target.value)} className={inputCls} data-testid="sitepage-title" /></Field>
-              <Field label="Hero Image URL"><input value={doc.hero_image || ""} onChange={(e) => set("hero_image", e.target.value)} className={inputCls} data-testid="sitepage-image" /></Field>
+              <Field label="Hero Image"><ImageUpload value={doc.hero_image || ""} onChange={(u) => set("hero_image", u)} testid="sitepage-hero-image" /></Field>
             </div>
 
             <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-3">
@@ -88,10 +89,12 @@ export default function SitePages() {
                   <div key={i} className="border border-gray-100 rounded-lg p-3 space-y-2 relative">
                     <button onClick={() => removeItem(i)} className="absolute top-2 right-2 text-gray-400 hover:text-red-600"><Trash2 size={14} /></button>
                     {cfg.listFields.map((f) => (
-                      <Field key={f} label={f}>
-                        {f === "desc"
-                          ? <textarea value={item[f] || ""} onChange={(e) => setListItem(i, f, e.target.value)} rows={2} className={inputCls} />
-                          : <input value={item[f] || ""} onChange={(e) => setListItem(i, f, e.target.value)} className={inputCls} placeholder={f === "icon" ? "lucide icon name e.g. Sparkles" : ""} />}
+                      <Field key={f} label={f === "image" ? "Image" : f}>
+                        {f === "image"
+                          ? <ImageUpload value={item[f] || ""} onChange={(u) => setListItem(i, f, u)} testid={`sitepage-${cfg.slug}-image-${i}`} />
+                          : f === "desc"
+                            ? <textarea value={item[f] || ""} onChange={(e) => setListItem(i, f, e.target.value)} rows={2} className={inputCls} />
+                            : <input value={item[f] || ""} onChange={(e) => setListItem(i, f, e.target.value)} className={inputCls} placeholder={f === "icon" ? "lucide icon name e.g. Sparkles" : ""} />}
                       </Field>
                     ))}
                   </div>

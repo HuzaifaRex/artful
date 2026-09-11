@@ -114,6 +114,7 @@ export function Support() {
 export function Visitors() {
   const [data, setData] = useState({ items: [], stats: {}, pages: 1 });
   const [q, setQ] = useState("");
+  const [selected, setSelected] = useState(new Set());
   const [identified, setIdentified] = useState("");
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
@@ -123,10 +124,19 @@ export function Visitors() {
       .then(({ data }) => setData(data)).catch(() => {}).finally(() => setLoading(false));
   }, [q, identified, page]);
   useEffect(() => { const t = setTimeout(load, 250); return () => clearTimeout(t); }, [load]);
+  useEffect(() => { setSelected(new Set()); }, [q, identified, page]);
+  const toggleSelected = (id) => setSelected((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
+  const toggleAll = () => setSelected((prev) => data.items.length && data.items.every((v) => prev.has(v.id)) ? new Set() : new Set(data.items.map((v) => v.id)));
+  const bulkDelete = async () => {
+    if (!selected.size) return;
+    if (!window.confirm(`Permanently delete ${selected.size} selected visitor record(s)? This cannot be undone.`)) return;
+    try { const { data: result } = await adminApi.post("/visitors/bulk-delete", { ids: [...selected] }); toast.success(`${result.deleted} visitor record(s) deleted`); setSelected(new Set()); load(); }
+    catch (e) { toast.error(apiError(e)); }
+  };
 
   return (
     <div>
-      <PageHead title="Visitors" subtitle="Who's browsing — and who signed in with a phone or email" />
+      <PageHead title="Visitors" subtitle="Who's browsing — and who signed in with a phone or email" action={selected.size > 0 ? <button onClick={bulkDelete} className="border border-red-200 text-red-600 bg-white rounded-md px-4 py-2 text-sm flex items-center gap-2 hover:bg-red-50" data-testid="bulk-delete-visitors"><Trash2 size={15} /> Delete selected ({selected.size})</button> : null} />
       <KpiCards cards={[
         { label: "Total Visitors", value: data.stats.total || 0, icon: Users },
         { label: "Identified", value: data.stats.identified || 0, icon: Users, sub: "logged in with phone/email" },
@@ -137,6 +147,7 @@ export function Visitors() {
         page={page} pages={data.pages} setPage={setPage} rows={data.items} empty="No visitors tracked yet"
         filters={[{ key: "identified", label: "Everyone", value: identified, onChange: (v) => { setIdentified(v); setPage(1); }, options: [{ value: "yes", label: "Identified only" }] }]}
         columns={[
+          { key: "__select", label: <input type="checkbox" aria-label="Select all visitors on this page" checked={data.items.length > 0 && data.items.every((v) => selected.has(v.id))} onChange={toggleAll} className="accent-plum w-4 h-4" />, render: (r) => <input type="checkbox" aria-label="Select visitor" checked={selected.has(r.id)} onChange={() => toggleSelected(r.id)} onClick={(e) => e.stopPropagation()} className="accent-plum w-4 h-4" /> },
           { key: "identity", label: "Visitor", render: (r) => {
               const id = r.identity || {};
               const named = id.name || id.phone || id.email;

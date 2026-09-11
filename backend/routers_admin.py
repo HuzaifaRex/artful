@@ -253,6 +253,81 @@ async def bulk_products(payload: dict, request: Request, admin: dict = Depends(r
     return {"ok": True, "updated": len(ids)}
 
 
+
+# ---------------- BULK DELETE ----------------
+def _normalize_bulk_ids(payload: dict, limit: int = 100):
+    ids = payload.get("ids")
+    if not isinstance(ids, list):
+        raise HTTPException(400, "ids must be an array.")
+    ids = [str(x).strip() for x in ids if str(x).strip()]
+    ids = list(dict.fromkeys(ids))
+    if not ids:
+        raise HTTPException(400, "Select at least one record.")
+    if len(ids) > limit:
+        raise HTTPException(400, f"You can delete at most {limit} records at once.")
+    return ids
+
+
+@router.post("/products/bulk-delete")
+async def bulk_delete_products(payload: dict, request: Request,
+                               admin: dict = Depends(require_permission("catalog"))):
+    ids = _normalize_bulk_ids(payload)
+    result = await db.products.delete_many({"id": {"$in": ids}})
+    await audit(admin, "bulk_delete", "product", None,
+                after={"ids": ids, "deleted": result.deleted_count}, request=request)
+    return {"ok": True, "deleted": result.deleted_count}
+
+
+@router.post("/categories/bulk-delete")
+async def bulk_delete_categories(payload: dict, request: Request,
+                                 admin: dict = Depends(require_permission("catalog"))):
+    ids = _normalize_bulk_ids(payload)
+    cats = [c async for c in db.categories.find({"id": {"$in": ids}}, {"id": 1, "slug": 1, "_id": 0})]
+    slugs = [c.get("slug") for c in cats if c.get("slug")]
+    result = await db.categories.delete_many({"id": {"$in": ids}})
+    if slugs:
+        await db.products.update_many({"category_slug": {"$in": slugs}}, {"$set": {"category_slug": None, "updated_at": now_iso()}})
+    await audit(admin, "bulk_delete", "category", None,
+                after={"ids": ids, "deleted": result.deleted_count}, request=request)
+    return {"ok": True, "deleted": result.deleted_count}
+
+
+@router.post("/customers/bulk-delete")
+async def bulk_delete_customers(payload: dict, request: Request,
+                                admin: dict = Depends(require_permission("customers"))):
+    ids = _normalize_bulk_ids(payload)
+    result = await db.customers.delete_many({"id": {"$in": ids}})
+    await db.addresses.delete_many({"customer_id": {"$in": ids}})
+    await audit(admin, "bulk_delete", "customer", None,
+                after={"ids": ids, "deleted": result.deleted_count, "addresses_deleted": len(ids)}, request=request)
+    return {"ok": True, "deleted": result.deleted_count}
+
+
+@router.post("/visitors/bulk-delete")
+async def bulk_delete_visitors(payload: dict, request: Request,
+                               admin: dict = Depends(require_permission("customers"))):
+    ids = _normalize_bulk_ids(payload)
+    result = await db.visitors.delete_many({"id": {"$in": ids}})
+    await audit(admin, "bulk_delete", "visitor", None,
+                after={"ids": ids, "deleted": result.deleted_count}, request=request)
+    return {"ok": True, "deleted": result.deleted_count}
+
+
+@router.post("/orders/bulk-delete")
+async def bulk_delete_orders(payload: dict, request: Request,
+                             admin: dict = Depends(require_permission("orders"))):
+    ids = _normalize_bulk_ids(payload)
+    orders = [o async for o in db.orders.find({"id": {"$in": ids}}, {"id": 1, "order_number": 1, "_id": 0})]
+    order_numbers = [o.get("order_number") for o in orders if o.get("order_number")]
+    result = await db.orders.delete_many({"id": {"$in": ids}})
+    if order_numbers:
+        await db.refunds.delete_many({"order_number": {"$in": order_numbers}})
+        await db.notifications.delete_many({"order_number": {"$in": order_numbers}})
+    await audit(admin, "bulk_delete", "order", None,
+                after={"ids": ids, "order_numbers": order_numbers, "deleted": result.deleted_count}, request=request)
+    return {"ok": True, "deleted": result.deleted_count}
+
+
 # ---------------- Generic CRUD factory for simple resources ----------------
 def register_crud(path, collection, area, name_field="name", extra_defaults=None, slug_from=None):
     @router.get(f"/{path}", name=f"list_{path}")

@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { Search, Download, Users, UserPlus, Crown, IndianRupee } from "lucide-react";
+import { Search, Download, Users, UserPlus, Crown, IndianRupee, Trash2 } from "lucide-react";
 import { adminApi, apiError, API } from "../lib/api";
 import { toast } from "sonner";
 import { inr, formatDate } from "../lib/utils";
@@ -12,15 +12,30 @@ export default function Customers() {
   const [q, setQ] = useState("");
   const [status, setStatusFilter] = useState("");
   const [open, setOpen] = useState(null);
+  const [selected, setSelected] = useState(new Set());
   const load = useCallback(() => adminApi.get(`/customers?q=${encodeURIComponent(q)}&status=${status}&page_size=100`).then(({ data }) => { setItems(data.items); setStats(data.stats || {}); }).catch(() => {}), [q, status]);
   useEffect(() => { const t = setTimeout(load, 250); return () => clearTimeout(t); }, [load]);
+  useEffect(() => { setSelected(new Set()); }, [q, status]);
+  const toggleSelected = (id) => setSelected((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
+  const toggleAll = () => setSelected((prev) => items.length && items.every((c) => prev.has(c.id)) ? new Set() : new Set(items.map((c) => c.id)));
+  const bulkDelete = async () => {
+    if (!selected.size) return;
+    if (!window.confirm(`Permanently delete ${selected.size} selected customer(s)? Their saved addresses will also be removed. Orders will be preserved.`)) return;
+    try {
+      const { data } = await adminApi.post("/customers/bulk-delete", { ids: [...selected] });
+      toast.success(`${data.deleted} customer(s) deleted`); setSelected(new Set()); load();
+    } catch (e) { toast.error(apiError(e)); }
+  };
 
   const openDetail = async (c) => { const { data } = await adminApi.get(`/customers/${c.id}`); setOpen(data); };
   const setStatus = async (id, st) => { await adminApi.put(`/customers/${id}/status`, { status: st }); toast.success("Updated"); load(); setOpen(null); };
 
   return (
     <div>
-      <PageHead title="Customers" subtitle={`${stats.total || 0} customers`} action={<button onClick={() => window.open(`${API}/admin/export/customers`, "_blank")} className="border border-gray-300 rounded-md px-4 py-2 text-sm flex items-center gap-2 text-gray-700"><Download size={15} /> Export</button>} />
+      <PageHead title="Customers" subtitle={`${stats.total || 0} customers`} action={<div className="flex items-center gap-2">
+        {selected.size > 0 && <button onClick={bulkDelete} className="border border-red-200 text-red-600 bg-white rounded-md px-4 py-2 text-sm flex items-center gap-2 hover:bg-red-50" data-testid="bulk-delete-customers"><Trash2 size={15} /> Delete selected ({selected.size})</button>}
+        <button onClick={() => window.open(`${API}/admin/export/customers`, "_blank")} className="border border-gray-300 rounded-md px-4 py-2 text-sm flex items-center gap-2 text-gray-700"><Download size={15} /> Export</button>
+      </div>} />
       <KpiCards cards={[
         { label: "Total Customers", value: stats.total || 0, icon: Users },
         { label: "New (30 days)", value: stats.new_month || 0, icon: UserPlus },
@@ -35,10 +50,11 @@ export default function Customers() {
       </div>
       <div className="bg-white rounded-lg border border-gray-200 overflow-x-auto">
         <table className="w-full text-sm">
-          <thead><tr className="text-left text-gray-400 text-xs bg-gray-50 border-b border-gray-200"><th className="px-4 py-3 font-medium">Name</th><th className="px-4 py-3 font-medium">Mobile</th><th className="px-4 py-3 font-medium">Email</th><th className="px-4 py-3 font-medium">Orders</th><th className="px-4 py-3 font-medium">Spend</th><th className="px-4 py-3 font-medium">Status</th></tr></thead>
+          <thead><tr className="text-left text-gray-400 text-xs bg-gray-50 border-b border-gray-200"><th className="px-4 py-3 font-medium"><input type="checkbox" aria-label="Select all customers on this page" checked={items.length > 0 && items.every((c) => selected.has(c.id))} onChange={toggleAll} className="accent-plum w-4 h-4" /></th><th className="px-4 py-3 font-medium">Name</th><th className="px-4 py-3 font-medium">Mobile</th><th className="px-4 py-3 font-medium">Email</th><th className="px-4 py-3 font-medium">Orders</th><th className="px-4 py-3 font-medium">Spend</th><th className="px-4 py-3 font-medium">Status</th></tr></thead>
           <tbody>
             {items.map((c) => (
               <tr key={c.id} onClick={() => openDetail(c)} className="border-b border-gray-50 hover:bg-gray-50 cursor-pointer">
+                <td className="px-4 py-3"><input type="checkbox" aria-label={`Select ${c.name || "customer"}`} checked={selected.has(c.id)} onChange={() => toggleSelected(c.id)} onClick={(e) => e.stopPropagation()} className="accent-plum w-4 h-4" /></td>
                 <td className="px-4 py-3 font-medium text-gray-900">{c.name || "—"}</td>
                 <td className="px-4 py-3 text-gray-600">{c.phone || "—"}</td>
                 <td className="px-4 py-3 text-gray-600">{c.email || "—"}</td>

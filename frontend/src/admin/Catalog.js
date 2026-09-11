@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { Plus, Search, Copy, Archive, Edit } from "lucide-react";
+import { Plus, Search, Copy, Archive, Edit, Trash2 } from "lucide-react";
 import { adminApi, apiError } from "../lib/api";
 import { toast } from "sonner";
 import { inr } from "../lib/utils";
@@ -26,6 +26,7 @@ export function Products() {
   const [page, setPage] = useState(1);
   const [cats, setCats] = useState([]);
   const [editing, setEditing] = useState(null);
+  const [selected, setSelected] = useState(new Set());
 
   const load = useCallback(() => {
     setLoading(true);
@@ -37,6 +38,26 @@ export function Products() {
 
   const archive = async (e, p) => { e.stopPropagation(); if (!window.confirm(`Archive "${p.name}"?`)) return; await adminApi.delete(`/products/${p.id}`); toast.success("Archived"); load(); };
   const duplicate = async (e, p) => { e.stopPropagation(); await adminApi.post(`/products/${p.id}/duplicate`); toast.success("Duplicated"); load(); };
+  useEffect(() => { setSelected(new Set()); }, [q, status, category, page]);
+  const toggleSelected = (id) => setSelected((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+  const toggleAll = () => setSelected((prev) => {
+    if (data.items.length && data.items.every((p) => prev.has(p.id))) return new Set();
+    return new Set(data.items.map((p) => p.id));
+  });
+  const bulkDelete = async () => {
+    if (!selected.size) return;
+    if (!window.confirm(`Permanently delete ${selected.size} selected product(s)? This cannot be undone.`)) return;
+    try {
+      const { data: result } = await adminApi.post("/products/bulk-delete", { ids: [...selected] });
+      toast.success(`${result.deleted} product(s) deleted`);
+      setSelected(new Set());
+      load();
+    } catch (e) { toast.error(apiError(e)); }
+  };
   const exportCsv = async () => {
     try {
       const res = await adminApi.get("/export/products", { responseType: "blob" });
@@ -47,7 +68,10 @@ export function Products() {
 
   return (
     <div>
-      <PageHead title="Products" subtitle={`${data.total} products`} action={<button onClick={() => setEditing({})} className="bg-plum text-white rounded-md px-4 py-2 text-sm flex items-center gap-2" data-testid="add-product-btn"><Plus size={16} /> Add Product</button>} />
+      <PageHead title="Products" subtitle={`${data.total} products`} action={<div className="flex items-center gap-2">
+        {selected.size > 0 && <button onClick={bulkDelete} className="border border-red-200 text-red-600 bg-white rounded-md px-4 py-2 text-sm flex items-center gap-2 hover:bg-red-50" data-testid="bulk-delete-products"><Trash2 size={15} /> Delete selected ({selected.size})</button>}
+        <button onClick={() => setEditing({})} className="bg-plum text-white rounded-md px-4 py-2 text-sm flex items-center gap-2" data-testid="add-product-btn"><Plus size={16} /> Add Product</button>
+      </div>} />
       <DataTable
         testid="products" loading={loading} q={q} setQ={(v) => { setQ(v); setPage(1); }} searchPlaceholder="Search products or SKU…"
         page={page} pages={data.pages} setPage={setPage} rows={data.items} onExport={exportCsv} empty="No products found"
@@ -56,6 +80,7 @@ export function Products() {
           { key: "category", label: "All categories", value: category, onChange: (v) => { setCategory(v); setPage(1); }, options: cats.map((c) => ({ value: c.slug, label: c.name })) },
         ]}
         columns={[
+          { key: "__select", label: <input type="checkbox" aria-label="Select all products on this page" checked={data.items.length > 0 && data.items.every((p) => selected.has(p.id))} onChange={toggleAll} className="accent-plum w-4 h-4" />, render: (p) => <input type="checkbox" aria-label={`Select ${p.name}`} checked={selected.has(p.id)} onChange={() => toggleSelected(p.id)} onClick={(e) => e.stopPropagation()} className="accent-plum w-4 h-4" /> },
           { key: "name", label: "Product", render: (p) => <div className="flex items-center gap-3"><img src={(p.images || [])[0]} alt="" className="w-9 h-11 object-cover rounded bg-gray-100" /><span className="font-medium text-gray-900">{p.name}</span></div> },
           { key: "sku", label: "SKU", render: (p) => <span className="text-gray-500 font-mono text-xs">{p.sku}</span> },
           { key: "price", label: "Price", render: (p) => inr(p.price) },
@@ -161,12 +186,13 @@ function ProductForm({ product, cats, onClose, onSaved }) {
 
 /* ---------------- GENERIC SIMPLE MANAGER ---------------- */
 const SM_PAGE = 10;
-function SimpleManager({ title, endpoint, columns, fields, defaults = {}, testid, searchKeys = ["name"] }) {
+function SimpleManager({ title, endpoint, columns, fields, defaults = {}, testid, searchKeys = ["name"], bulkDelete = false }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
   const [editing, setEditing] = useState(null);
+  const [selected, setSelected] = useState(new Set());
   const load = useCallback(() => { setLoading(true); adminApi.get(`/${endpoint}`).then(({ data }) => setItems(data.items)).catch(() => {}).finally(() => setLoading(false)); }, [endpoint]);
   useEffect(() => { load(); }, [load]);
   const save = async (f) => {
@@ -176,19 +202,36 @@ function SimpleManager({ title, endpoint, columns, fields, defaults = {}, testid
       toast.success("Saved"); setEditing(null); load();
     } catch (e) { toast.error(apiError(e)); }
   };
-  const del = async (e, it) => { e.stopPropagation(); if (!window.confirm("Delete this item?")) return; await adminApi.delete(`/${endpoint}/${it.id}`); toast.success("Deleted"); load(); };
-
+  const del = async (e, it) => { e.stopPropagation(); if (!window.confirm("Delete this item?")) return; try { await adminApi.delete(`/${endpoint}/${it.id}`); toast.success("Deleted"); load(); } catch (e) { toast.error(apiError(e)); } };
+  useEffect(() => { setSelected(new Set()); setPage(1); }, [q]);
   const filtered = items.filter((it) => !q || searchKeys.some((k) => String(it[k] ?? "").toLowerCase().includes(q.toLowerCase())));
   const pages = Math.max(1, Math.ceil(filtered.length / SM_PAGE));
   const rows = filtered.slice((page - 1) * SM_PAGE, page * SM_PAGE);
+  const toggleSelected = (id) => setSelected((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
+  const toggleAll = () => setSelected((prev) => rows.length && rows.every((it) => prev.has(it.id)) ? new Set() : new Set(rows.map((it) => it.id)));
+  const bulkDeleteSelected = async () => {
+    if (!bulkDelete || !selected.size) return;
+    if (!window.confirm(`Permanently delete ${selected.size} selected ${title.toLowerCase()}? This cannot be undone.`)) return;
+    try {
+      const { data: result } = await adminApi.post(`/${endpoint}/bulk-delete`, { ids: [...selected] });
+      toast.success(`${result.deleted} item(s) deleted`); setSelected(new Set()); load();
+    } catch (e) { toast.error(apiError(e)); }
+  };
 
   return (
     <div>
-      <PageHead title={title} action={<button onClick={() => setEditing({ ...defaults })} className="bg-plum text-white rounded-md px-4 py-2 text-sm flex items-center gap-2" data-testid={`add-${testid}`}><Plus size={16} /> Add</button>} />
+      <PageHead title={title} action={<div className="flex items-center gap-2">
+        {bulkDelete && selected.size > 0 && <button onClick={bulkDeleteSelected} className="border border-red-200 text-red-600 bg-white rounded-md px-4 py-2 text-sm flex items-center gap-2 hover:bg-red-50" data-testid={`bulk-delete-${testid}`}><Trash2 size={15} /> Delete selected ({selected.size})</button>}
+        <button onClick={() => setEditing({ ...defaults })} className="bg-plum text-white rounded-md px-4 py-2 text-sm flex items-center gap-2" data-testid={`add-${testid}`}><Plus size={16} /> Add</button>
+      </div>} />
       <DataTable
         testid={testid} loading={loading} q={q} setQ={(v) => { setQ(v); setPage(1); }} searchPlaceholder={`Search ${title.toLowerCase()}…`}
         page={page} pages={pages} setPage={setPage} rows={rows} empty="Nothing here yet"
-        columns={[...columns, { key: "__actions", label: "Actions", render: (it) => <div className="flex gap-2 text-gray-400" onClick={(e) => e.stopPropagation()}><button onClick={() => setEditing(it)} className="hover:text-plum"><Edit size={15} /></button><button onClick={(e) => del(e, it)} className="hover:text-red-600"><Archive size={15} /></button></div> }]}
+        columns={[
+          ...(bulkDelete ? [{ key: "__select", label: <input type="checkbox" aria-label={`Select all ${title.toLowerCase()} on this page`} checked={rows.length > 0 && rows.every((it) => selected.has(it.id))} onChange={toggleAll} className="accent-plum w-4 h-4" />, render: (it) => <input type="checkbox" aria-label={`Select ${it.name || title}`} checked={selected.has(it.id)} onChange={() => toggleSelected(it.id)} onClick={(e) => e.stopPropagation()} className="accent-plum w-4 h-4" /> }] : []),
+          ...columns,
+          { key: "__actions", label: "Actions", render: (it) => <div className="flex gap-2 text-gray-400" onClick={(e) => e.stopPropagation()}><button onClick={() => setEditing(it)} className="hover:text-plum"><Edit size={15} /></button><button onClick={(e) => del(e, it)} className="hover:text-red-600"><Archive size={15} /></button></div> }
+        ]}
       />
       {editing && (
         <Modal open title={editing.id ? `Edit ${title}` : `Add ${title}`} onClose={() => setEditing(null)} wide>
@@ -216,7 +259,7 @@ export function Categories() {
   return <SimpleManager title="Categories" endpoint="categories" testid="category"
     columns={[{ key: "name", label: "Name" }, { key: "slug", label: "Slug" }, { key: "status", label: "Status", render: (c) => <StatusChip status={c.status} /> }]}
     fields={[{ key: "name", label: "Name" }, { key: "slug", label: "Slug (optional)" }, { key: "description", label: "Description", type: "textarea", full: true }, { key: "image", label: "Image", type: "image", full: true }, { key: "status", label: "Status", type: "select", options: ["Active", "Archived"] }]}
-    defaults={{ status: "Active" }} />;
+    defaults={{ status: "Active" }} bulkDelete />;
 }
 
 const BADGE_OPTIONS = ["", "New", "Bestseller", "Limited", "Sale", "Featured"];
@@ -376,6 +419,7 @@ export function Inventory() {
         testid="inventory" loading={loading} q={q} setQ={(v) => { setQ(v); setPage(1); }} searchPlaceholder="Search product or SKU…"
         page={page} pages={pages} setPage={setPage} rows={rows} empty="No products"
         columns={[
+          { key: "__select", label: <input type="checkbox" aria-label="Select all products on this page" checked={data.items.length > 0 && data.items.every((p) => selected.has(p.id))} onChange={toggleAll} className="accent-plum w-4 h-4" />, render: (p) => <input type="checkbox" aria-label={`Select ${p.name}`} checked={selected.has(p.id)} onChange={() => toggleSelected(p.id)} onClick={(e) => e.stopPropagation()} className="accent-plum w-4 h-4" /> },
           { key: "name", label: "Product", render: (p) => <span className="font-medium text-gray-900">{p.name}</span> },
           { key: "sku", label: "SKU", render: (p) => <span className="text-gray-500 font-mono text-xs">{p.sku}</span> },
           { key: "stock", label: "Stock", render: (p) => <span className={p.stock <= p.low_stock_threshold ? "text-red-600 font-medium" : "text-gray-700"}>{p.stock}</span> },
