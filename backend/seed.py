@@ -182,10 +182,9 @@ SETTINGS = {
     "whatsapp_number": "+91 90000 00000",
     "office_address": "ARTFUL Studio, 4th Floor, Design District, Bandra West, Mumbai 400050, India",
     "office_hours": "Mon – Sat · 10:00 AM – 7:00 PM IST",
-    "social": {"instagram": "https://instagram.com/artful",
-               "facebook": "https://facebook.com/artful",
-               
-               "pinterest": "https://pinterest.com/artful"},
+    "social": {"instagram": "https://www.instagram.com/artful.now/?hl=en",
+               "youtube": "https://youtube.com/@artfulnow?si=l9unqHSddSQrjXJ9",
+               "pinterest": "https://pin.it/2vpVoPdZT"},
     
     "seo_title": "ARTFUL — Thoughtfully made. Beautifully given.",
     "seo_description": "Premium artistic lifestyle & thoughtful gifting. Handcrafted objects and bespoke gift boxes.",

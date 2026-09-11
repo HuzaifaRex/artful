@@ -9,7 +9,7 @@ import { isValidEmail } from "../lib/utils";
 
 const COLS = [
   { title: "Shop", links: [["All Products", "/shop"], ["New Arrivals", "/collections/new-arrivals"], ["Bestsellers", "/collections/bestsellers"], ["Gifts", "/collections/festive-gifts"]] },
-  { title: "Help", links: [["FAQ", "/faq"], ["Shipping", "/shipping"], ["Returns", "/returns"], ["Contact", "/contact"], ["Track Order", "/track-order"]] },
+  { title: "Help", links: [["FAQ", "/faq"], ["Shipping", "/shipping"], ["Contact", "/contact"], ["Track Order", "/track-order"]] },
   { title: "About", links: [["About", "/about"], ["Our Story", "/our-story"], ["Corporate Gifting", "/corporate-gifting"]] },
   { title: "Legal", links: [["Privacy", "/privacy"], ["Terms", "/terms"], ["Returns & Refund", "/returns"]] },
 ];
@@ -77,7 +77,7 @@ export default function Footer() {
           </div>
         </div>
         <div className="border-t border-cream/15 pt-8 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <p className="text-xs text-cream/50">© {new Date().getFullYear()} ARTFUL. All rights reserved. · Prices in ₹ INR</p>
+          <p className="text-xs text-cream/50">© {new Date().getFullYear()} ARTFUL. All rights reserved.</p>
           <div className="flex items-center gap-4">
             <button onClick={() => window.dispatchEvent(new Event("artful-open-cookie-settings"))} className="text-xs text-cream/60 hover:text-gold flex items-center gap-1.5" data-testid="footer-cookie-settings"><Cookie size={14} /> Cookie Settings</button>
             <span className="text-xs text-cream/60">{handle}</span>
