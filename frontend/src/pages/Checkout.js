@@ -38,10 +38,10 @@ export default function Checkout() {
   const validate = useCallback(async (c) => {
     if (cart.length === 0) return;
     try {
-      const { data } = await api.post("/cart/validate", { items: cartPayload, coupon_code: c ?? applied, state: addr.state });
+      const { data } = await api.post("/cart/validate", { items: cartPayload, coupon_code: c ?? applied });
       setTotals(data);
     } catch { /* ignore */ }
-  }, [cart, cartPayload, applied, addr.state]);
+  }, [cart, cartPayload, applied]);
 
   useEffect(() => { validate(); }, [validate]);
 
@@ -56,17 +56,23 @@ export default function Checkout() {
   }, [customer]);
 
   useEffect(() => {
-    const state = addr.state || "";
-    if (!state) {
+    const pin = addr.pincode || "";
+    if (pin.length !== 6) {
       setDeliveryEstimate(null);
       return undefined;
     }
-    let active = true;
-    api.get(`/delivery-estimate?state=${encodeURIComponent(state)}`)
-      .then(({ data }) => { if (active) setDeliveryEstimate(data); })
-      .catch(() => { if (active) setDeliveryEstimate(null); });
-    return () => { active = false; };
-  }, [addr.state]);
+
+    const timer = setTimeout(async () => {
+      try {
+        const { data } = await api.get(`/delivery-estimate?pincode=${pin}`);
+        setDeliveryEstimate(data);
+      } catch {
+        setDeliveryEstimate(null);
+      }
+    }, 200);
+
+    return () => clearTimeout(timer);
+  }, [addr.pincode]);
 
   if (cart.length === 0) {
     return <div className="container-artful py-24 text-center"><h1 className="section-title mb-4">Your cart is empty</h1><Link to="/shop" className="btn-primary">Shop Now</Link></div>;
@@ -132,14 +138,21 @@ export default function Checkout() {
           key: data.key_id, amount: data.amount, currency: "INR", name: "ARTFUL",
           description: `Order ${data.order_number}`, order_id: data.razorpay_order_id, prefill: data.prefill,
           theme: { color: "#5C3243" },
-          handler: async (r) => {
-            try {
-              const { data: res } = await api.post("/checkout/verify-payment", {
-                order_id: data.order_id, razorpay_payment_id: r.razorpay_payment_id,
-                razorpay_order_id: r.razorpay_order_id, razorpay_signature: r.razorpay_signature,
-              });
-              if (res.success) finalize(res.order.order_number);
-            } catch (e) { toast.error(apiError(e, "Payment verification failed")); }
+          handler: (r) => {
+            // Move to the processing page immediately. The verification request continues
+            // in the background while the processing page watches the order status.
+            navigate(`/order-processing/${data.order_number}`);
+            api.post("/checkout/verify-payment", {
+              order_id: data.order_id, razorpay_payment_id: r.razorpay_payment_id,
+              razorpay_order_id: r.razorpay_order_id, razorpay_signature: r.razorpay_signature,
+            }).catch((e) => {
+              try {
+                sessionStorage.setItem(
+                  `artful-payment-error-${data.order_number}`,
+                  apiError(e, "Payment verification is still in progress")
+                );
+              } catch (_) { /* ignore storage errors */ }
+            });
           },
           modal: { ondismiss: () => toast.info("Payment cancelled") },
         });

@@ -19,6 +19,7 @@ import SearchPage from "./pages/SearchPage";
 import CartPage from "./pages/CartPage";
 import Checkout from "./pages/Checkout";
 import OrderSuccess from "./pages/OrderSuccess";
+import OrderProcessing from "./pages/OrderProcessing";
 import TrackOrder from "./pages/TrackOrder";
 import Account from "./pages/Account";
 import CorporateGifting from "./pages/CorporateGifting";
@@ -108,6 +109,7 @@ export default function App() {
               <Route path="/search" element={<SearchPage />} />
               <Route path="/cart" element={<CartPage />} />
               <Route path="/checkout" element={<Checkout />} />
+              <Route path="/order-processing/:orderNumber" element={<OrderProcessing />} />
               <Route path="/order-success/:orderNumber" element={<OrderSuccess />} />
               <Route path="/track-order" element={<TrackOrder />} />
               <Route path="/account/*" element={<Account />} />
