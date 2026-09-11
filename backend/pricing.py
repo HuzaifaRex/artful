@@ -104,7 +104,7 @@ async def validate_coupon(code, subtotal, lines, customer=None):
     return coupon, discount, free_shipping, None
 
 
-async def compute_totals(items, coupon_code=None, customer=None):
+async def compute_totals(items, coupon_code=None, customer=None, state=None):
     lines, errors = await build_line_items(items)
     subtotal = sum(l["line_total"] for l in lines)
     settings = await db.settings.find_one({"id": "store"}, {"_id": 0}) or {}
@@ -112,7 +112,17 @@ async def compute_totals(items, coupon_code=None, customer=None):
 
     threshold = settings.get("free_shipping_threshold", 999)
     flat_ship = settings.get("shipping_flat", 79)
-    shipping = 0 if (subtotal - discount) >= threshold or free_shipping or subtotal == 0 else flat_ship
+    shipping_charge = flat_ship
+    logic = settings.get("delivery_logic") or {}
+    normalized_state = (state or "").strip().casefold()
+    for rule in logic.get("state_rules") or []:
+        if normalized_state and str(rule.get("state") or "").strip().casefold() == normalized_state:
+            try:
+                shipping_charge = max(0, int(rule.get("shipping_charge", flat_ship) or 0))
+            except (TypeError, ValueError):
+                shipping_charge = flat_ship
+            break
+    shipping = 0 if (subtotal - discount) >= threshold or free_shipping or subtotal == 0 else shipping_charge
     tax_rate = settings.get("tax_rate", 0)
     taxable = max(0, subtotal - discount)
     tax = 0 if settings.get("tax_inclusive", True) else round(taxable * tax_rate / 100)
@@ -123,7 +133,7 @@ async def compute_totals(items, coupon_code=None, customer=None):
         "items": lines, "errors": errors,
         "subtotal": subtotal, "discount": discount, "coupon_code": coupon["code"] if coupon else None,
         "coupon_error": coupon_error, "coupon_description": coupon.get("description") if coupon else None,
-        "shipping": shipping, "free_shipping_threshold": threshold, "tax": tax,
+        "shipping": shipping, "shipping_charge": shipping_charge, "free_shipping_threshold": threshold, "tax": tax,
         "savings": savings, "total": total,
         "currency_symbol": settings.get("currency_symbol", "₹"),
     }

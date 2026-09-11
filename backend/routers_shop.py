@@ -131,7 +131,7 @@ async def update_me(payload: dict, cust: dict = Depends(get_current_customer)):
 @router.post("/cart/validate")
 async def cart_validate(payload: dict, request: Request):
     cust = await optional_customer(request)
-    totals = await compute_totals(payload.get("items", []), payload.get("coupon_code"), cust)
+    totals = await compute_totals(payload.get("items", []), payload.get("coupon_code"), cust, payload.get("state"))
     return totals
 
 
@@ -241,7 +241,7 @@ async def create_order(payload: dict, cust: dict = Depends(get_current_customer)
         if not address.get(f):
             raise HTTPException(400, "Please provide a complete delivery address.")
 
-    totals = await compute_totals(items, payload.get("coupon_code"), cust)
+    totals = await compute_totals(items, payload.get("coupon_code"), cust, address.get("state"))
     if totals["errors"]:
         raise HTTPException(400, {"message": "Some items are unavailable.", "errors": totals["errors"]})
     if totals["total"] <= 0 or not totals["items"]:
@@ -342,6 +342,62 @@ async def create_order(payload: dict, cust: dict = Depends(get_current_customer)
     return resp
 
 
+async def _finalize_paid_order(order, payment_id=None, method="razorpay"):
+    """Idempotently finalize a captured payment or COD order."""
+    guard = await db.orders.update_one(
+        {"id": order["id"], "payment.status": {"$nin": ["paid", "cod_confirmed"]}},
+        {"$set": {
+            "payment.status": "paid" if method != "cod" else "cod_confirmed",
+            "payment.payment_id": payment_id,
+            "payment.razorpay_payment_id": payment_id if method != "cod" else None,
+            "payment.method": method,
+            "status": "Confirmed", "updated_at": now_iso(),
+        },
+         "$push": {"status_history": {
+             "status": "Confirmed", "at": now_iso(),
+             "note": "Payment confirmed." if method != "cod" else "COD order confirmed.",
+         }}}
+    )
+    if guard.modified_count == 0:
+        return
+
+    for line in order["items"]:
+        await db.products.update_one(
+            {"id": line["product_id"]},
+            {"$inc": {"reserved": -line["qty"], "stock": -line["qty"], "sales_count": line["qty"]}},
+        )
+        await db.inventory_transactions.insert_one({
+            "id": str(uuid.uuid4()), "product_id": line["product_id"], "change": -line["qty"],
+            "reason": f"Order {order['order_number']}", "at": now_iso(),
+        })
+        prod = await db.products.find_one({"id": line["product_id"]}, {"stock": 1, "status": 1, "_id": 0})
+        if prod and prod.get("stock", 0) <= 0 and prod.get("status") == "Active":
+            await db.products.update_one({"id": line["product_id"]}, {"$set": {"status": "Out of Stock"}})
+
+    if order["pricing"].get("coupon_code"):
+        await db.coupons.update_one(
+            {"code": order["pricing"]["coupon_code"]},
+            {"$inc": {"used_count": 1}},
+        )
+    await db.customers.update_one(
+        {"id": order["customer_id"]},
+        {"$set": {"status": "Active"}, "$inc": {
+            "order_count": 1, "total_spend": order["pricing"]["total"]}},
+    )
+    await db.notifications.insert_one({
+        "id": str(uuid.uuid4()), "type": "new_order",
+        "title": f"New order {order['order_number']}",
+        "order_number": order["order_number"], "read": False, "at": now_iso(),
+    })
+    customer = await db.customers.find_one({"id": order["customer_id"]}, {"phone": 1, "_id": 0})
+    if customer and customer.get("phone"):
+        await ig.send_sms(
+            customer["phone"],
+            f"ARTFUL: Your order {order['order_number']} is confirmed! "
+            f"Amount Rs.{order['pricing']['total']}. Track it in your account. Thank you for shopping with us.",
+        )
+
+
 async def _mark_payment_failed(order, reason="Payment failed."):
     """Mark an unpaid order failed and release its reservation once."""
     guard = await db.orders.update_one(
@@ -402,107 +458,64 @@ async def _reconcile_payment(order_id, payment_id):
         print(f"[razorpay] background reconciliation failed for order {order_id}: {exc}")
 
 
-async def _mark_payment_confirmed_fast(order, payment_id=None, method="razorpay"):
-    """Atomically mark the order confirmed without doing slow fulfillment work."""
-    if method == "cod":
-        status = "cod_confirmed"
-        note = "COD order confirmed."
-    else:
-        status = "paid"
-        note = "Payment confirmed."
-
-    result = await db.orders.update_one(
+async def _finalize_paid_order(order, payment_id=None, method="razorpay"):
+    """Idempotently finalize a captured payment or COD order."""
+    guard = await db.orders.update_one(
         {"id": order["id"], "payment.status": {"$nin": ["paid", "cod_confirmed"]}},
         {"$set": {
-            "payment.status": status,
+            "payment.status": "paid" if method != "cod" else "cod_confirmed",
             "payment.payment_id": payment_id,
             "payment.razorpay_payment_id": payment_id if method != "cod" else None,
             "payment.method": method,
-            "payment.fulfillment_status": "pending",
-            "status": "Confirmed",
-            "updated_at": now_iso(),
+            "status": "Confirmed", "updated_at": now_iso(),
         },
          "$push": {"status_history": {
-             "status": "Confirmed", "at": now_iso(), "note": note,
-         }}},
+             "status": "Confirmed", "at": now_iso(),
+             "note": "Payment confirmed." if method != "cod" else "COD order confirmed.",
+         }}}
     )
-    return result.modified_count > 0
-
-
-async def _fulfill_confirmed_order(order_id, payment_id=None, method="razorpay"):
-    """Run slow post-payment side effects once, after the response can be sent."""
-    order = await db.orders.find_one({"id": order_id})
-    if not order:
+    if guard.modified_count == 0:
         return
 
-    # Claim fulfillment work exactly once. This protects against checkout callback + webhook races.
-    claim = await db.orders.update_one(
-        {"id": order_id, "payment.fulfillment_status": {"$nin": ["processing", "completed"]}},
-        {"$set": {"payment.fulfillment_status": "processing", "updated_at": now_iso()}},
-    )
-    if claim.modified_count == 0:
-        return
-
-    try:
-        for line in order.get("items", []):
-            await db.products.update_one(
-                {"id": line["product_id"]},
-                {"$inc": {"reserved": -line["qty"], "stock": -line["qty"], "sales_count": line["qty"]}},
-            )
-            await db.inventory_transactions.insert_one({
-                "id": str(uuid.uuid4()), "product_id": line["product_id"], "change": -line["qty"],
-                "reason": f"Order {order['order_number']}", "at": now_iso(),
-            })
-            prod = await db.products.find_one({"id": line["product_id"]}, {"stock": 1, "status": 1, "_id": 0})
-            if prod and prod.get("stock", 0) <= 0 and prod.get("status") == "Active":
-                await db.products.update_one({"id": line["product_id"]}, {"$set": {"status": "Out of Stock"}})
-
-        if order.get("pricing", {}).get("coupon_code"):
-            await db.coupons.update_one(
-                {"code": order["pricing"]["coupon_code"]},
-                {"$inc": {"used_count": 1}},
-            )
-
-        await db.customers.update_one(
-            {"id": order["customer_id"]},
-            {"$set": {"status": "Active"}, "$inc": {
-                "order_count": 1, "total_spend": order["pricing"]["total"]}},
+    for line in order["items"]:
+        await db.products.update_one(
+            {"id": line["product_id"]},
+            {"$inc": {"reserved": -line["qty"], "stock": -line["qty"], "sales_count": line["qty"]}},
         )
-
-        await db.notifications.insert_one({
-            "id": str(uuid.uuid4()), "type": "new_order",
-            "title": f"New order {order['order_number']}",
-            "order_number": order["order_number"], "read": False, "at": now_iso(),
+        await db.inventory_transactions.insert_one({
+            "id": str(uuid.uuid4()), "product_id": line["product_id"], "change": -line["qty"],
+            "reason": f"Order {order['order_number']}", "at": now_iso(),
         })
+        prod = await db.products.find_one({"id": line["product_id"]}, {"stock": 1, "status": 1, "_id": 0})
+        if prod and prod.get("stock", 0) <= 0 and prod.get("status") == "Active":
+            await db.products.update_one({"id": line["product_id"]}, {"$set": {"status": "Out of Stock"}})
 
-        customer = await db.customers.find_one({"id": order["customer_id"]}, {"phone": 1, "_id": 0})
-        if customer and customer.get("phone"):
-            # Never hold checkout navigation on an external SMS provider.
-            asyncio.create_task(
-                ig.send_sms(
-                    customer["phone"],
-                    f"ARTFUL: Your order {order['order_number']} is confirmed! "
-                    f"Amount Rs.{order['pricing']['total']}. Track it in your account. Thank you for shopping with us.",
-                )
+    if order["pricing"].get("coupon_code"):
+        await db.coupons.update_one(
+            {"code": order["pricing"]["coupon_code"]},
+            {"$inc": {"used_count": 1}},
+        )
+    await db.customers.update_one(
+        {"id": order["customer_id"]},
+        {"$set": {"status": "Active"}, "$inc": {
+            "order_count": 1, "total_spend": order["pricing"]["total"]}},
+    )
+    await db.notifications.insert_one({
+        "id": str(uuid.uuid4()), "type": "new_order",
+        "title": f"New order {order['order_number']}",
+        "order_number": order["order_number"], "read": False, "at": now_iso(),
+    })
+    customer = await db.customers.find_one({"id": order["customer_id"]}, {"phone": 1, "_id": 0})
+    if customer and customer.get("phone"):
+        # Do not hold the payment response on a third-party SMS provider.
+        asyncio.create_task(
+            ig.send_sms(
+                customer["phone"],
+                f"ARTFUL: Your order {order['order_number']} is confirmed! "
+                f"Amount Rs.{order['pricing']['total']}. Track it in your account. Thank you for shopping with us.",
             )
-
-        await db.orders.update_one(
-            {"id": order_id},
-            {"$set": {"payment.fulfillment_status": "completed", "updated_at": now_iso()}},
         )
-    except Exception:
-        # Leave it retryable while keeping the payment confirmed.
-        await db.orders.update_one(
-            {"id": order_id},
-            {"$set": {"payment.fulfillment_status": "pending", "updated_at": now_iso()}},
-        )
-        raise
 
-
-async def _finalize_paid_order(order, payment_id=None, method="razorpay"):
-    """Confirm an order and run its fulfillment work exactly once."""
-    await _mark_payment_confirmed_fast(order, payment_id=payment_id, method=method)
-    await _fulfill_confirmed_order(order["id"], payment_id=payment_id, method=method)
 
 async def _mark_payment_failed(order, reason="Payment failed."):
     """Mark an unpaid order failed and release its reservation once."""
@@ -535,6 +548,7 @@ async def verify_payment(payload: dict, background_tasks: BackgroundTasks, cust:
     payment_id = payload.get("razorpay_payment_id")
     signature = payload.get("razorpay_signature")
 
+    # Always verify against the Razorpay order id stored on our server.
     if not stored_rzp_order_id or callback_rzp_order_id != stored_rzp_order_id:
         raise HTTPException(400, "Payment verification failed.")
     if not ig.verify_payment_signature(stored_rzp_order_id, payment_id, signature):
@@ -542,37 +556,18 @@ async def verify_payment(payload: dict, background_tasks: BackgroundTasks, cust:
         raise HTTPException(400, "Payment verification failed. If money was deducted, contact support.")
 
     try:
-        # Do only the atomic confirmation needed for the customer's response.
-        # Inventory, notifications, customer stats, and SMS run after the response.
-        changed = await _mark_payment_confirmed_fast(order, payment_id=payment_id, method="razorpay")
-
-        if not changed:
-            # A webhook may have confirmed it concurrently; reload the authoritative order.
-            order = await db.orders.find_one({"id": order["id"]})
-            if not order or order.get("payment", {}).get("status") not in ("paid", "cod_confirmed"):
-                raise HTTPException(409, "Payment was verified but the order is still being confirmed.")
-        else:
-            order = dict(order)
-            payment = dict(order.get("payment") or {})
-            payment.update({
-                "status": "paid",
-                "payment_id": payment_id,
-                "razorpay_payment_id": payment_id,
-                "method": "razorpay",
-                "fulfillment_status": "pending",
-            })
-            order["payment"] = payment
-            order["status"] = "Confirmed"
-            order["updated_at"] = now_iso()
-
-        background_tasks.add_task(_fulfill_confirmed_order, order["id"], payment_id, "razorpay")
+        # Fast user-facing path: signature verification is authoritative for the Checkout
+        # success callback. Final reconciliation is done asynchronously and through webhooks.
+        await _finalize_paid_order(order, payment_id=payment_id, method="razorpay")
+        verified_order = await db.orders.find_one({"id": order["id"]})
+        background_tasks.add_task(_reconcile_payment, order["id"], payment_id)
     except HTTPException:
         raise
     except Exception as exc:
-        print(f"[razorpay] fast payment confirmation failed for {order['order_number']}: {exc}")
-        raise HTTPException(502, "Payment verification failed. Please check your order shortly.")
+        print(f"[razorpay] fast verification/finalization failed for {order['order_number']}: {exc}")
+        raise HTTPException(502, "Payment was verified, but your order could not be confirmed yet. Please check your order shortly.")
 
-    return {"success": True, "order": order_public(order)}
+    return {"success": True, "order": order_public(verified_order)}
 
 
 @router.post("/payments/razorpay/webhook")

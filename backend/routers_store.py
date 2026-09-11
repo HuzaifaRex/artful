@@ -269,6 +269,17 @@ async def public_settings():
 
 
 # ---------- Delivery estimate ----------
+INDIAN_STATES = [
+    "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh", "Goa", "Gujarat",
+    "Haryana", "Himachal Pradesh", "Jharkhand", "Karnataka", "Kerala", "Madhya Pradesh",
+    "Maharashtra", "Manipur", "Meghalaya", "Mizoram", "Nagaland", "Odisha", "Punjab",
+    "Rajasthan", "Sikkim", "Tamil Nadu", "Telangana", "Tripura", "Uttar Pradesh",
+    "Uttarakhand", "West Bengal", "Andaman and Nicobar Islands", "Chandigarh",
+    "Dadra and Nagar Haveli and Daman and Diu", "Delhi", "Jammu and Kashmir", "Ladakh",
+    "Lakshadweep", "Puducherry",
+]
+
+
 def _business_days_text(days: int) -> str:
     days = max(0, int(days))
     if days == 0:
@@ -276,31 +287,38 @@ def _business_days_text(days: int) -> str:
     return f"{days} business day" if days == 1 else f"{days} business days"
 
 
-def _delivery_estimate_for_pincode(pincode: str, settings: dict) -> dict:
+def _delivery_estimate_for_state(state: str, settings: dict) -> dict:
     logic = settings.get("delivery_logic") or {}
     default = logic.get("default") or {}
-    dispatch_days = max(0, int(default.get("dispatch_days", 2) or 0))
+
+    legacy_dispatch = int(default.get("dispatch_days", 2) or 0)
+    dispatch_min = max(0, int(default.get("dispatch_min_days", legacy_dispatch) or 0))
+    dispatch_max = max(dispatch_min, int(default.get("dispatch_max_days", legacy_dispatch) or 0))
     delivery_min = max(0, int(default.get("delivery_min_days", 3) or 0))
     delivery_max = max(delivery_min, int(default.get("delivery_max_days", 5) or 0))
-    matched = None
+    shipping_charge = max(0, int(settings.get("shipping_flat", 79) or 0))
 
-    rules = logic.get("pincode_rules") or []
-    # Most-specific matching prefix wins (e.g. 452007 beats 452).
-    for rule in sorted(rules, key=lambda r: len(str(r.get("prefix") or "")), reverse=True):
-        prefix = "".join(ch for ch in str(rule.get("prefix") or "") if ch.isdigit())
-        if prefix and pincode.startswith(prefix):
+    normalized = (state or "").strip().casefold()
+    matched = None
+    for rule in logic.get("state_rules") or []:
+        if (str(rule.get("state") or "").strip().casefold()) == normalized:
             matched = rule
             break
 
     if matched:
-        dispatch_days = max(0, int(matched.get("dispatch_days", dispatch_days) or 0))
+        dispatch_min = max(0, int(matched.get("dispatch_min_days", matched.get("dispatch_days", dispatch_min)) or 0))
+        dispatch_max = max(dispatch_min, int(matched.get("dispatch_max_days", matched.get("dispatch_days", dispatch_max)) or 0))
         delivery_min = max(0, int(matched.get("delivery_min_days", delivery_min) or 0))
         delivery_max = max(delivery_min, int(matched.get("delivery_max_days", delivery_max) or 0))
+        shipping_charge = max(0, int(matched.get("shipping_charge", shipping_charge) or 0))
 
-    dispatch_text = (
-        "Dispatches today" if dispatch_days == 0
-        else f"Dispatches within {_business_days_text(dispatch_days)}"
-    )
+    if dispatch_min == dispatch_max:
+        dispatch_text = "Dispatches today" if dispatch_min == 0 else f"Dispatches within {_business_days_text(dispatch_min)}"
+    elif dispatch_min == 0:
+        dispatch_text = f"Dispatches today–{_business_days_text(dispatch_max)}"
+    else:
+        dispatch_text = f"Dispatches in {dispatch_min}–{dispatch_max} business days"
+
     delivery_text = (
         f"Delivery in {delivery_min} business day"
         if delivery_min == delivery_max == 1
@@ -309,11 +327,13 @@ def _delivery_estimate_for_pincode(pincode: str, settings: dict) -> dict:
 
     return {
         "serviceable": True,
-        "pincode": pincode,
-        "label": (matched or {}).get("label") or "Pan-India service",
-        "dispatch_days": dispatch_days,
+        "state": state,
+        "label": (matched or {}).get("label") or state or "Pan-India service",
+        "dispatch_min_days": dispatch_min,
+        "dispatch_max_days": dispatch_max,
         "delivery_min_days": delivery_min,
         "delivery_max_days": delivery_max,
+        "shipping_charge": shipping_charge,
         "dispatch_text": dispatch_text,
         "delivery_text": delivery_text,
         "summary": f"{dispatch_text} · {delivery_text}",
@@ -321,13 +341,14 @@ def _delivery_estimate_for_pincode(pincode: str, settings: dict) -> dict:
 
 
 @router.get("/delivery-estimate")
-async def delivery_estimate(pincode: str = Query(..., min_length=6, max_length=6)):
-    pincode = "".join(ch for ch in pincode if ch.isdigit())
-    if len(pincode) != 6 or pincode[0] == "0":
-        raise HTTPException(400, "Enter a valid 6-digit Indian pincode.")
-
+async def delivery_estimate(state: str = Query(..., min_length=2)):
+    state_clean = " ".join((state or "").split())
+    allowed = {x.casefold(): x for x in INDIAN_STATES}
+    canonical = allowed.get(state_clean.casefold())
+    if not canonical:
+        raise HTTPException(400, "Select a valid Indian state.")
     settings = await db.settings.find_one({"id": "store"}, {"_id": 0}) or {}
-    return _delivery_estimate_for_pincode(pincode, settings)
+    return _delivery_estimate_for_state(canonical, settings)
 
 
 @router.get("/pages/{slug}")
@@ -358,14 +379,7 @@ async def product_reviews(slug: str):
     if not p:
         raise HTTPException(404, "Product not found.")
     cur = db.reviews.find({"product_id": p["id"], "status": "Approved"}, {"_id": 0}).sort("created_at", -1)
-    items = []
-    async for review in cur:
-        # A review can be approved before its customer photo is approved.
-        # Only expose the image after the separate image-moderation step approves it.
-        if review.get("image_url") and review.get("image_status") != "Approved":
-            review = {**review, "image_url": None}
-        items.append(review)
-    return {"items": items}
+    return {"items": [r async for r in cur]}
 
 
 @router.post("/corporate-inquiries")

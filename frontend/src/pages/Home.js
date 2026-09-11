@@ -62,7 +62,6 @@ function HeroCarousel({ section }) {
                 </div>
                 <div className="relative order-1 lg:order-2 min-h-[42vh] lg:min-h-full">
                   <img src={s.image} alt={s.heading} className="absolute inset-0 w-full h-full object-cover" />
-                  <div className="absolute inset-0 bg-gradient-to-t lg:bg-gradient-to-r from-plum-wine/60 to-transparent" />
                 </div>
               </div>
             </div>
@@ -100,7 +99,7 @@ function ProductRail({ heading, subheading, collectionSlug }) {
         </div>
         <Link to={`/collections/${collectionSlug}`} className="btn-ghost !px-0 hidden sm:flex">View All <ArrowRight size={15} /></Link>
       </div>
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-x-5 gap-y-10">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-5 gap-y-10">
         {!items ? [0, 1, 2, 3].map((i) => <ProductSkeleton key={i} />)
           : items.slice(0, 4).map((p, i) => <ProductCard key={p.id} product={p} index={i} />)}
       </div>

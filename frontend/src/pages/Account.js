@@ -244,7 +244,7 @@ function Wishlist() {
     <div>
       <h2 className="font-serif text-2xl text-plum mb-6">Wishlist</h2>
       {items.length === 0 ? <p className="text-ink-secondary">Your wishlist is empty. Tap the heart on any product to save it.</p> : (
-        <div className="grid grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-10">{items.map((p, i) => <ProductCard key={p.id} product={p} index={i} />)}</div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-10">{items.map((p, i) => <ProductCard key={p.id} product={p} index={i} />)}</div>
       )}
     </div>
   );

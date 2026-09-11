@@ -1,11 +1,11 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
-import { Heart, Minus, Plus, ChevronDown, Truck, Gift, Star, Check, ImagePlus, X } from "lucide-react";
+import { Heart, Minus, Plus, ChevronDown, Truck, Gift, Star, Check } from "lucide-react";
 import { api, apiError } from "../lib/api";
 import { useStore } from "../context/StoreContext";
 import ProductCard from "../components/ProductCard";
 import { PageLoader } from "../components/Loader";
-import { inr, discountPct } from "../lib/utils";
+import { inr, discountPct, INDIAN_STATES } from "../lib/utils";
 import { toast } from "sonner";
 
 function Accordion({ title, children, open }) {
@@ -32,16 +32,13 @@ export default function ProductDetail() {
   const [qty, setQty] = useState(1);
   const [giftWrap, setGiftWrap] = useState(false);
   const [message, setMessage] = useState("");
-  const [pincode, setPincode] = useState("");
-  const [pinResult, setPinResult] = useState(null);
+  const [deliveryState, setDeliveryState] = useState("");
+  const [deliveryResult, setDeliveryResult] = useState(null);
   const [canReview, setCanReview] = useState(null);
-  const [rvForm, setRvForm] = useState({ rating: 5, title: "", body: "", image_url: "" });
-  const [reviewImageFile, setReviewImageFile] = useState(null);
-  const [reviewImagePreview, setReviewImagePreview] = useState("");
-  const [reviewSubmitting, setReviewSubmitting] = useState(false);
+  const [rvForm, setRvForm] = useState({ rating: 5, title: "", body: "" });
 
   useEffect(() => {
-    setP(null); setActiveImg(0); setQty(1); setGiftWrap(false); setMessage("");
+    setP(null); setActiveImg(0); setQty(1); setGiftWrap(false); setMessage(""); setDeliveryState(""); setDeliveryResult(null);
     api.get(`/products/${slug}`).then(({ data }) => setP(data)).catch(() => setP(false));
     api.get(`/products/${slug}/related`).then(({ data }) => setRelated(data.items)).catch(() => {});
     api.get(`/products/${slug}/reviews`).then(({ data }) => setReviews(data.items)).catch(() => {});
@@ -54,73 +51,24 @@ export default function ProductDetail() {
   }, [slug, reviews]);
 
   useEffect(() => {
-    if (pincode.length !== 6) {
-      setPinResult(null);
+    if (!deliveryState) {
+      setDeliveryResult(null);
       return undefined;
     }
-    const timer = setTimeout(async () => {
-      try {
-        const { data } = await api.get(`/delivery-estimate?pincode=${pincode}`);
-        setPinResult(data);
-      } catch {
-        setPinResult(null);
-      }
-    }, 250);
-    return () => clearTimeout(timer);
-  }, [pincode]);
-
-  const handleReviewImageChange = (e) => {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
-    const allowed = ["image/jpeg", "image/png", "image/webp", "image/gif"];
-    if (!allowed.includes(file.type)) {
-      toast.error("Please upload a JPG, PNG, WEBP or GIF image.");
-      return;
-    }
-    if (file.size > 8 * 1024 * 1024) {
-      toast.error("Review image must be 8MB or smaller.");
-      return;
-    }
-    if (reviewImagePreview) URL.revokeObjectURL(reviewImagePreview);
-    setReviewImageFile(file);
-    setReviewImagePreview(URL.createObjectURL(file));
-  };
-
-  const removeReviewImage = () => {
-    if (reviewImagePreview) URL.revokeObjectURL(reviewImagePreview);
-    setReviewImageFile(null);
-    setReviewImagePreview("");
-  };
-
-  useEffect(() => () => {
-    if (reviewImagePreview) URL.revokeObjectURL(reviewImagePreview);
-  }, [reviewImagePreview]);
+    let active = true;
+    api.get(`/delivery-estimate?state=${encodeURIComponent(deliveryState)}`)
+      .then(({ data }) => { if (active) setDeliveryResult(data); })
+      .catch(() => { if (active) setDeliveryResult(null); });
+    return () => { active = false; };
+  }, [deliveryState]);
 
   const submitReview = async () => {
-    if (reviewSubmitting) return;
-    setReviewSubmitting(true);
     try {
-      let imageUrl = "";
-      if (reviewImageFile) {
-        const formData = new FormData();
-        formData.append("file", reviewImageFile);
-        const { data: uploadData } = await api.post("/reviews/upload", formData);
-        imageUrl = uploadData.url || "";
-        if (!imageUrl) throw new Error("Image upload failed.");
-      }
-
-      const payload = { ...rvForm, image_url: imageUrl || null };
-      const { data } = await api.post(`/products/${slug}/reviews`, payload);
+      const { data } = await api.post(`/products/${slug}/reviews`, rvForm);
       toast.success(data.message);
       setCanReview({ can_review: false, already_reviewed: true });
-      removeReviewImage();
-      setRvForm({ rating: 5, title: "", body: "", image_url: "" });
-    } catch (e) {
-      toast.error(apiError(e));
-    } finally {
-      setReviewSubmitting(false);
-    }
+      setRvForm({ rating: 5, title: "", body: "" });
+    } catch (e) { toast.error(apiError(e)); }
   };
 
   if (p === null) return <PageLoader />;
@@ -134,17 +82,6 @@ export default function ProductDetail() {
   const opts = () => ({ gift_wrap: giftWrap, personalization: message.trim() || null });
   const handleAdd = () => addToCart(p, qty, opts());
   const handleBuy = () => { addToCart(p, qty, opts()); navigate("/checkout"); };
-
-  const checkPin = async () => {
-    if (pincode.length !== 6) return toast.error("Enter a valid 6-digit pincode");
-    try {
-      const { data } = await api.get(`/delivery-estimate?pincode=${pincode}`);
-      setPinResult(data);
-    } catch (e) {
-      setPinResult(null);
-      toast.error(apiError(e));
-    }
-  };
 
   return (
     <div>
@@ -216,14 +153,14 @@ export default function ProductDetail() {
 
           <div className="mt-6 bg-surface p-4">
             <label className="label-caption flex items-center gap-2 mb-2"><Truck size={14} /> Check Delivery</label>
-            <div className="flex gap-2">
-              <input value={pincode} onChange={(e) => setPincode(e.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="Enter pincode" className="input-field flex-1" data-testid="pincode-input" />
-              <button onClick={checkPin} className="btn-primary !px-6" data-testid="pincode-check">Check</button>
-            </div>
-            {pinResult && (
+            <select value={deliveryState} onChange={(e) => setDeliveryState(e.target.value)} className="input-field w-full" data-testid="delivery-state-select">
+              <option value="">Select your state</option>
+              {INDIAN_STATES.map((state) => <option key={state} value={state}>{state}</option>)}
+            </select>
+            {deliveryResult && (
               <div className="text-sm text-ok mt-2 flex items-start gap-1.5" data-testid="delivery-estimate">
                 <Check size={14} className="mt-0.5 shrink-0" />
-                <span>{pinResult.dispatch_text} · {pinResult.delivery_text}</span>
+                <span>{deliveryResult.dispatch_text} · {deliveryResult.delivery_text}</span>
               </div>
             )}
           </div>
@@ -248,47 +185,7 @@ export default function ProductDetail() {
             </div>
             <input value={rvForm.title} onChange={(e) => setRvForm({ ...rvForm, title: e.target.value })} placeholder="Title (optional)" className="input-field mb-3" data-testid="rv-title" />
             <textarea value={rvForm.body} onChange={(e) => setRvForm({ ...rvForm, body: e.target.value })} rows={3} placeholder="Share your experience" className="input-field mb-3" data-testid="rv-body" />
-
-            <div className="mb-4">
-              <div className="flex items-center justify-between gap-3 mb-2">
-                <label className="label-caption">Add a photo (optional)</label>
-                <span className="text-xs text-ink-muted">JPG, PNG, WEBP or GIF · max 8MB</span>
-              </div>
-              <div className="flex items-center gap-3 flex-wrap">
-                <label
-                  htmlFor="review-image-input"
-                  className="inline-flex items-center gap-2 border border-line px-4 py-2.5 text-sm text-plum hover:border-plum cursor-pointer transition-colors"
-                  data-testid="rv-image-upload"
-                >
-                  <ImagePlus size={16} />
-                  {reviewImageFile ? "Change Photo" : "Upload Photo"}
-                </label>
-                <input
-                  id="review-image-input"
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp,image/gif"
-                  onChange={handleReviewImageChange}
-                  className="hidden"
-                  data-testid="rv-image-input"
-                />
-                {reviewImagePreview && (
-                  <div className="relative w-20 h-20 border border-line overflow-hidden bg-white">
-                    <img src={reviewImagePreview} alt="Review preview" className="w-full h-full object-cover" />
-                    <button
-                      type="button"
-                      onClick={removeReviewImage}
-                      className="absolute top-1 right-1 w-6 h-6 flex items-center justify-center bg-white/95 text-ink hover:text-err"
-                      aria-label="Remove review photo"
-                      data-testid="rv-image-remove"
-                    >
-                      <X size={13} />
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <button onClick={submitReview} disabled={reviewSubmitting} className="btn-primary disabled:opacity-60" data-testid="rv-submit">Submit Review</button>
+            <button onClick={submitReview} className="btn-primary" data-testid="rv-submit">Submit Review</button>
           </div>
         )}
         {canReview?.already_reviewed && <p className="text-sm text-ok mb-6">Thanks — you've reviewed this product.</p>}
@@ -302,11 +199,6 @@ export default function ProductDetail() {
                 </div>
                 {r.title && <p className="font-medium text-ink mt-1.5">{r.title}</p>}
                 <p className="text-sm text-ink-secondary mt-1">{r.body}</p>
-                {r.image_url && (
-                  <a href={r.image_url} target="_blank" rel="noreferrer" className="block mt-3 w-24 h-24 border border-line overflow-hidden" aria-label="View customer review photo">
-                    <img src={r.image_url} alt={`Review by ${r.customer_name}`} className="w-full h-full object-cover" loading="lazy" />
-                  </a>
-                )}
                 <p className="text-xs text-ink-muted mt-1">— {r.customer_name}</p>
               </div>
             ))}
@@ -317,7 +209,7 @@ export default function ProductDetail() {
       {related.length > 0 && (
         <div className="container-artful py-16 border-t border-line">
           <h2 className="section-title text-center mb-12">You May Also Like</h2>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-x-5 gap-y-10">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-5 gap-y-10">
             {related.map((rp, i) => <ProductCard key={rp.id} product={rp} index={i} />)}
           </div>
         </div>

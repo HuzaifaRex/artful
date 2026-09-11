@@ -38,10 +38,10 @@ export default function Checkout() {
   const validate = useCallback(async (c) => {
     if (cart.length === 0) return;
     try {
-      const { data } = await api.post("/cart/validate", { items: cartPayload, coupon_code: c ?? applied });
+      const { data } = await api.post("/cart/validate", { items: cartPayload, coupon_code: c ?? applied, state: addr.state });
       setTotals(data);
     } catch { /* ignore */ }
-  }, [cart, cartPayload, applied]);
+  }, [cart, cartPayload, applied, addr.state]);
 
   useEffect(() => { validate(); }, [validate]);
 
@@ -56,23 +56,17 @@ export default function Checkout() {
   }, [customer]);
 
   useEffect(() => {
-    const pin = addr.pincode || "";
-    if (pin.length !== 6) {
+    const state = addr.state || "";
+    if (!state) {
       setDeliveryEstimate(null);
       return undefined;
     }
-
-    const timer = setTimeout(async () => {
-      try {
-        const { data } = await api.get(`/delivery-estimate?pincode=${pin}`);
-        setDeliveryEstimate(data);
-      } catch {
-        setDeliveryEstimate(null);
-      }
-    }, 200);
-
-    return () => clearTimeout(timer);
-  }, [addr.pincode]);
+    let active = true;
+    api.get(`/delivery-estimate?state=${encodeURIComponent(state)}`)
+      .then(({ data }) => { if (active) setDeliveryEstimate(data); })
+      .catch(() => { if (active) setDeliveryEstimate(null); });
+    return () => { active = false; };
+  }, [addr.state]);
 
   if (cart.length === 0) {
     return <div className="container-artful py-24 text-center"><h1 className="section-title mb-4">Your cart is empty</h1><Link to="/shop" className="btn-primary">Shop Now</Link></div>;

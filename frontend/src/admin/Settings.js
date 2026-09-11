@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from "react";
 import { Plus, ShieldCheck, AlertCircle, CheckCircle2 } from "lucide-react";
 import { adminApi, apiError } from "../lib/api";
 import { toast } from "sonner";
-import { formatDateTime } from "../lib/utils";
+import { formatDateTime, INDIAN_STATES } from "../lib/utils";
 import { StatusChip, Modal, Field, inputCls, PageHead, Empty } from "./ui";
 
 export function Settings() {
@@ -11,27 +11,33 @@ export function Settings() {
   useEffect(() => { load(); }, []);
   const set = (k, v) => setS((p) => ({ ...p, [k]: v }));
   const setSocial = (k, v) => setS((p) => ({ ...p, social: { ...(p.social || {}), [k]: v } }));
+  const defaultDelivery = { dispatch_min_days: 1, dispatch_max_days: 2, delivery_min_days: 3, delivery_max_days: 5 };
+  const currentDelivery = () => s.delivery_logic || { default: defaultDelivery, state_rules: [] };
   const setDelivery = (next) => setS((p) => ({ ...p, delivery_logic: next }));
   const updateDeliveryDefault = (k, v) => {
-    const current = s.delivery_logic || { default: { dispatch_days: 2, delivery_min_days: 3, delivery_max_days: 5 }, pincode_rules: [] };
-    setDelivery({
-      ...current,
-      default: { ...(current.default || { dispatch_days: 2, delivery_min_days: 3, delivery_max_days: 5 }), [k]: Number(v) },
-    });
+    const current = currentDelivery();
+    const d = { ...(current.default || defaultDelivery) };
+    d[k] = Number(v);
+    setDelivery({ default: d, state_rules: [...(current.state_rules || [])] });
   };
   const updateDeliveryRule = (index, key, value) => {
-    const current = s.delivery_logic || { default: { dispatch_days: 2, delivery_min_days: 3, delivery_max_days: 5 }, pincode_rules: [] };
-    const rules = [...(current.pincode_rules || [])];
-    rules[index] = { ...rules[index], [key]: key === "prefix" || key === "label" ? value : Number(value) };
-    setDelivery({ ...current, pincode_rules: rules });
+    const current = currentDelivery();
+    const rules = [...(current.state_rules || [])];
+    rules[index] = { ...rules[index], [key]: key === "state" || key === "label" ? value : Number(value) };
+    setDelivery({ default: { ...(current.default || defaultDelivery) }, state_rules: rules });
   };
   const addDeliveryRule = () => {
-    const current = s.delivery_logic || { default: { dispatch_days: 2, delivery_min_days: 3, delivery_max_days: 5 }, pincode_rules: [] };
-    setDelivery({ ...current, pincode_rules: [...(current.pincode_rules || []), { prefix: "", label: "", dispatch_days: 2, delivery_min_days: 3, delivery_max_days: 5 }] });
+    const current = currentDelivery();
+    const used = new Set((current.state_rules || []).map((r) => r.state));
+    const first = INDIAN_STATES.find((name) => !used.has(name)) || "";
+    setDelivery({
+      default: { ...(current.default || defaultDelivery) },
+      state_rules: [...(current.state_rules || []), { state: first, label: "", dispatch_min_days: 1, dispatch_max_days: 2, delivery_min_days: 3, delivery_max_days: 5, shipping_charge: 79 }],
+    });
   };
   const removeDeliveryRule = (index) => {
-    const current = s.delivery_logic || { default: { dispatch_days: 2, delivery_min_days: 3, delivery_max_days: 5 }, pincode_rules: [] };
-    setDelivery({ ...current, pincode_rules: (current.pincode_rules || []).filter((_, i) => i !== index) });
+    const current = currentDelivery();
+    setDelivery({ default: { ...(current.default || defaultDelivery) }, state_rules: (current.state_rules || []).filter((_, i) => i !== index) });
   };
   const save = async () => { try { await adminApi.put("/settings", s); toast.success("Settings saved"); } catch (e) { toast.error(apiError(e)); } };
   if (!s) return null;
@@ -107,27 +113,37 @@ export function Settings() {
         <div className="pt-2">
           <div className="flex items-center justify-between mb-3">
             <div>
-              <h3 className="font-semibold text-gray-900 text-sm">Delivery & Dispatch Timing</h3>
-              <p className="text-xs text-gray-500 mt-1">Pan-India estimate uses the most-specific PIN prefix rule; default applies when no rule matches.</p>
+              <h3 className="font-semibold text-gray-900 text-sm">Delivery, Dispatch & State-wise Shipping</h3>
+              <p className="text-xs text-gray-500 mt-1">Default timing applies across India. Add a state rule only when you want different dispatch, delivery or shipping charges. Free Shipping Threshold continues to apply first.</p>
             </div>
             <button type="button" onClick={addDeliveryRule} className="border border-gray-300 text-gray-700 rounded-md px-3 py-2 text-xs flex items-center gap-1">
-              <Plus size={14} /> Add PIN Rule
+              <Plus size={14} /> Add State Rule
             </button>
           </div>
-          <div className="grid sm:grid-cols-3 gap-4 mb-5">
-            <Field label="Default Dispatch (business days)"><input type="number" min="0" value={s.delivery_logic?.default?.dispatch_days ?? 2} onChange={(e) => updateDeliveryDefault("dispatch_days", e.target.value)} className={inputCls} /></Field>
-            <Field label="Default Minimum Delivery (business days)"><input type="number" min="0" value={s.delivery_logic?.default?.delivery_min_days ?? 3} onChange={(e) => updateDeliveryDefault("delivery_min_days", e.target.value)} className={inputCls} /></Field>
-            <Field label="Default Maximum Delivery (business days)"><input type="number" min="0" value={s.delivery_logic?.default?.delivery_max_days ?? 5} onChange={(e) => updateDeliveryDefault("delivery_max_days", e.target.value)} className={inputCls} /></Field>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
+            <Field label="Default Dispatch Min (business days)"><input type="number" min="0" value={s.delivery_logic?.default?.dispatch_min_days ?? s.delivery_logic?.default?.dispatch_days ?? 1} onChange={(e) => updateDeliveryDefault("dispatch_min_days", e.target.value)} className={inputCls} /></Field>
+            <Field label="Default Dispatch Max (business days)"><input type="number" min="0" value={s.delivery_logic?.default?.dispatch_max_days ?? s.delivery_logic?.default?.dispatch_days ?? 2} onChange={(e) => updateDeliveryDefault("dispatch_max_days", e.target.value)} className={inputCls} /></Field>
+            <Field label="Default Delivery Min (business days)"><input type="number" min="0" value={s.delivery_logic?.default?.delivery_min_days ?? 3} onChange={(e) => updateDeliveryDefault("delivery_min_days", e.target.value)} className={inputCls} /></Field>
+            <Field label="Default Delivery Max (business days)"><input type="number" min="0" value={s.delivery_logic?.default?.delivery_max_days ?? 5} onChange={(e) => updateDeliveryDefault("delivery_max_days", e.target.value)} className={inputCls} /></Field>
           </div>
-          {(s.delivery_logic?.pincode_rules || []).map((rule, i) => (
-            <div key={i} className="grid sm:grid-cols-5 gap-3 border border-gray-200 rounded-md p-3 mb-3">
-              <Field label="PIN Prefix"><input inputMode="numeric" maxLength={6} value={rule.prefix || ""} onChange={(e) => updateDeliveryRule(i, "prefix", e.target.value.replace(/\D/g, "").slice(0, 6))} className={inputCls} placeholder="e.g. 452" /></Field>
-              <Field label="Rule Label"><input value={rule.label || ""} onChange={(e) => updateDeliveryRule(i, "label", e.target.value)} className={inputCls} placeholder="e.g. Indore zone" /></Field>
-              <Field label="Dispatch"><input type="number" min="0" value={rule.dispatch_days ?? 2} onChange={(e) => updateDeliveryRule(i, "dispatch_days", e.target.value)} className={inputCls} /></Field>
-              <Field label="Delivery Min"><input type="number" min="0" value={rule.delivery_min_days ?? 3} onChange={(e) => updateDeliveryRule(i, "delivery_min_days", e.target.value)} className={inputCls} /></Field>
-              <div className="flex items-end gap-2">
+          {(s.delivery_logic?.state_rules || []).map((rule, i) => (
+            <div key={i} className="border border-gray-200 rounded-md p-3 mb-3">
+              <div className="grid sm:grid-cols-2 lg:grid-cols-7 gap-3">
+                <Field label="State">
+                  <select value={rule.state || ""} onChange={(e) => updateDeliveryRule(i, "state", e.target.value)} className={inputCls}>
+                    <option value="">Select state</option>
+                    {INDIAN_STATES.map((state) => <option key={state} value={state}>{state}</option>)}
+                  </select>
+                </Field>
+                <Field label="Rule Label"><input value={rule.label || ""} onChange={(e) => updateDeliveryRule(i, "label", e.target.value)} className={inputCls} placeholder="e.g. Maharashtra" /></Field>
+                <Field label="Dispatch Min"><input type="number" min="0" value={rule.dispatch_min_days ?? rule.dispatch_days ?? 1} onChange={(e) => updateDeliveryRule(i, "dispatch_min_days", e.target.value)} className={inputCls} /></Field>
+                <Field label="Dispatch Max"><input type="number" min="0" value={rule.dispatch_max_days ?? rule.dispatch_days ?? 2} onChange={(e) => updateDeliveryRule(i, "dispatch_max_days", e.target.value)} className={inputCls} /></Field>
+                <Field label="Delivery Min"><input type="number" min="0" value={rule.delivery_min_days ?? 3} onChange={(e) => updateDeliveryRule(i, "delivery_min_days", e.target.value)} className={inputCls} /></Field>
                 <Field label="Delivery Max"><input type="number" min="0" value={rule.delivery_max_days ?? 5} onChange={(e) => updateDeliveryRule(i, "delivery_max_days", e.target.value)} className={inputCls} /></Field>
-                <button type="button" onClick={() => removeDeliveryRule(i)} className="h-10 px-3 border border-gray-300 rounded-md text-xs text-red-600 mb-0.5">Remove</button>
+                <div className="flex items-end gap-2">
+                  <Field label="Shipping ₹"><input type="number" min="0" value={rule.shipping_charge ?? s.shipping_flat ?? 79} onChange={(e) => updateDeliveryRule(i, "shipping_charge", e.target.value)} className={inputCls} /></Field>
+                  <button type="button" onClick={() => removeDeliveryRule(i)} className="h-10 px-3 border border-gray-300 rounded-md text-xs text-red-600 mb-0.5">Remove</button>
+                </div>
               </div>
             </div>
           ))}

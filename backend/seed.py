@@ -177,6 +177,13 @@ SETTINGS = {
     "announcement_text": "Complimentary handwritten gift card on orders above ₹999",
     "guest_checkout": True, "cod_enabled": True, "cod_fee": 99,
     "free_shipping_threshold": 999, "shipping_flat": 79,
+    "delivery_logic": {
+        "default": {
+            "dispatch_min_days": 1, "dispatch_max_days": 2,
+            "delivery_min_days": 3, "delivery_max_days": 5,
+        },
+        "state_rules": [],
+    },
     "tax_rate": 0, "tax_inclusive": True,
     "contact_email": "care@artful.com", "contact_phone": "+91 90000 00000",
     "whatsapp_number": "+91 90000 00000",

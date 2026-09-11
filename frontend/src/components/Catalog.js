@@ -180,12 +180,12 @@ export default function Catalog({ fixed = {}, title, subtitle }) {
           <aside className="hidden lg:block w-56 shrink-0"><FilterPanel /></aside>
           <div className="flex-1 min-w-0">
             {items === null ? (
-              <div className="grid grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-10">{[...Array(6)].map((_, i) => <ProductSkeleton key={i} />)}</div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-10">{[...Array(6)].map((_, i) => <ProductSkeleton key={i} />)}</div>
             ) : items.length === 0 ? (
               <div className="text-center py-24"><p className="font-serif text-2xl text-plum mb-2">No products found</p><p className="text-ink-secondary">Try adjusting your filters.</p><button onClick={clearAll} className="btn-outline mt-6">Clear Filters</button></div>
             ) : (
               <>
-                <div className="grid grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-10" data-testid="product-catalog-grid">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-10" data-testid="product-catalog-grid">
                   {items.map((p, i) => <ProductCard key={p.id} product={p} index={i} />)}
                 </div>
                 {pages > 1 && (

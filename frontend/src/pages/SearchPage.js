@@ -41,7 +41,7 @@ export default function SearchPage() {
           </div>
 
           {data.results.length > 0 ? (
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-x-5 gap-y-10">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-5 gap-y-10">
               {data.results.map((p, i) => <ProductCard key={p.id} product={p} index={i} />)}
             </div>
           ) : (
@@ -49,7 +49,7 @@ export default function SearchPage() {
               <p className="font-serif text-2xl text-plum mb-2">We couldn't find exactly what you're looking for.</p>
               <p className="text-ink-secondary mb-10">Here are some of our bestsellers you might love.</p>
               {data.fallback_suggestions?.length > 0 && (
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-x-5 gap-y-10 text-left">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-5 gap-y-10 text-left">
                   {data.fallback_suggestions.map((p, i) => <ProductCard key={p.id} product={p} index={i} />)}
                 </div>
               )}
