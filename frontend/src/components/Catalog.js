@@ -68,19 +68,45 @@ export default function Catalog({ fixed = {}, title, subtitle }) {
       {!fixed.category && (
         <div>
           <p className="label-caption mb-4">Category</p>
-          <div className="space-y-2">
-            <button onClick={() => update("category", "")} className={`block text-sm ${!category ? "text-plum font-medium" : "text-ink-secondary"}`}>All</button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => update("category", "")}
+              className={`px-3 py-1.5 text-xs border capitalize transition-colors ${
+                !category ? "bg-plum text-white border-plum" : "border-line text-ink-secondary hover:border-plum hover:text-plum"
+              }`}
+              data-testid="filter-cat-all"
+            >
+              All
+            </button>
             {cats.map((c) => (
-              <button key={c.slug} onClick={() => update("category", c.slug)} className={`block text-sm ${category === c.slug ? "text-plum font-medium" : "text-ink-secondary hover:text-plum"}`} data-testid={`filter-cat-${c.slug}`}>{c.name}</button>
+              <button
+                key={c.slug}
+                onClick={() => update("category", c.slug)}
+                className={`px-3 py-1.5 text-xs border capitalize transition-colors ${
+                  category === c.slug ? "bg-plum text-white border-plum" : "border-line text-ink-secondary hover:border-plum hover:text-plum"
+                }`}
+                data-testid={`filter-cat-${c.slug}`}
+              >
+                {c.name}
+              </button>
             ))}
           </div>
         </div>
       )}
       <div>
         <p className="label-caption mb-4">Price</p>
-        <div className="space-y-2">
+        <div className="flex flex-wrap gap-2">
           {PRICE_BANDS.map(([v, l]) => (
-            <button key={v} onClick={() => update("price", v)} className={`block text-sm ${priceBand === v ? "text-plum font-medium" : "text-ink-secondary hover:text-plum"}`} data-testid={`filter-price-${v || "any"}`}>{l}</button>
+            <button
+              key={v}
+              onClick={() => update("price", v)}
+              className={`px-3 py-1.5 text-xs border transition-colors ${
+                priceBand === v ? "bg-plum text-white border-plum" : "border-line text-ink-secondary hover:border-plum hover:text-plum"
+              }`}
+              data-testid={`filter-price-${v || "any"}`}
+            >
+              {l}
+            </button>
           ))}
         </div>
       </div>
@@ -88,7 +114,7 @@ export default function Catalog({ fixed = {}, title, subtitle }) {
         <p className="label-caption mb-4">Occasion</p>
         <div className="flex flex-wrap gap-2">
           {OCCASIONS.map((o) => (
-            <button key={o} onClick={() => update("occasion", occasion === o ? "" : o)} className={`px-3 py-1.5 text-xs border capitalize ${occasion === o ? "bg-plum text-white border-plum" : "border-line text-ink-secondary hover:border-plum"}`}>{o}</button>
+            <button key={o} onClick={() => update("occasion", occasion === o ? "" : o)} className={`px-3 py-1.5 text-xs border capitalize transition-colors ${occasion === o ? "bg-plum text-white border-plum" : "border-line text-ink-secondary hover:border-plum hover:text-plum"}`}>{o}</button>
           ))}
         </div>
       </div>
@@ -96,14 +122,35 @@ export default function Catalog({ fixed = {}, title, subtitle }) {
         <p className="label-caption mb-4">Recipient</p>
         <div className="flex flex-wrap gap-2">
           {RECIPIENTS.map((r) => (
-            <button key={r} onClick={() => update("recipient", recipient === r ? "" : r)} className={`px-3 py-1.5 text-xs border capitalize ${recipient === r ? "bg-plum text-white border-plum" : "border-line text-ink-secondary hover:border-plum"}`}>For {r}</button>
+            <button key={r} onClick={() => update("recipient", recipient === r ? "" : r)} className={`px-3 py-1.5 text-xs border capitalize transition-colors ${recipient === r ? "bg-plum text-white border-plum" : "border-line text-ink-secondary hover:border-plum hover:text-plum"}`}>For {r}</button>
           ))}
         </div>
       </div>
-      <label className="flex items-center gap-2 text-sm text-ink-secondary cursor-pointer">
-        <input type="checkbox" checked={onSale} onChange={(e) => update("on_sale", e.target.checked ? "1" : "")} className="accent-plum" data-testid="filter-onsale" /> On Sale
-      </label>
-      {activeCount > 0 && <button onClick={clearAll} className="text-xs text-accent underline">Clear all filters</button>}
+      <div>
+        <p className="label-caption mb-4">Availability</p>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => update("on_sale", onSale ? "" : "1")}
+            className={`px-3 py-1.5 text-xs border transition-colors ${
+              onSale ? "bg-plum text-white border-plum" : "border-line text-ink-secondary hover:border-plum hover:text-plum"
+            }`}
+            data-testid="filter-onsale"
+          >
+            On Sale
+          </button>
+        </div>
+      </div>
+      {activeCount > 0 && (
+        <button
+          type="button"
+          onClick={clearAll}
+          className="px-3 py-1.5 text-xs border border-line text-ink-secondary hover:border-plum hover:text-plum transition-colors"
+          data-testid="clear-filters"
+        >
+          Clear Filters
+        </button>
+      )}
     </div>
   );
 
