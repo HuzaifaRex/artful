@@ -125,7 +125,8 @@ body {
 
 
 .lg:bg-gradient-to-r{
-  background-image: transparent !important;
+ background: #fff;
+background: linear-gradient(152deg, rgba(18, 68, 204, 0) 0%, rgba(13, 44, 168, 0) 100%) !important;
 }
 .lucide.lucide-moon{
   display: none !important;

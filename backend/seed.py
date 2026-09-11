@@ -184,9 +184,9 @@ SETTINGS = {
     "office_hours": "Mon – Sat · 10:00 AM – 7:00 PM IST",
     "social": {"instagram": "https://instagram.com/artful",
                "facebook": "https://facebook.com/artful",
-               "twitter": "https://twitter.com/artful",
+               
                "pinterest": "https://pinterest.com/artful"},
-    "instagram_handle": "@artful",
+    
     "seo_title": "ARTFUL — Thoughtfully made. Beautifully given.",
     "seo_description": "Premium artistic lifestyle & thoughtful gifting. Handcrafted objects and bespoke gift boxes.",
 }
