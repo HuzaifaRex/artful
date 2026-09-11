@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { api } from "../lib/api";
 import { toast } from "sonner";
+import { getBulkUnitPrice } from "../lib/utils";
 
 const StoreContext = createContext(null);
 export const useStore = () => useContext(StoreContext);
@@ -60,12 +61,14 @@ export function StoreProvider({ children }) {
       const idx = prev.findIndex((i) => i.key === key);
       if (idx >= 0) {
         const next = [...prev];
-        next[idx] = { ...next[idx], qty: next[idx].qty + qty };
+        const nextQty = next[idx].qty + qty;
+        next[idx] = { ...next[idx], qty: nextQty, price: getBulkUnitPrice(next[idx], nextQty) };
         return next;
       }
       return [...prev, {
         key, product_id: product.id, name: product.name, slug: product.slug,
-        image: (product.images || [])[0], price: product.price,
+        image: (product.images || [])[0], price: getBulkUnitPrice(product, qty),
+        base_price: product.price, bulk_order: product.bulk_order || null,
         compare_at_price: product.compare_at_price, qty,
         variant_id: opts.variant_id || null, gift_wrap: !!opts.gift_wrap,
         personalization: opts.personalization || null,
@@ -76,7 +79,11 @@ export function StoreProvider({ children }) {
   }, []);
 
   const updateQty = useCallback((key, qty) => {
-    setCart((prev) => prev.map((i) => (i.key === key ? { ...i, qty: Math.max(1, qty) } : i)));
+    setCart((prev) => prev.map((i) => {
+      if (i.key !== key) return i;
+      const nextQty = Math.max(1, qty);
+      return { ...i, qty: nextQty, price: getBulkUnitPrice({ price: i.base_price ?? i.price, bulk_order: i.bulk_order }, nextQty) };
+    }));
   }, []);
 
   const removeItem = useCallback((key) => {

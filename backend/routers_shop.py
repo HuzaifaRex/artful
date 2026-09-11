@@ -3,7 +3,7 @@ import json
 import re
 import uuid
 from datetime import datetime, timezone
-from fastapi import APIRouter, HTTPException, Request, Depends, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Request, Depends, BackgroundTasks, UploadFile, File
 from db import db, clean
 from security import (create_token, get_current_customer, optional_customer, now_iso)
 from pricing import compute_totals, validate_coupon, build_line_items
@@ -729,6 +729,25 @@ async def can_review(slug: str, cust: dict = Depends(get_current_customer)):
     return {"can_review": purchased and not already, "purchased": purchased, "already_reviewed": already}
 
 
+@router.post("/reviews/upload")
+async def upload_review_image(file: UploadFile = File(...), cust: dict = Depends(get_current_customer)):
+    import os
+    import storage
+    ext = os.path.splitext(file.filename or "")[1].lower() or ".jpg"
+    allowed = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".gif": "image/gif"}
+    if ext not in allowed:
+        raise HTTPException(400, "Please upload a JPG, PNG, WEBP or GIF image.")
+    data = await file.read()
+    if len(data) > 8 * 1024 * 1024:
+        raise HTTPException(400, "Review image too large (max 8MB).")
+    path = f"{storage.APP_NAME}/reviews/{cust['id']}/{uuid.uuid4().hex}{ext}"
+    try:
+        result = storage.upload_media(path, data, allowed[ext], resource_type="image")
+    except Exception as e:
+        raise HTTPException(502, f"Image upload failed: {e}")
+    return {"url": result["url"], "path": result["path"]}
+
+
 @router.post("/products/{slug}/reviews")
 async def submit_review(slug: str, payload: dict, cust: dict = Depends(get_current_customer)):
     p = await db.products.find_one({"slug": slug}, {"id": 1, "_id": 0})
@@ -741,9 +760,13 @@ async def submit_review(slug: str, payload: dict, cust: dict = Depends(get_curre
     rating = int(payload.get("rating", 0))
     if rating < 1 or rating > 5:
         raise HTTPException(400, "Please provide a rating between 1 and 5.")
+    image_url = (payload.get("image_url") or "").strip() or None
+    if image_url and not image_url.startswith("https://res.cloudinary.com/"):
+        raise HTTPException(400, "Invalid review image.")
     doc = {"id": str(uuid.uuid4()), "product_id": p["id"], "product_slug": slug,
            "customer_id": cust["id"], "customer_name": cust.get("name") or "ARTFUL Customer",
            "rating": rating, "title": payload.get("title"), "body": payload.get("body"),
+           "image_url": image_url, "image_status": "Pending" if image_url else None,
            "verified_buyer": True,
            "status": "Pending", "created_at": now_iso()}
     await db.reviews.insert_one(doc)

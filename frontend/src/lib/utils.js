@@ -10,6 +10,19 @@ export function inr(value) {
   return "₹" + Number(value).toLocaleString("en-IN");
 }
 
+export function getBulkUnitPrice(product, qty) {
+  const base = Number(product?.price || 0);
+  const cfg = product?.bulk_order || {};
+  if (!cfg.enabled || !Array.isArray(cfg.tiers) || !cfg.tiers.length) return base;
+  const minQty = Number(cfg.min_quantity || 0);
+  if (minQty <= 0 || Number(qty || 0) < minQty) return base;
+  const applicable = cfg.tiers
+    .map((t) => ({ min_quantity: Number(t.min_quantity || 0), price: Number(t.price || 0) }))
+    .filter((t) => t.min_quantity >= minQty && t.min_quantity <= Number(qty || 0) && t.price > 0)
+    .sort((a, b) => b.min_quantity - a.min_quantity);
+  return applicable[0]?.price || base;
+}
+
 export function discountPct(price, compareAt) {
   if (!compareAt || compareAt <= price) return null;
   return Math.round(((compareAt - price) / compareAt) * 100);

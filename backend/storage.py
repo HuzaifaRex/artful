@@ -62,19 +62,18 @@ def _public_id(path: str) -> str:
     return clean
 
 
-def put_object(path: str, data: bytes, content_type: str) -> dict:
-    """Upload an image to Cloudinary while preserving the old storage interface."""
+def upload_media(path: str, data: bytes, content_type: str, resource_type: str = "image") -> dict:
+    """Upload image/video bytes to Cloudinary and return the secure public URL."""
     _require_config()
 
     public_id = _public_id(path)
-
     stream = io.BytesIO(data)
     stream.name = os.path.basename(path) or "upload"
 
     result = cloudinary.uploader.upload(
         stream,
         public_id=public_id,
-        resource_type="image",
+        resource_type=resource_type,
         overwrite=False,
         unique_filename=False,
         use_filename=False,
@@ -86,7 +85,13 @@ def put_object(path: str, data: bytes, content_type: str) -> dict:
         "size": int(result.get("bytes") or len(data)),
         "content_type": content_type,
         "public_id": result.get("public_id", public_id),
+        "resource_type": resource_type,
     }
+
+
+def put_object(path: str, data: bytes, content_type: str) -> dict:
+    """Backward-compatible image upload wrapper."""
+    return upload_media(path, data, content_type, resource_type="image")
 
 
 def get_object(path: str):

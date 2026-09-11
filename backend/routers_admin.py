@@ -157,6 +157,7 @@ async def create_product(payload: dict, request: Request, admin: dict = Depends(
            "sections": payload.get("sections", []),
            "occasion": payload.get("occasion", []), "recipient": payload.get("recipient", []),
            "rating": 0, "review_count": 0, "variants": payload.get("variants", []),
+           "bulk_order": payload.get("bulk_order", {"enabled": False, "min_quantity": 10, "tiers": []}),
            "personalization": payload.get("personalization", {"enabled": False}),
            "seo": payload.get("seo", {"title": f"{name} — ARTFUL", "description": payload.get("short_description", "")}),
            "views": 0, "sales_count": 0, "created_at": now_iso(), "updated_at": now_iso()}
@@ -306,27 +307,41 @@ register_crud("promotions", "promotions", "marketing",
 
 UPLOAD_MIME = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
                ".webp": "image/webp", ".gif": "image/gif", ".avif": "image/avif"}
+VIDEO_MIME = {".mp4": "video/mp4", ".webm": "video/webm", ".mov": "video/quicktime", ".m4v": "video/x-m4v", ".ogv": "video/ogg"}
 
 
 @router.post("/upload")
-async def upload_image(file: UploadFile = File(...), admin: dict = Depends(get_current_admin)):
+async def upload_media(file: UploadFile = File(...), admin: dict = Depends(get_current_admin)):
     import storage
     ext = os.path.splitext(file.filename or "")[1].lower() or ".png"
-    if ext not in UPLOAD_MIME:
-        raise HTTPException(400, "Unsupported image type.")
+    if ext not in UPLOAD_MIME and ext not in VIDEO_MIME:
+        raise HTTPException(400, "Unsupported media type.")
+
+    content_type = UPLOAD_MIME.get(ext) or VIDEO_MIME[ext]
+    resource_type = "image" if ext in UPLOAD_MIME else "video"
     data = await file.read()
-    if len(data) > 8 * 1024 * 1024:
-        raise HTTPException(400, "Image too large (max 8MB).")
+    max_bytes = 8 * 1024 * 1024 if resource_type == "image" else 50 * 1024 * 1024
+    if len(data) > max_bytes:
+        raise HTTPException(400, f"{"Image" if resource_type == "image" else "Video"} too large (max {"8MB" if resource_type == "image" else "50MB"}).")
+
     path = f"{storage.APP_NAME}/uploads/{uuid.uuid4().hex}{ext}"
     try:
-        result = storage.put_object(path, data, UPLOAD_MIME[ext])
+        result = storage.upload_media(path, data, content_type, resource_type=resource_type)
     except Exception as e:
         raise HTTPException(502, f"Upload failed: {e}")
-    url = f"/api/uploads/{result['path']}"
-    await db.media.insert_one({"id": str(uuid.uuid4()), "storage_path": result["path"], "url": url,
-                               "original_filename": file.filename, "content_type": UPLOAD_MIME[ext],
-                               "size": result.get("size", len(data)), "is_deleted": False, "at": now_iso()})
-    return {"url": url, "path": result["path"]}
+
+    if resource_type == "image":
+        url = f"/api/uploads/{result['path']}"
+        stored_path = result["path"]
+    else:
+        url = result["url"]
+        stored_path = result.get("public_id", result["path"])
+
+    await db.media.insert_one({"id": str(uuid.uuid4()), "storage_path": stored_path, "url": url,
+                               "original_filename": file.filename, "content_type": content_type,
+                               "size": result.get("size", len(data)), "resource_type": resource_type,
+                               "is_deleted": False, "at": now_iso()})
+    return {"url": url, "path": stored_path, "resource_type": resource_type}
 
 
 # ---------------- ORDERS ----------------
@@ -498,14 +513,33 @@ async def moderate_review(rid: str, payload: dict, admin: dict = Depends(require
     if not r:
         raise HTTPException(404, "Review not found.")
     status = payload.get("status")
-    await db.reviews.update_one({"id": rid}, {"$set": {"status": status}})
-    # recompute product rating from approved reviews
+    if status not in ("Pending", "Approved", "Rejected"):
+        raise HTTPException(400, "Invalid review status.")
+    image_status = payload.get("image_status")
+    update = {"status": status}
+    if image_status in ("Pending", "Approved", "Rejected"):
+        update["image_status"] = image_status
+    await db.reviews.update_one({"id": rid}, {"$set": update})
     approved = [x async for x in db.reviews.find({"product_id": r["product_id"], "status": "Approved"}, {"rating": 1, "_id": 0})]
     if approved:
         avg = round(sum(a["rating"] for a in approved) / len(approved), 1)
         await db.products.update_one({"id": r["product_id"]}, {"$set": {"rating": avg, "review_count": len(approved)}})
     else:
         await db.products.update_one({"id": r["product_id"]}, {"$set": {"rating": 0, "review_count": 0}})
+    return {"ok": True}
+
+
+@router.put("/reviews/{rid}/image")
+async def moderate_review_image(rid: str, payload: dict, admin: dict = Depends(require_permission("catalog"))):
+    r = await db.reviews.find_one({"id": rid})
+    if not r:
+        raise HTTPException(404, "Review not found.")
+    status = payload.get("status")
+    if not r.get("image_url"):
+        raise HTTPException(400, "This review has no image.")
+    if status not in ("Pending", "Approved", "Rejected"):
+        raise HTTPException(400, "Invalid image status.")
+    await db.reviews.update_one({"id": rid}, {"$set": {"image_status": status}})
     return {"ok": True}
 
 

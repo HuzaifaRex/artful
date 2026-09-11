@@ -77,3 +77,47 @@ export function MultiImageUpload({ value = [], onChange, testid = "images" }) {
     </div>
   );
 }
+
+
+export function VideoUpload({ value, onChange, testid = "video" }) {
+  const ref = useRef();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const pick = async (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setError("");
+    if (!f.type.startsWith("video/")) { setError("Please choose a video file."); e.target.value = ""; return; }
+    if (f.size > 50 * 1024 * 1024) { setError("Video must be 100MB or smaller."); e.target.value = ""; return; }
+    const fd = new FormData();
+    fd.append("file", f);
+    setBusy(true);
+    try {
+      const { data } = await adminApi.post("/upload", fd, { headers: { "Content-Type": "multipart/form-data" } });
+      onChange(data.url);
+      toast.success("Video uploaded");
+    } catch (err) { setError(apiError(err, "Video upload failed")); }
+    setBusy(false);
+    e.target.value = "";
+  };
+  return (
+    <div className="space-y-2">
+      <input ref={ref} type="file" accept="video/mp4,video/webm,video/quicktime,video/x-m4v,video/ogg" hidden onChange={pick} data-testid={`upload-${testid}`} />
+      {value ? (
+        <div className="space-y-2">
+          <video src={value} controls className="w-full max-w-md max-h-56 rounded-md border border-gray-200 bg-black" />
+          <div className="flex items-center gap-3">
+            <button type="button" onClick={() => ref.current?.click()} disabled={busy} className="text-xs text-plum underline">Replace video</button>
+            <button type="button" onClick={() => onChange("")} className="text-xs text-red-600 underline">Remove</button>
+          </div>
+        </div>
+      ) : (
+        <button type="button" onClick={() => ref.current?.click()} disabled={busy} className="w-full max-w-md rounded-md border-2 border-dashed border-gray-300 px-4 py-5 text-sm text-gray-500 hover:border-plum hover:text-plum text-center" data-testid={`upload-btn-${testid}`}>
+          {busy ? "Uploading video…" : "Upload product video"}
+        </button>
+      )}
+      {error && <p className="text-xs text-red-600">{error}</p>}
+      <p className="text-xs text-gray-400">Optional · MP4/WebM/MOV · max 50MB</p>
+    </div>
+  );
+}

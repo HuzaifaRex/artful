@@ -296,7 +296,13 @@ async def product_reviews(slug: str):
     if not p:
         raise HTTPException(404, "Product not found.")
     cur = db.reviews.find({"product_id": p["id"], "status": "Approved"}, {"_id": 0}).sort("created_at", -1)
-    return {"items": [r async for r in cur]}
+    items = []
+    async for r in cur:
+        r = clean(r)
+        if r.get("image_url") and r.get("image_status") != "Approved":
+            r.pop("image_url", None)
+        items.append(r)
+    return {"items": items}
 
 
 @router.post("/corporate-inquiries")

@@ -4,7 +4,7 @@ import { adminApi, apiError } from "../lib/api";
 import { toast } from "sonner";
 import { inr } from "../lib/utils";
 import { StatusChip, Modal, Field, inputCls, PageHead, Empty } from "./ui";
-import { ImageUpload, MultiImageUpload } from "./ImageUpload";
+import { ImageUpload, MultiImageUpload, VideoUpload } from "./ImageUpload";
 import { DataTable } from "./DataTable";
 
 const BADGES = ["New", "Bestseller", "Limited", "Sale", "Featured"];
@@ -79,8 +79,13 @@ function ProductForm({ product, cats, onClose, onSaved }) {
     name: "", price: "", compare_at_price: "", stock: 0, low_stock_threshold: 5, sku: "",
     category_slug: cats[0]?.slug || "", short_description: "", description: "", material: "", color: "",
     status: "Active", badges: [], tags: [], images: [], occasion: [], recipient: [],
-    personalization: { enabled: false, char_limit: 30 }, ...product,
+    personalization: { enabled: false, char_limit: 30 },
+    bulk_order: { enabled: false, min_quantity: 10, tiers: [] },
+    video: null, ...product,
   });
+  useEffect(() => {
+    setF((prev) => ({ ...prev, bulk_order: prev.bulk_order || { enabled: false, min_quantity: 10, tiers: [] } }));
+  }, []);
   const [saving, setSaving] = useState(false);
   const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
   const toggleBadge = (b) => set("badges", f.badges.includes(b) ? f.badges.filter((x) => x !== b) : [...f.badges, b]);
@@ -88,7 +93,8 @@ function ProductForm({ product, cats, onClose, onSaved }) {
   const save = async () => {
     if (!f.name || f.price === "") return toast.error("Name and price are required");
     setSaving(true);
-    const payload = { ...f, price: Number(f.price), compare_at_price: f.compare_at_price ? Number(f.compare_at_price) : null, stock: Number(f.stock), low_stock_threshold: Number(f.low_stock_threshold), tags: typeof f.tags === "string" ? f.tags.split(",").map((x) => x.trim()).filter(Boolean) : f.tags, images: typeof f.images === "string" ? f.images.split("\n").map((x) => x.trim()).filter(Boolean) : f.images, occasion: typeof f.occasion === "string" ? f.occasion.split(",").map((x) => x.trim()).filter(Boolean) : f.occasion, recipient: typeof f.recipient === "string" ? f.recipient.split(",").map((x) => x.trim()).filter(Boolean) : f.recipient };
+    const bulk = f.bulk_order?.enabled ? { enabled: true, min_quantity: Math.max(2, Number(f.bulk_order?.min_quantity || 2)), tiers: (f.bulk_order?.tiers || []).map((t) => ({ min_quantity: Math.max(2, Number(t.min_quantity || 0)), price: Math.max(1, Number(t.price || 0)) })).filter((t) => t.min_quantity > 0 && t.price > 0) } : { enabled: false, min_quantity: Number(f.bulk_order?.min_quantity || 10), tiers: [] };
+    const payload = { ...f, price: Number(f.price), compare_at_price: f.compare_at_price ? Number(f.compare_at_price) : null, stock: Number(f.stock), low_stock_threshold: Number(f.low_stock_threshold), bulk_order: bulk, tags: typeof f.tags === "string" ? f.tags.split(",").map((x) => x.trim()).filter(Boolean) : f.tags, images: typeof f.images === "string" ? f.images.split("\n").map((x) => x.trim()).filter(Boolean) : f.images, occasion: typeof f.occasion === "string" ? f.occasion.split(",").map((x) => x.trim()).filter(Boolean) : f.occasion, recipient: typeof f.recipient === "string" ? f.recipient.split(",").map((x) => x.trim()).filter(Boolean) : f.recipient };
     try {
       if (isNew) await adminApi.post("/products", payload);
       else await adminApi.put(`/products/${product.id}`, payload);
@@ -114,6 +120,33 @@ function ProductForm({ product, cats, onClose, onSaved }) {
         <div className="sm:col-span-2"><Field label="Short description"><input value={f.short_description || ""} onChange={(e) => set("short_description", e.target.value)} className={inputCls} /></Field></div>
         <div className="sm:col-span-2"><Field label="Description"><textarea rows={3} value={f.description || ""} onChange={(e) => set("description", e.target.value)} className={inputCls} /></Field></div>
         <div className="sm:col-span-2"><Field label="Product Images"><MultiImageUpload value={Array.isArray(f.images) ? f.images : []} onChange={(v) => set("images", v)} testid="product-images" /></Field></div>
+        <div className="sm:col-span-2">
+          <Field label="Product Video (Optional)"><VideoUpload value={f.video || ""} onChange={(v) => set("video", v)} testid="product-video" /></Field>
+        </div>
+        <div className="sm:col-span-2 border border-gray-100 rounded-lg p-4 bg-gray-50">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div><p className="text-sm font-semibold text-gray-800">Bulk Ordering</p><p className="text-xs text-gray-400">Offer lower per-unit pricing for higher quantities.</p></div>
+            <label className="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" checked={!!f.bulk_order?.enabled} onChange={(e) => set("bulk_order", { ...(f.bulk_order || {}), enabled: e.target.checked })} className="accent-plum w-4 h-4" /> Enable bulk ordering</label>
+          </div>
+          {f.bulk_order?.enabled && (
+            <div className="space-y-3">
+              <Field label="Minimum bulk quantity"><input type="number" min="2" value={f.bulk_order?.min_quantity ?? 10} onChange={(e) => set("bulk_order", { ...(f.bulk_order || {}), min_quantity: Math.max(2, Number(e.target.value || 0)) })} className={inputCls} /></Field>
+              <div>
+                <div className="flex items-center justify-between mb-2"><p className="text-xs font-medium text-gray-600">Quantity pricing tiers</p><button type="button" onClick={() => set("bulk_order", { ...(f.bulk_order || {}), tiers: [...(f.bulk_order?.tiers || []), { min_quantity: f.bulk_order?.min_quantity || 10, price: f.price || "" }] })} className="text-xs text-plum underline">+ Add tier</button></div>
+                <div className="space-y-2">
+                  {(f.bulk_order?.tiers || []).map((tier, idx) => (
+                    <div key={idx} className="grid grid-cols-[1fr_1fr_auto] gap-2 items-end">
+                      <div><label className="text-[11px] text-gray-500">Minimum qty</label><input type="number" min={f.bulk_order?.min_quantity || 2} value={tier.min_quantity ?? ""} onChange={(e) => { const tiers = [...(f.bulk_order?.tiers || [])]; tiers[idx] = { ...tiers[idx], min_quantity: Number(e.target.value || 0) }; set("bulk_order", { ...(f.bulk_order || {}), tiers }); }} className={inputCls} /></div>
+                      <div><label className="text-[11px] text-gray-500">Unit price (₹)</label><input type="number" min="1" value={tier.price ?? ""} onChange={(e) => { const tiers = [...(f.bulk_order?.tiers || [])]; tiers[idx] = { ...tiers[idx], price: Number(e.target.value || 0) }; set("bulk_order", { ...(f.bulk_order || {}), tiers }); }} className={inputCls} /></div>
+                      <button type="button" onClick={() => set("bulk_order", { ...(f.bulk_order || {}), tiers: (f.bulk_order?.tiers || []).filter((_, i) => i !== idx) })} className="px-3 py-2 text-xs text-red-600 border border-red-200 rounded">Remove</button>
+                    </div>
+                  ))}
+                  {(f.bulk_order?.tiers || []).length === 0 && <p className="text-xs text-gray-400">Add at least one pricing tier. Example: 25 pcs → ₹900 each.</p>}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
         <Field label="Tags (comma separated)"><input value={Array.isArray(f.tags) ? f.tags.join(", ") : f.tags} onChange={(e) => set("tags", e.target.value)} className={inputCls} /></Field>
         <Field label="Occasion (comma separated)"><input value={Array.isArray(f.occasion) ? f.occasion.join(", ") : f.occasion} onChange={(e) => set("occasion", e.target.value)} className={inputCls} /></Field>
         <div className="sm:col-span-2">
@@ -290,16 +323,32 @@ export function Reviews() {
   const [filter, setFilter] = useState("Pending");
   const load = useCallback(() => adminApi.get(`/reviews?status=${filter}`).then(({ data }) => setItems(data.items)).catch(() => {}), [filter]);
   useEffect(() => { load(); }, [load]);
-  const moderate = async (id, status) => { await adminApi.put(`/reviews/${id}`, { status }); toast.success(`Review ${status.toLowerCase()}`); load(); };
+  const moderate = async (id, status) => { try { await adminApi.put(`/reviews/${id}`, { status }); toast.success(`Review ${status.toLowerCase()}`); load(); } catch (e) { toast.error(apiError(e)); } };
+  const moderateImage = async (id, status) => { try { await adminApi.put(`/reviews/${id}/image`, { status }); toast.success(`Review image ${status.toLowerCase()}`); load(); } catch (e) { toast.error(apiError(e)); } };
   return (
     <div>
-      <PageHead title="Reviews" subtitle="Moderate customer reviews" />
+      <PageHead title="Reviews" subtitle="Moderate customer reviews and images" />
       <div className="flex gap-2 mb-4">{["Pending", "Approved", "Rejected"].map((s) => <button key={s} onClick={() => setFilter(s)} className={`px-3 py-1.5 text-sm rounded ${filter === s ? "bg-plum text-white" : "bg-white border border-gray-200 text-gray-600"}`}>{s}</button>)}</div>
       <div className="space-y-3">
         {items.map((r) => (
           <div key={r.id} className="bg-white rounded-lg border border-gray-200 p-4">
-            <div className="flex justify-between"><div><p className="font-medium text-gray-900">{r.title || "Review"} · {r.rating}★</p><p className="text-sm text-gray-600 mt-1">{r.body}</p><p className="text-xs text-gray-400 mt-1">by {r.customer_name} · product {r.product_slug}</p></div>
-              {filter === "Pending" && <div className="flex gap-2"><button onClick={() => moderate(r.id, "Approved")} className="text-xs bg-emerald-600 text-white px-3 py-1.5 rounded">Approve</button><button onClick={() => moderate(r.id, "Rejected")} className="text-xs bg-red-600 text-white px-3 py-1.5 rounded">Reject</button></div>}
+            <div className="flex justify-between gap-4">
+              <div className="flex gap-4 min-w-0">
+                {r.image_url && <img src={r.image_url} alt="Customer review" className="w-20 h-20 rounded object-cover border border-gray-200 shrink-0" />}
+                <div className="min-w-0">
+                  <p className="font-medium text-gray-900">{r.title || "Review"} · {r.rating}★</p>
+                  <p className="text-sm text-gray-600 mt-1">{r.body || "No written message."}</p>
+                  <p className="text-xs text-gray-400 mt-1">by {r.customer_name} · product {r.product_slug}</p>
+                  <div className="flex flex-wrap gap-2 mt-2 text-[11px]">
+                    <span className={`px-2 py-1 rounded-full ${r.status === "Approved" ? "bg-emerald-50 text-emerald-700" : r.status === "Rejected" ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-700"}`}>Review: {r.status}</span>
+                    {r.image_url && <span className={`px-2 py-1 rounded-full ${r.image_status === "Approved" ? "bg-emerald-50 text-emerald-700" : r.image_status === "Rejected" ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-700"}`}>Image: {r.image_status || "Pending"}</span>}
+                  </div>
+                </div>
+              </div>
+              <div className="flex flex-col gap-2 shrink-0">
+                {filter === "Pending" && <div className="flex gap-2"><button onClick={() => moderate(r.id, "Approved")} className="text-xs bg-emerald-600 text-white px-3 py-1.5 rounded">Approve review</button><button onClick={() => moderate(r.id, "Rejected")} className="text-xs bg-red-600 text-white px-3 py-1.5 rounded">Reject review</button></div>}
+                {r.image_url && r.image_status === "Pending" && <div className="flex gap-2"><button onClick={() => moderateImage(r.id, "Approved")} className="text-xs bg-sky-600 text-white px-3 py-1.5 rounded">Approve image</button><button onClick={() => moderateImage(r.id, "Rejected")} className="text-xs border border-red-200 text-red-600 px-3 py-1.5 rounded">Reject image</button></div>}
+              </div>
             </div>
           </div>
         ))}

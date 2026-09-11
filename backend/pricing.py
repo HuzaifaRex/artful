@@ -2,6 +2,31 @@
 from db import db
 
 
+def bulk_unit_price(prod: dict, qty: int, base_price: int) -> int:
+    """Return the applicable product unit price for a quantity using admin-defined bulk tiers."""
+    config = prod.get("bulk_order") or {}
+    if not config.get("enabled"):
+        return int(base_price)
+    try:
+        min_qty = int(config.get("min_quantity", 0))
+    except (TypeError, ValueError):
+        min_qty = 0
+    if min_qty <= 0 or qty < min_qty:
+        return int(base_price)
+
+    best = None
+    for tier in config.get("tiers") or []:
+        try:
+            t_qty = int(tier.get("min_quantity", 0))
+            t_price = int(round(float(tier.get("price"))))
+        except (TypeError, ValueError):
+            continue
+        if t_qty >= min_qty and t_price > 0 and t_qty <= qty:
+            if best is None or t_qty > best[0]:
+                best = (t_qty, t_price)
+    return best[1] if best else int(base_price)
+
+
 async def build_line_items(items):
     """items: [{product_id, variant_id?, qty, personalization?, gift_wrap?}] -> priced lines."""
     lines, errors = [], []
@@ -13,23 +38,28 @@ async def build_line_items(items):
             continue
         available = prod.get("stock", 0) - prod.get("reserved", 0)
         variant = None
-        price = prod["price"]
+        base_price = prod["price"]
         if it.get("variant_id"):
             variant = next((v for v in prod.get("variants", []) if v.get("id") == it["variant_id"]), None)
             if variant:
-                price = variant.get("price", price)
+                base_price = variant.get("price", base_price)
                 available = variant.get("stock", available)
         capped = min(qty, max(0, available))
         if capped == 0:
             errors.append({"product_id": prod["id"], "name": prod["name"], "error": "Out of stock."})
             continue
+        price = bulk_unit_price(prod, capped, base_price)
         gift_wrap = bool(it.get("gift_wrap"))
         wrap_price = 199 if gift_wrap else 0
+        bulk_config = prod.get("bulk_order") or {}
+        bulk_enabled_for_line = bool(bulk_config.get("enabled") and capped >= int(bulk_config.get("min_quantity", 0) or 0) and price != int(base_price))
         lines.append({
             "product_id": prod["id"], "name": prod["name"], "slug": prod["slug"],
             "image": (prod.get("images") or [None])[0], "sku": prod.get("sku"),
             "variant_id": it.get("variant_id"), "variant_label": (variant or {}).get("label") if variant else None,
-            "price": price, "qty": capped, "requested_qty": qty,
+            "price": price, "base_price": base_price, "qty": capped, "requested_qty": qty,
+            "bulk_order": {"enabled": bool(bulk_config.get("enabled")), "applied": bulk_enabled_for_line,
+                           "min_quantity": int(bulk_config.get("min_quantity", 0) or 0), "tiers": bulk_config.get("tiers", [])},
             "gift_wrap": gift_wrap, "wrap_price": wrap_price,
             "personalization": it.get("personalization") or None,
             "line_total": price * capped + wrap_price,
@@ -86,8 +116,8 @@ async def compute_totals(items, coupon_code=None, customer=None):
     tax_rate = settings.get("tax_rate", 0)
     taxable = max(0, subtotal - discount)
     tax = 0 if settings.get("tax_inclusive", True) else round(taxable * tax_rate / 100)
-    compare_total = sum((l.get("compare_at_price") or l["price"]) * l["qty"] for l in lines)
-    savings = max(0, compare_total - subtotal) + discount
+    regular_total = sum((l.get("compare_at_price") if (l.get("compare_at_price") or 0) > (l.get("base_price") or l["price"]) else (l.get("base_price") or l["price"])) * l["qty"] for l in lines)
+    savings = max(0, regular_total - subtotal) + discount
     total = max(0, subtotal - discount + shipping + tax)
     return {
         "items": lines, "errors": errors,
