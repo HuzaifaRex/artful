@@ -358,7 +358,14 @@ async def product_reviews(slug: str):
     if not p:
         raise HTTPException(404, "Product not found.")
     cur = db.reviews.find({"product_id": p["id"], "status": "Approved"}, {"_id": 0}).sort("created_at", -1)
-    return {"items": [r async for r in cur]}
+    items = []
+    async for review in cur:
+        # A review can be approved before its customer photo is approved.
+        # Only expose the image after the separate image-moderation step approves it.
+        if review.get("image_url") and review.get("image_status") != "Approved":
+            review = {**review, "image_url": None}
+        items.append(review)
+    return {"items": items}
 
 
 @router.post("/corporate-inquiries")
