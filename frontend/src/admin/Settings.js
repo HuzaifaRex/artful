@@ -42,7 +42,7 @@ export function Settings() {
   const save = async () => { try { await adminApi.put("/settings", s); toast.success("Settings saved"); } catch (e) { toast.error(apiError(e)); } };
   if (!s) return null;
   return (
-    <div className="max-w-3xl">
+    <div className="">
       <PageHead title="Store Settings" />
       <div className="bg-white rounded-lg border border-gray-200 p-6 mb-6">
         <h3 className="font-semibold text-gray-900 mb-4 text-sm">Integrations</h3>
