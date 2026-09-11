@@ -10,8 +10,9 @@ export function Settings() {
   const load = () => adminApi.get("/settings").then(({ data }) => setS(data)).catch(() => {});
   useEffect(() => { load(); }, []);
   const set = (k, v) => setS((p) => ({ ...p, [k]: v }));
+  const setSocial = (k, v) => setS((p) => ({ ...p, social: { ...(p.social || {}), [k]: v } }));
   const save = async () => { try { await adminApi.put("/settings", s); toast.success("Settings saved"); } catch (e) { toast.error(apiError(e)); } };
-  if (!s) return <p className="text-gray-400">Loading…</p>;
+  if (!s) return null;
   return (
     <div className="max-w-3xl">
       <PageHead title="Store Settings" />
@@ -35,6 +36,51 @@ export function Settings() {
         <div className="flex gap-6">
           <label className="flex items-center gap-2 text-sm text-gray-600"><input type="checkbox" checked={!!s.announcement_enabled} onChange={(e) => set("announcement_enabled", e.target.checked)} className="accent-plum" /> Show announcement bar</label>
           <label className="flex items-center gap-2 text-sm text-gray-600"><input type="checkbox" checked={!!s.cod_enabled} onChange={(e) => set("cod_enabled", e.target.checked)} className="accent-plum" /> Enable COD</label>
+        </div>
+        <div className="pt-2">
+          <h3 className="font-semibold text-gray-900 mb-3 text-sm">Social Links</h3>
+          <div className="grid sm:grid-cols-2 gap-4">
+            <Field label="Instagram URL">
+              <input
+                type="url"
+                placeholder="https://instagram.com/yourbrand"
+                value={s.social?.instagram || ""}
+                onChange={(e) => setSocial("instagram", e.target.value)}
+                className={inputCls}
+                data-testid="set-instagram-url"
+              />
+            </Field>
+            <Field label="Pinterest URL">
+              <input
+                type="url"
+                placeholder="https://pinterest.com/yourbrand"
+                value={s.social?.pinterest || ""}
+                onChange={(e) => setSocial("pinterest", e.target.value)}
+                className={inputCls}
+                data-testid="set-pinterest-url"
+              />
+            </Field>
+            <Field label="YouTube URL">
+              <input
+                type="url"
+                placeholder="https://youtube.com/@yourbrand"
+                value={s.social?.youtube || ""}
+                onChange={(e) => setSocial("youtube", e.target.value)}
+                className={inputCls}
+                data-testid="set-youtube-url"
+              />
+            </Field>
+            <Field label="Instagram Handle">
+              <input
+                value={s.instagram_handle || ""}
+                onChange={(e) => set("instagram_handle", e.target.value)}
+                className={inputCls}
+                placeholder="@yourbrand"
+                data-testid="set-instagram-handle"
+              />
+            </Field>
+          </div>
+          <p className="text-xs text-gray-500 mt-2">Only Instagram, Pinterest and YouTube are displayed on the storefront.</p>
         </div>
         <Field label="SEO Title"><input value={s.seo_title || ""} onChange={(e) => set("seo_title", e.target.value)} className={inputCls} /></Field>
         <Field label="SEO Description"><textarea rows={2} value={s.seo_description || ""} onChange={(e) => set("seo_description", e.target.value)} className={inputCls} /></Field>

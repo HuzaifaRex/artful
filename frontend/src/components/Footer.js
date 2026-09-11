@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
-import { Instagram, Facebook, Twitter, Cookie, PartyPopper, X, CheckCircle2 } from "lucide-react";
+import { Instagram, Cookie, PartyPopper, X, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import { useStore } from "../context/StoreContext";
 import { api, apiError } from "../lib/api";
@@ -9,10 +9,26 @@ import { isValidEmail } from "../lib/utils";
 
 const COLS = [
   { title: "Shop", links: [["All Products", "/shop"], ["New Arrivals", "/collections/new-arrivals"], ["Bestsellers", "/collections/bestsellers"], ["Gifts", "/collections/festive-gifts"]] },
-  { title: "Help", links: [["FAQ", "/faq"], ["Shipping", "/shipping"], ["Contact", "/contact"], ["Track Order", "/track-order"]] },
+  { title: "Help", links: [["FAQ", "/faq"], ["Shipping", "/shipping"], ["Returns", "/returns"], ["Contact", "/contact"], ["Track Order", "/track-order"]] },
   { title: "About", links: [["About", "/about"], ["Our Story", "/our-story"], ["Corporate Gifting", "/corporate-gifting"]] },
   { title: "Legal", links: [["Privacy", "/privacy"], ["Terms", "/terms"], ["Returns & Refund", "/returns"]] },
 ];
+
+function PinterestIcon({ size = 18 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M12 2a10 10 0 0 0-3.64 19.31c-.09-1.64-.02-3.61.41-5.47l1.01-4.28s-.26-.52-.26-1.29c0-1.21.7-2.12 1.57-2.12.74 0 1.1.55 1.1 1.22 0 .74-.47 1.84-.71 2.87-.2.86.43 1.56 1.28 1.56 1.54 0 2.73-1.62 2.73-3.96 0-2.07-1.49-3.52-3.62-3.52-2.46 0-3.91 1.85-3.91 3.76 0 .74.29 1.54.65 1.97.07.08.08.15.06.23l-.24.98c-.04.16-.13.19-.3.11-1.11-.52-1.81-2.14-1.81-3.44 0-2.8 2.04-5.38 5.88-5.38 3.09 0 5.49 2.2 5.49 5.14 0 3.07-1.94 5.54-4.63 5.54-.9 0-1.75-.47-2.04-1.03l-.55 2.08c-.2.76-.74 1.71-1.1 2.29.83.25 1.7.38 2.6.38A10 10 0 0 0 12 2Z"/>
+    </svg>
+  );
+}
+
+function YoutubeIcon({ size = 18 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M23.5 6.2a3.02 3.02 0 0 0-2.12-2.14C19.5 3.55 12 3.55 12 3.55s-7.5 0-9.38.51A3.02 3.02 0 0 0 .5 6.2 31.6 31.6 0 0 0 0 12a31.6 31.6 0 0 0 .5 5.8 3.02 3.02 0 0 0 2.12 2.14c1.88.51 9.38.51 9.38.51s7.5 0 9.38-.51a3.02 3.02 0 0 0 2.12-2.14A31.6 31.6 0 0 0 24 12a31.6 31.6 0 0 0-.5-5.8ZM9.55 15.6V8.4L15.8 12l-6.25 3.6Z"/>
+    </svg>
+  );
+}
 
 function ThankYouModal({ onClose }) {
   return (
@@ -60,7 +76,7 @@ export default function Footer() {
             <p className="text-cream/70 text-sm leading-relaxed max-w-xs">Thoughtfully made. Beautifully given. Handcrafted lifestyle objects and bespoke gift boxes.</p>
             <form onSubmit={subscribe} className="mt-8 flex" data-testid="newsletter-form">
               <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Your email" className="flex-1 bg-transparent border border-cream/30 px-4 py-3 text-sm placeholder:text-cream/40 focus:outline-none focus:border-gold" data-testid="newsletter-input" />
-              <button disabled={loading} className="bg-gold text-plum-wine px-6 text-xs uppercase tracking-widest font-medium hover:bg-gold-soft transition-colors disabled:opacity-60" data-testid="newsletter-submit">{loading ? "…" : "Join"}</button>
+              <button disabled={loading} className="bg-gold text-plum-wine px-6 text-xs uppercase tracking-widest font-medium hover:bg-gold-soft transition-colors disabled:opacity-60" data-testid="newsletter-submit">Join</button>
             </form>
           </div>
           <div className="lg:col-span-8 grid grid-cols-2 sm:grid-cols-4 gap-8">
@@ -77,13 +93,13 @@ export default function Footer() {
           </div>
         </div>
         <div className="border-t border-cream/15 pt-8 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <p className="text-xs text-cream/50">© {new Date().getFullYear()} ARTFUL. All rights reserved.</p>
+          <p className="text-xs text-cream/50">© {new Date().getFullYear()} ARTFUL. All rights reserved. · Prices in ₹ INR</p>
           <div className="flex items-center gap-4">
             <button onClick={() => window.dispatchEvent(new Event("artful-open-cookie-settings"))} className="text-xs text-cream/60 hover:text-gold flex items-center gap-1.5" data-testid="footer-cookie-settings"><Cookie size={14} /> Cookie Settings</button>
             <span className="text-xs text-cream/60">{handle}</span>
-            <a href={social.instagram || "#"} target="_blank" rel="noreferrer" className="text-cream/60 hover:text-gold" aria-label="Instagram"><Instagram size={18} /></a>
-            <a href={social.facebook || "#"} target="_blank" rel="noreferrer" className="text-cream/60 hover:text-gold" aria-label="Facebook"><Facebook size={18} /></a>
-            <a href={social.twitter || "#"} target="_blank" rel="noreferrer" className="text-cream/60 hover:text-gold" aria-label="Twitter"><Twitter size={18} /></a>
+            {social.instagram && <a href={social.instagram} target="_blank" rel="noreferrer" className="text-cream/60 hover:text-gold" aria-label="Instagram"><Instagram size={18} /></a>}
+            {social.pinterest && <a href={social.pinterest} target="_blank" rel="noreferrer" className="text-cream/60 hover:text-gold" aria-label="Pinterest"><PinterestIcon size={18} /></a>}
+            {social.youtube && <a href={social.youtube} target="_blank" rel="noreferrer" className="text-cream/60 hover:text-gold" aria-label="YouTube"><YoutubeIcon size={18} /></a>}
           </div>
         </div>
       </div>
