@@ -114,7 +114,7 @@ export function Settings() {
           <div className="flex items-center justify-between mb-3">
             <div>
               <h3 className="font-semibold text-gray-900 text-sm">Delivery, Dispatch & State-wise Shipping</h3>
-              <p className="text-xs text-gray-500 mt-1">Default timing applies across India. Add a state rule only when you want different dispatch, delivery or shipping charges. Free Shipping Threshold continues to apply first.</p>
+              <p className="text-xs text-gray-500 mt-1">Default timing applies across India. Add a state rule only when you want different dispatch.</p>
             </div>
             <button type="button" onClick={addDeliveryRule} className="border border-gray-300 text-gray-700 rounded-md px-3 py-2 text-xs flex items-center gap-1">
               <Plus size={14} /> Add State Rule
@@ -128,7 +128,7 @@ export function Settings() {
           </div>
           {(s.delivery_logic?.state_rules || []).map((rule, i) => (
             <div key={i} className="border border-gray-200 rounded-md p-3 mb-3">
-              <div className="grid sm:grid-cols-2 lg:grid-cols-7 gap-3">
+              <div className="grid sm:grid-cols-2 lg:grid-cols-6 gap-3">
                 <Field label="State">
                   <select value={rule.state || ""} onChange={(e) => updateDeliveryRule(i, "state", e.target.value)} className={inputCls}>
                     <option value="">Select state</option>
