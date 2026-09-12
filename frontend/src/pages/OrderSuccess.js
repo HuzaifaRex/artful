@@ -27,7 +27,7 @@ export default function OrderSuccess() {
             {order.items.map((i, idx) => (
               <div key={idx} className="flex gap-4">
                 <img src={i.image} alt="" className="w-16 h-20 object-cover bg-white" />
-                <div className="flex-1"><p className="font-serif text-ink">{i.name}</p><p className="text-xs text-ink-muted">Qty {i.qty}{i.gift_wrap ? " · Gift wrapped" : ""}</p></div>
+                <div className="flex-1"><p className="artful-product-name text-ink">{i.name}</p><p className="text-xs text-ink-muted">Qty {i.qty}{i.gift_wrap ? " · Gift wrapped" : ""}</p></div>
                 <span className="text-plum text-sm">{inr(i.price * i.qty)}</span>
               </div>
             ))}

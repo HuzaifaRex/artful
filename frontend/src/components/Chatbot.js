@@ -128,6 +128,19 @@ export default function Chatbot() {
               </div>
             ))}
 
+            {sending && (
+              <div className="flex justify-start" aria-live="polite" data-testid="chatbot-typing">
+                <div className="chatbot-typing rounded-bl-md rounded-2xl border border-line bg-white px-3.5 py-2.5 text-sm text-ink-secondary">
+                  <span>Typing</span>
+                  <span className="chatbot-typing-dots" aria-hidden="true">
+                    <span />
+                    <span />
+                    <span />
+                  </span>
+                </div>
+              </div>
+            )}
+
             {messages.length === 1 && !sending && (
               <div className="pt-2">
                 <div className="mb-2 flex items-center gap-1.5 text-[10px] uppercase tracking-[0.18em] text-ink-secondary">

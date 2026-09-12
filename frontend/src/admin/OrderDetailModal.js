@@ -62,7 +62,7 @@ export default function OrderDetailModal({ orderNumber, onClose }) {
                 <div key={i} className="flex items-center gap-3 p-3">
                   {it.image && <img src={it.image} alt="" className="w-12 h-14 object-cover rounded bg-gray-100" />}
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm text-gray-900 truncate">{it.name}</p>
+                    <p className="artful-product-name text-sm text-gray-900 truncate">{it.name}</p>
                     <p className="text-xs text-gray-500">Qty {it.qty} × {inr(it.price)}{it.gift_wrap ? ` · 🎁 Gift wrap +${inr(it.wrap_price || 199)}` : ""}</p>
                     {it.personalization && <p className="text-xs text-plum mt-1 flex items-start gap-1" data-testid={`admin-order-personalization-${i}`}><span className="font-medium">✎ Message:</span> <span className="italic break-words">"{it.personalization}"</span></p>}
                   </div>

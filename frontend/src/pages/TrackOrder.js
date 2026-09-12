@@ -58,7 +58,7 @@ export default function TrackOrder() {
           )}
           {order.tracking?.number && <p className="text-sm text-ink-secondary mb-4">Courier: {order.tracking.courier} · AWB: {order.tracking.number}</p>}
           <div className="border-t border-line pt-4 space-y-2">
-            {order.items.map((i, idx) => <div key={idx} className="flex justify-between text-sm"><span className="text-ink-secondary">{i.name} × {i.qty}</span></div>)}
+            {order.items.map((i, idx) => <div key={idx} className="flex justify-between text-sm"><span className="artful-product-name text-ink-secondary">{i.name} × {i.qty}</span></div>)}
             <div className="flex justify-between text-plum font-medium pt-2"><span>Total</span><span>{inr(order.total)}</span></div>
           </div>
         </div>

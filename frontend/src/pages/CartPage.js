@@ -56,7 +56,7 @@ export default function CartPage() {
               <img src={item.image} alt={item.name} className="w-24 h-32 object-cover bg-surface" />
               <div className="flex-1">
                 <div className="flex justify-between">
-                  <Link to={`/products/${item.slug}`} className="font-serif text-lg text-ink hover:text-plum">{item.name}</Link>
+                  <Link to={`/products/${item.slug}`} className="artful-product-name text-lg text-ink hover:text-plum">{item.name}</Link>
                   <button onClick={() => removeItem(item.key)} className="text-ink-muted hover:text-err"><Trash2 size={17} /></button>
                 </div>
                 {item.gift_wrap && <p className="text-xs text-plum mt-1">+ Gift wrap (₹199)</p>}

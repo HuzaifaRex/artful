@@ -65,7 +65,7 @@ export default function SearchOverlay() {
                       {res.products.map((p) => (
                         <button key={p.id} onClick={() => { setSearchOpen(false); navigate(`/products/${p.slug}`); }} className="flex items-center gap-4 w-full text-left hover:bg-surface p-2 transition-colors" data-testid={`search-result-${p.slug}`}>
                           <img src={p.image} alt={p.name} className="w-14 h-16 object-cover bg-surface" />
-                          <div className="flex-1"><p className="font-serif text-base text-ink">{p.name}</p><p className="text-sm text-plum">{inr(p.price)}</p></div>
+                          <div className="flex-1"><p className="artful-product-name text-base text-ink">{p.name}</p><p className="text-sm text-plum">{inr(p.price)}</p></div>
                         </button>
                       ))}
                     </div>

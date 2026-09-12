@@ -32,7 +32,7 @@ export default function ProductCard({ product, index = 0 }) {
       </div>
       <div className="p-4 text-center">
         <Link to={`/products/${product.slug}`}>
-          <h3 className="font-serif text-lg text-ink leading-snug hover:text-plum transition-colors">{product.name}</h3>
+          <h3 className="artful-product-name text-lg text-ink leading-snug hover:text-plum transition-colors">{product.name}</h3>
         </Link>
         <div className="mt-1.5 flex items-center justify-center gap-2 text-sm">
           <span className="text-plum font-medium">{inr(product.price)}</span>

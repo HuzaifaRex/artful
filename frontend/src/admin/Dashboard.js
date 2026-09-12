@@ -104,7 +104,7 @@ export default function Dashboard() {
         <div className="bg-white rounded-xl border border-gray-200 p-5">
           <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2"><Package size={15} className="text-plum" /> Bestsellers</h3>
           <ul className="text-sm space-y-2">
-            {s.products.bestsellers.slice(0, 5).map((p) => <li key={p.id} className="flex justify-between text-gray-600"><span className="truncate pr-2">{p.name}</span><b>{p.sales_count}</b></li>)}
+            {s.products.bestsellers.slice(0, 5).map((p) => <li key={p.id} className="flex justify-between text-gray-600"><span className="artful-product-name truncate pr-2">{p.name}</span><b>{p.sales_count}</b></li>)}
           </ul>
         </div>
         <div className="bg-white rounded-xl border border-gray-200 p-5">

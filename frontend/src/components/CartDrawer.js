@@ -52,7 +52,7 @@ export default function CartDrawer() {
                   <img src={item.image} alt={item.name} className="w-20 h-24 object-cover bg-surface" />
                   <div className="flex-1 min-w-0">
                     <div className="flex justify-between gap-2">
-                      <Link to={`/products/${item.slug}`} onClick={() => setCartOpen(false)} className="font-serif text-base text-ink leading-tight line-clamp-2">{item.name}</Link>
+                      <Link to={`/products/${item.slug}`} onClick={() => setCartOpen(false)} className="artful-product-name text-base text-ink leading-tight line-clamp-2">{item.name}</Link>
                       <button onClick={() => removeItem(item.key)} className="text-ink-muted hover:text-err shrink-0" data-testid={`cart-remove-${item.slug}`}><Trash2 size={15} /></button>
                     </div>
                     {item.gift_wrap && <p className="text-[11px] text-plum mt-0.5">+ Gift wrap</p>}

@@ -81,7 +81,7 @@ function OrderModal({ order, onClose, onUpdated, setOpen }) {
         <div>
           <h4 className="text-xs font-semibold text-gray-500 uppercase mb-2">Items</h4>
           <div className="space-y-2">
-            {order.items.map((i, idx) => <div key={idx} className="flex justify-between text-sm"><span className="text-gray-700">{i.name} × {i.qty}</span><span className="text-gray-900">{inr(i.price * i.qty)}</span></div>)}
+            {order.items.map((i, idx) => <div key={idx} className="flex justify-between text-sm"><span className="artful-product-name text-gray-700">{i.name} × {i.qty}</span><span className="text-gray-900">{inr(i.price * i.qty)}</span></div>)}
           </div>
           <div className="border-t border-gray-100 mt-3 pt-3 space-y-1 text-sm">
             <div className="flex justify-between text-gray-500"><span>Subtotal</span><span>{inr(order.pricing.subtotal)}</span></div>

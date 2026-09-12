@@ -166,7 +166,7 @@ function OrderDetail() {
 
       <div className="space-y-4 mb-6">
         {o.items.map((i, idx) => (
-          <div key={idx} className="flex gap-4"><img src={i.image} alt="" className="w-16 h-20 object-cover bg-surface" /><div className="flex-1"><p className="font-serif text-ink">{i.name}</p><p className="text-xs text-ink-muted">Qty {i.qty}</p></div><span className="text-plum">{inr(i.price * i.qty)}</span></div>
+          <div key={idx} className="flex gap-4"><img src={i.image} alt="" className="w-16 h-20 object-cover bg-surface" /><div className="flex-1"><p className="artful-product-name text-ink">{i.name}</p><p className="text-xs text-ink-muted">Qty {i.qty}</p></div><span className="text-plum">{inr(i.price * i.qty)}</span></div>
         ))}
       </div>
       <div className="border-t border-line pt-4 space-y-1.5 text-sm">

@@ -318,7 +318,7 @@ export default function Checkout() {
                 <div key={i.key} className="flex gap-3 text-sm" data-testid={`checkout-item-${i.key}`}>
                   <img src={i.image} alt="" className="w-14 h-16 object-cover bg-cream shrink-0" />
                   <div className="flex-1 min-w-0">
-                    <p className="text-ink leading-tight line-clamp-2">{i.name}</p>
+                    <p className="artful-product-name text-ink leading-tight line-clamp-2">{i.name}</p>
                     <div className="flex items-center justify-between mt-2">
                       <div className="inline-flex items-center border border-line rounded-full">
                         <button onClick={() => i.qty > 1 ? updateQty(i.key, i.qty - 1) : removeItem(i.key)} className="w-7 h-7 flex items-center justify-center text-plum hover:bg-surface rounded-l-full" data-testid={`checkout-qty-dec-${i.key}`} aria-label="Decrease">

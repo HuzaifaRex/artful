@@ -7,6 +7,8 @@ Only the backend talks to Gemini; the API key never reaches the browser.
 import os
 import html
 import re
+import asyncio
+import random
 from typing import Any
 
 import httpx
@@ -16,8 +18,14 @@ from db import db, clean
 
 router = APIRouter()
 
-GEMINI_MODEL_DEFAULT = "gemini-3.7-flash"
+GEMINI_MODEL_DEFAULT = "gemini-3.5-flash-lite"
 GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
+GEMINI_FALLBACK_MODELS = [
+    "gemini-3.5-flash-lite",
+    "gemini-3.6-flash",
+    "gemini-3.7-flash",
+]
+GEMINI_TRANSIENT_STATUS = {408, 429, 500, 502, 503, 504}
 
 MAX_MESSAGE_CHARS = 1200
 MAX_HISTORY_ITEMS = 8
@@ -310,37 +318,77 @@ async def chatbot(payload: dict, request: Request):
         },
     }
 
-    url = f"{GEMINI_BASE}/{gemini_model}:generateContent"
     headers = {
         "x-goog-api-key": gemini_api_key,
         "Content-Type": "application/json",
     }
 
+    requested = gemini_model or GEMINI_MODEL_DEFAULT
+    models = []
+    for model in [requested, *GEMINI_FALLBACK_MODELS]:
+        model = str(model).strip()
+        if model and model not in models:
+            models.append(model)
+
+    last_status = None
+    last_detail = "Assistant service error."
+
     try:
-        async with httpx.AsyncClient(timeout=25.0) as client:
-            response = await client.post(url, headers=headers, json=body)
-        if response.status_code >= 400:
-            detail = "Assistant service error."
-            try:
-                data = response.json()
-                detail = ((data.get("error") or {}).get("message")) or detail
-            except Exception:
-                pass
-            raise HTTPException(502, detail[:250])
+        async with httpx.AsyncClient(timeout=22.0) as client:
+            for model_index, model in enumerate(models):
+                url = f"{GEMINI_BASE}/{model}:generateContent"
+                for attempt in range(2):
+                    try:
+                        response = await client.post(url, headers=headers, json=body)
+                    except httpx.TimeoutException:
+                        response = None
+                        last_status = 504
+                        last_detail = "The assistant took too long to respond."
+                    except httpx.RequestError as exc:
+                        response = None
+                        last_status = 502
+                        last_detail = str(exc)[:250]
 
-        data = response.json()
-        parts = (((data.get("candidates") or [{}])[0].get("content") or {}).get("parts") or [])
-        answer = "\n".join(
-            str(part.get("text", "")).strip()
-            for part in parts
-            if isinstance(part, dict) and part.get("text")
-        ).strip()
-        if not answer:
-            raise HTTPException(502, "I couldn't generate a response right now. Please try again.")
+                    if response is not None:
+                        last_status = response.status_code
+                        if response.status_code < 400:
+                            data = response.json()
+                            parts = (((data.get("candidates") or [{}])[0].get("content") or {}).get("parts") or [])
+                            answer = "\n".join(
+                                str(part.get("text", "")).strip()
+                                for part in parts
+                                if isinstance(part, dict) and part.get("text")
+                            ).strip()
+                            if answer:
+                                return {"success": True, "answer": answer}
+                            last_detail = "I couldn't generate a response right now."
+                            break
 
-        return {"success": True, "answer": answer}
-    except httpx.TimeoutException:
-        raise HTTPException(504, "The assistant took too long to respond. Please try again.")
+                        try:
+                            data = response.json()
+                            last_detail = ((data.get("error") or {}).get("message")) or last_detail
+                        except Exception:
+                            pass
+
+                        # Invalid/auth/config errors should not be retried across models.
+                        if response.status_code not in GEMINI_TRANSIENT_STATUS and response.status_code != 404:
+                            if response.status_code in (401, 403):
+                                raise HTTPException(502, "The assistant API key is not authorized. Please check the Gemini API key.")
+                            raise HTTPException(502, last_detail[:250])
+
+                    # Retry only transient overload/network responses, then fall back to another model.
+                    if attempt == 0 and (last_status in GEMINI_TRANSIENT_STATUS or last_status == 404):
+                        await asyncio.sleep(0.7 + random.uniform(0, 0.25))
+                        continue
+                    break
+
+                # Do not add another delay after the final model.
+                if model_index < len(models) - 1 and last_status in GEMINI_TRANSIENT_STATUS | {404, 502, 504}:
+                    await asyncio.sleep(0.15 + random.uniform(0, 0.15))
+
+        if last_status == 504:
+            raise HTTPException(504, "The assistant is taking a little longer than usual. Please try again.")
+        raise HTTPException(503, "The assistant is temporarily busy. Please try again in a moment.")
     except HTTPException:
         raise
     except Exception as exc:

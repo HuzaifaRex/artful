@@ -107,7 +107,7 @@ export default function ProductDetail() {
         {/* Info */}
         <div className="lg:py-4">
           <div className="flex flex-wrap gap-2 mb-3">{(p.badges || []).map((b) => <span key={b} className="text-[10px] uppercase tracking-widest2 px-2.5 py-1 bg-plum-light text-plum">{b}</span>)}</div>
-          <h1 className="font-serif text-3xl lg:text-4xl text-ink leading-tight" data-testid="pdp-title">{p.name}</h1>
+          <h1 className="artful-product-name text-3xl lg:text-4xl text-ink leading-tight" data-testid="pdp-title">{p.name}</h1>
           {p.review_count > 0 && (
             <div className="flex items-center gap-1 mt-3">{[...Array(5)].map((_, i) => <Star key={i} size={15} className={i < Math.round(p.rating) ? "fill-gold text-gold" : "text-line"} />)}<span className="text-xs text-ink-muted ml-2">{p.rating} ({p.review_count})</span></div>
           )}

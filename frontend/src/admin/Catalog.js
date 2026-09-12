@@ -81,7 +81,7 @@ export function Products() {
         ]}
         columns={[
           { key: "__select", label: <input type="checkbox" aria-label="Select all products on this page" checked={data.items.length > 0 && data.items.every((p) => selected.has(p.id))} onChange={toggleAll} className="accent-plum w-4 h-4" />, render: (p) => <input type="checkbox" aria-label={`Select ${p.name}`} checked={selected.has(p.id)} onChange={() => toggleSelected(p.id)} onClick={(e) => e.stopPropagation()} className="accent-plum w-4 h-4" /> },
-          { key: "name", label: "Product", render: (p) => <div className="flex items-center gap-3"><img src={(p.images || [])[0]} alt="" className="w-9 h-11 object-cover rounded bg-gray-100" /><span className="font-medium text-gray-900">{p.name}</span></div> },
+          { key: "name", label: "Product", render: (p) => <div className="flex items-center gap-3"><img src={(p.images || [])[0]} alt="" className="w-9 h-11 object-cover rounded bg-gray-100" /><span className="artful-product-name text-gray-900">{p.name}</span></div> },
           { key: "sku", label: "SKU", render: (p) => <span className="text-gray-500 font-mono text-xs">{p.sku}</span> },
           { key: "price", label: "Price", render: (p) => inr(p.price) },
           { key: "stock", label: "Stock", render: (p) => p.stock },
@@ -301,7 +301,7 @@ export function Collections() {
           <tbody>
             {items.map((it) => (
               <tr key={it.id} className="border-b border-gray-50 hover:bg-gray-50" data-testid={`collection-${it.slug}`}>
-                <td className="px-4 py-3 font-medium text-gray-900">{it.name}</td>
+                <td className="px-4 py-3 artful-product-name text-gray-900">{it.name}</td>
                 <td className="px-4 py-3 text-gray-500 font-mono text-xs">{it.slug}</td>
                 <td className="px-4 py-3"><span className={`text-xs px-2 py-0.5 rounded-full ${it.type === "manual" ? "bg-indigo-100 text-indigo-700" : "bg-sky-100 text-sky-700"}`}>{it.type || "dynamic"}</span></td>
                 <td className="px-4 py-3 text-gray-600 text-xs">{it.type === "manual" ? `${(it.product_ids || []).length} products` : Object.entries(it.rules || {}).map(([k, v]) => `${k}: ${v}`).join(", ") || "—"}</td>
@@ -345,7 +345,7 @@ export function Collections() {
                   <label key={p.id} className="flex items-center gap-3 py-2 cursor-pointer" data-testid={`cf-product-${p.slug}`}>
                     <input type="checkbox" checked={(editing.product_ids || []).includes(p.id)} onChange={() => toggleProduct(p.id)} className="accent-plum w-4 h-4" />
                     <img src={(p.images || [])[0]} alt="" className="w-8 h-10 object-cover rounded bg-gray-100" />
-                    <span className="text-sm text-gray-800 flex-1">{p.name}</span>
+                    <span className="artful-product-name text-sm text-gray-800 flex-1">{p.name}</span>
                     <span className="text-xs text-gray-400">{inr(p.price)}</span>
                   </label>
                 ))}
@@ -420,7 +420,7 @@ export function Inventory() {
         page={page} pages={pages} setPage={setPage} rows={rows} empty="No products"
         columns={[
           { key: "__select", label: <input type="checkbox" aria-label="Select all products on this page" checked={data.items.length > 0 && data.items.every((p) => selected.has(p.id))} onChange={toggleAll} className="accent-plum w-4 h-4" />, render: (p) => <input type="checkbox" aria-label={`Select ${p.name}`} checked={selected.has(p.id)} onChange={() => toggleSelected(p.id)} onClick={(e) => e.stopPropagation()} className="accent-plum w-4 h-4" /> },
-          { key: "name", label: "Product", render: (p) => <span className="font-medium text-gray-900">{p.name}</span> },
+          { key: "name", label: "Product", render: (p) => <span className="artful-product-name text-gray-900">{p.name}</span> },
           { key: "sku", label: "SKU", render: (p) => <span className="text-gray-500 font-mono text-xs">{p.sku}</span> },
           { key: "stock", label: "Stock", render: (p) => <span className={p.stock <= p.low_stock_threshold ? "text-red-600 font-medium" : "text-gray-700"}>{p.stock}</span> },
           { key: "adjust", label: "Adjust", render: (p) => <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
