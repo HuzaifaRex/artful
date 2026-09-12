@@ -15,6 +15,7 @@ import routers_store
 import routers_shop
 import routers_admin
 import invoice
+import chatbot
 
 app = FastAPI(title="ARTFUL API")
 
@@ -30,6 +31,7 @@ app.include_router(routers_store.router, prefix="/api")
 app.include_router(routers_shop.router, prefix="/api")
 app.include_router(routers_admin.router, prefix="/api/admin")
 app.include_router(invoice.router, prefix="/api")
+app.include_router(chatbot.router, prefix="/api")
 
 
 @app.get("/api/health")

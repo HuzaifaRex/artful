@@ -6,6 +6,7 @@ import CartDrawer from "./CartDrawer";
 import SearchOverlay from "./SearchOverlay";
 import AuthModal from "./AuthModal";
 import CampaignBar from "./CampaignBar";
+import Chatbot from "./Chatbot";
 
 export default function Layout() {
   const location = useLocation();
@@ -20,6 +21,7 @@ export default function Layout() {
       <CartDrawer />
       <SearchOverlay />
       <AuthModal />
+      <Chatbot />
     </div>
   );
 }
