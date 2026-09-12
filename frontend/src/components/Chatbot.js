@@ -78,6 +78,7 @@ export default function Chatbot() {
           data-testid="chatbot-open"
         >
           <MessageCircle size={22} />
+          Ask ARTFUL
         </button>
       )}
 
@@ -175,7 +176,7 @@ export default function Chatbot() {
                   }
                 }}
                 rows={1}
-                placeholder="Ask about products, prices, policies..."
+                placeholder="Ask anything..."
                 className="min-h-[40px] flex-1 resize-none bg-transparent px-2.5 py-2 text-sm text-ink outline-none placeholder:text-ink-secondary"
                 aria-label="Ask ARTFUL a question"
                 data-testid="chatbot-input"
