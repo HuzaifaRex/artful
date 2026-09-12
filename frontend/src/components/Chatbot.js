@@ -72,7 +72,7 @@ export default function Chatbot() {
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="fixed bottom-5 right-5 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-plum text-cream shadow-lg transition-transform hover:-translate-y-0.5"
+          className="fixed askin-ro bottom-5 right-5 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-plum text-cream shadow-lg transition-transform hover:-translate-y-0.5"
           aria-label="Open ARTFUL assistant"
           title="Ask ARTFUL"
           data-testid="chatbot-open"
