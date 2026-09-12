@@ -18,12 +18,83 @@ TWILIO_API_KEY_SECRET = os.environ.get("TWILIO_API_KEY_SECRET") or ""
 RZP_KEY = os.environ.get("RAZORPAY_KEY_ID") or ""
 RZP_SECRET = os.environ.get("RAZORPAY_KEY_SECRET") or ""
 RZP_WEBHOOK_SECRET = os.environ.get("RAZORPAY_WEBHOOK_SECRET") or ""
+WHATSAPP_ACCESS_TOKEN = os.environ.get("WHATSAPP_ACCESS_TOKEN") or ""
+WHATSAPP_PHONE_NUMBER_ID = os.environ.get("WHATSAPP_PHONE_NUMBER_ID") or ""
+WHATSAPP_API_VERSION = os.environ.get("WHATSAPP_API_VERSION") or "v24.0"
+WHATSAPP_TEST_TEMPLATE = os.environ.get("WHATSAPP_TEST_TEMPLATE") or "hello_world"
 
 
 def twilio_enabled():
     return bool(TWILIO_SID and TWILIO_TOKEN and TWILIO_VERIFY)
 
 
+# ---------------- WhatsApp Cloud API ----------------
+def whatsapp_enabled():
+    return bool(WHATSAPP_ACCESS_TOKEN and WHATSAPP_PHONE_NUMBER_ID)
+
+
+def _whatsapp_url():
+    return f"https://graph.facebook.com/{WHATSAPP_API_VERSION}/{WHATSAPP_PHONE_NUMBER_ID}/messages"
+
+
+def _normalize_whatsapp_phone(phone: str):
+    p = (phone or "").strip().replace(" ", "").replace("-", "")
+    if p.startswith("+"):
+        p = p[1:]
+    if len(p) == 10 and p.isdigit():
+        p = "91" + p
+    return p
+
+
+async def send_whatsapp_template(phone: str, template_name: str = None, language_code: str = "en_US", body_params=None):
+    """Send an approved WhatsApp template through Meta Cloud API.
+
+    The Meta access token is read only from the server environment and is never returned.
+    """
+    if not phone:
+        return {"sent": False, "configured": whatsapp_enabled(), "message": "No phone on file."}
+    if not whatsapp_enabled():
+        return {"sent": False, "configured": False, "message": "WhatsApp Cloud API is not configured."}
+
+    template_name = (template_name or WHATSAPP_TEST_TEMPLATE).strip()
+    template = {"name": template_name, "language": {"code": language_code}}
+    params = body_params or []
+    if params:
+        template["components"] = [{
+            "type": "body",
+            "parameters": [{"type": "text", "text": str(v)} for v in params],
+        }]
+
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": _normalize_whatsapp_phone(phone),
+        "type": "template",
+        "template": template,
+    }
+    headers = {
+        "Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}",
+        "Content-Type": "application/json",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            response = await client.post(_whatsapp_url(), headers=headers, json=payload)
+        try:
+            data = response.json()
+        except ValueError:
+            data = {}
+        if response.status_code >= 400:
+            err = data.get("error") if isinstance(data, dict) else None
+            message = (err or {}).get("message") if isinstance(err, dict) else None
+            print(f"[whatsapp] send failed: {response.status_code} {message or data}")
+            return {"sent": False, "configured": True, "status_code": response.status_code, "error": message or "WhatsApp API request failed."}
+        message_id = None
+        messages = data.get("messages") if isinstance(data, dict) else None
+        if messages and isinstance(messages, list):
+            message_id = messages[0].get("id")
+        return {"sent": True, "configured": True, "message_id": message_id}
+    except Exception as e:
+        print(f"[whatsapp] request failed: {e}")
+        return {"sent": False, "configured": True, "error": str(e)}
 
 
 # ---------------- OTP ----------------

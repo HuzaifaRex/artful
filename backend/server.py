@@ -37,7 +37,7 @@ app.include_router(chatbot.router, prefix="/api")
 @app.get("/api/health")
 async def health():
     import integrations as ig
-    return {"status": "ok", "razorpay": ig.razorpay_enabled(), "twilio": ig.twilio_enabled()}
+    return {"status": "ok", "razorpay": ig.razorpay_enabled(), "twilio": ig.twilio_enabled(), "whatsapp": ig.whatsapp_enabled()}
 
 
 async def seed_admin():

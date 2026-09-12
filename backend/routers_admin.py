@@ -444,6 +444,22 @@ async def admin_order(order_number: str, admin: dict = Depends(require_permissio
     return o
 
 
+@router.post("/whatsapp/test")
+async def whatsapp_test(payload: dict, admin: dict = Depends(require_permission("settings"))):
+    phone = (payload.get("phone") or "").strip()
+    if not phone:
+        raise HTTPException(400, "Phone is required.")
+    template_name = (payload.get("template_name") or "").strip() or None
+    language_code = (payload.get("language_code") or "en_US").strip()
+    params = payload.get("body_params") or []
+    if not isinstance(params, list):
+        raise HTTPException(400, "body_params must be a list.")
+    result = await ig.send_whatsapp_template(phone, template_name, language_code, params)
+    if not result.get("sent"):
+        raise HTTPException(502, result.get("error") or result.get("message") or "WhatsApp send failed.")
+    return result
+
+
 @router.put("/orders/{order_number}/status")
 async def update_order_status(order_number: str, payload: dict, request: Request,
                               admin: dict = Depends(require_permission("orders"))):
