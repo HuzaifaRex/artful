@@ -5,6 +5,7 @@ Grounded assistant backed by live MongoDB catalog/settings/CMS data and Gemini.
 Only the backend talks to Gemini; the API key never reaches the browser.
 """
 import os
+import html
 import re
 from typing import Any
 
@@ -15,8 +16,7 @@ from db import db, clean
 
 router = APIRouter()
 
-GEMINI_API_KEY = (os.environ.get("GEMINI_API_KEY") or "").strip()
-GEMINI_MODEL = (os.environ.get("GEMINI_MODEL") or "gemini-3.7-flash").strip()
+GEMINI_MODEL_DEFAULT = "gemini-3.7-flash"
 GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 
 MAX_MESSAGE_CHARS = 1200
@@ -264,7 +264,10 @@ Prices are in INR unless otherwise stated. Use ₹.
 
 @router.post("/chatbot")
 async def chatbot(payload: dict, request: Request):
-    if not GEMINI_API_KEY:
+    gemini_api_key = (os.environ.get("GEMINI_API_KEY") or "").strip()
+    gemini_model = (os.environ.get("GEMINI_MODEL") or GEMINI_MODEL_DEFAULT).strip()
+
+    if not gemini_api_key:
         raise HTTPException(503, "ARTFUL assistant is temporarily unavailable. Please try again later.")
 
     ip = _client_ip(request)
@@ -307,9 +310,9 @@ async def chatbot(payload: dict, request: Request):
         },
     }
 
-    url = f"{GEMINI_BASE}/{GEMINI_MODEL}:generateContent"
+    url = f"{GEMINI_BASE}/{gemini_model}:generateContent"
     headers = {
-        "x-goog-api-key": GEMINI_API_KEY,
+        "x-goog-api-key": gemini_api_key,
         "Content-Type": "application/json",
     }
 
