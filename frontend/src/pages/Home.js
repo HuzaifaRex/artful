@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowRight, ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowRight, ChevronLeft, ChevronRight, ArrowUpRight } from "lucide-react";
 import useEmblaCarousel from "embla-carousel-react";
 import { api } from "../lib/api";
 import ProductCard from "../components/ProductCard";
@@ -109,21 +109,61 @@ function ProductRail({ heading, subheading, collectionSlug }) {
 
 function CategoriesSection({ s }) {
   const [cats, setCats] = useState([]);
-  useEffect(() => { api.get("/categories").then(({ data }) => setCats(data.items)).catch(() => {}); }, []);
+  useEffect(() => { api.get("/categories").then(({ data }) => setCats(data.items || [])).catch(() => {}); }, []);
+
   return (
-    <section className="container-artful py-16 lg:py-20">
-      <div className="text-center mb-12"><h2 className="section-title">{s.heading}</h2>{s.subheading && <p className="text-ink-secondary mt-2">{s.subheading}</p>}</div>
+    <section className="container-artful py-16 lg:py-20" data-testid="featured-categories-section">
+      <style>{`
+        @font-face {
+          font-family: 'Arcon';
+          src: url('/fonts/Arcon-Regular.otf') format('opentype');
+          font-style: normal;
+          font-weight: 400;
+          font-display: swap;
+        }
+        .artful-category-name { font-family: 'Arcon', serif; }
+      `}</style>
+
+      <div className="text-center mb-10 lg:mb-12">
+        <h2 className="section-title">{s.heading}</h2>
+        {s.subheading && <p className="text-ink-secondary mt-2 max-w-xl mx-auto">{s.subheading}</p>}
+      </div>
+
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 lg:gap-6" data-testid="featured-categories-grid">
         {cats.slice(0, 8).map((c, i) => {
           const IconCmp = getIcon(c.icon);
           return (
-            <Link key={c.slug} to={`/categories/${c.slug}`} className="group relative overflow-hidden aspect-[3/4] hover-zoom animate-fadeUp" style={{ animationDelay: `${(i % 4) * 60}ms` }} data-testid={`category-${c.slug}`}>
-              <img src={c.image} alt={c.name} className="w-full h-full object-cover" />
-              <div className="absolute inset-0 bg-gradient-to-t from-plum-wine/85 via-plum-wine/15 to-transparent" />
-              <div className="absolute top-4 left-4 w-9 h-9 rounded-full bg-cream/90 text-plum flex items-center justify-center opacity-0 group-hover:opacity-100 -translate-y-1 group-hover:translate-y-0 transition-all duration-300"><IconCmp size={17} /></div>
-              <div className="absolute bottom-0 left-0 right-0 p-5">
-                <h3 className="font-serif text-xl text-cream leading-tight">{c.name}</h3>
-                <span className="text-cream/70 text-xs">{c.product_count} pieces</span>
+            <Link
+              key={c.slug}
+              to={`/categories/${c.slug}`}
+              className="group overflow-hidden rounded-[2px] border border-line bg-white shadow-[0_6px_24px_rgba(55,28,40,0.06)] hover:shadow-[0_10px_30px_rgba(55,28,40,0.10)] transition-all duration-500 animate-fadeUp"
+              style={{ animationDelay: `${(i % 4) * 60}ms` }}
+              data-testid={`category-${c.slug}`}
+            >
+              <div className="relative aspect-[4/4.65] overflow-hidden bg-surface">
+                <img
+                  src={c.image}
+                  alt={c.name}
+                  className="w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-[1.04]"
+                />
+                <div className="absolute inset-x-3 top-3 flex items-center justify-between">
+                  <div className="w-9 h-9 rounded-full bg-white/90 backdrop-blur-sm border border-white/70 text-plum flex items-center justify-center shadow-sm">
+                    <IconCmp size={16} strokeWidth={1.7} />
+                  </div>
+                  <div className="w-9 h-9 rounded-full bg-white/90 backdrop-blur-sm border border-white/70 text-plum flex items-center justify-center opacity-0 translate-y-1 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-300 shadow-sm">
+                    <ArrowUpRight size={16} strokeWidth={1.7} />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between gap-3 px-4 py-4 sm:px-5 sm:py-5">
+                <div className="min-w-0">
+                  <h3 className="artful-category-name text-[1.12rem] sm:text-[1.35rem] text-plum-wine leading-tight truncate">{c.name}</h3>
+                  <p className="mt-1 text-[11px] sm:text-xs uppercase tracking-[0.12em] text-ink-muted">{c.product_count} pieces</p>
+                </div>
+                <span className="shrink-0 text-ink-muted group-hover:text-plum transition-colors duration-300" aria-hidden="true">
+                  <ArrowRight size={15} strokeWidth={1.6} />
+                </span>
               </div>
             </Link>
           );
