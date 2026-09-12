@@ -18,7 +18,7 @@ function loadScript(src) {
 const EMPTY_ADDR = { name: "", phone: "", line1: "", line2: "", area: "", city: "", state: "", pincode: "", instructions: "" };
 
 export default function Checkout() {
-  const { cart, cartPayload, customer, loginSuccess, clearCart, updateQty, removeItem } = useStore();
+  const { cart, cartPayload, customer, setCustomer, loginSuccess, clearCart, updateQty, removeItem } = useStore();
   const navigate = useNavigate();
   const [totals, setTotals] = useState(null);
   const [coupon, setCoupon] = useState("");
@@ -29,11 +29,14 @@ export default function Checkout() {
   const [code, setCode] = useState("");
   const [devOtp, setDevOtp] = useState(null);
   const [authLoading, setAuthLoading] = useState(false);
+  const [phoneVerificationStep, setPhoneVerificationStep] = useState("phone");
+  const [verifiedPhone, setVerifiedPhone] = useState("");
   // address & payment
   const [addr, setAddr] = useState(EMPTY_ADDR);
   const [method, setMethod] = useState("razorpay");
   const [placing, setPlacing] = useState(false);
   const [deliveryEstimate, setDeliveryEstimate] = useState(null);
+  const mobileVerified = customer?.phone_verified !== false;
 
   const validate = useCallback(async (c) => {
     if (cart.length === 0) return;
@@ -47,6 +50,8 @@ export default function Checkout() {
 
   useEffect(() => {
     if (customer) {
+      if (customer.phone && customer.phone_verified === false) setVerifiedPhone(customer.phone);
+      else if (customer.phone) setVerifiedPhone(customer.phone);
       setAddr((a) => ({ ...a, name: a.name || customer.name || "", phone: a.phone || customer.phone || "" }));
       api.get("/addresses").then(({ data }) => {
         const def = data.items.find((x) => x.is_default) || data.items[0];
@@ -98,9 +103,40 @@ export default function Checkout() {
     } catch (e) { toast.error(apiError(e)); }
     setAuthLoading(false);
   };
-  const googleLogin = () => {
-    // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
-    window.location.href = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(window.location.origin + "/checkout")}`;
+
+  const sendPhoneVerificationOtp = async () => {
+    const value = verifiedPhone.replace(/\D/g, "");
+    if (value.length < 10) return toast.error("Enter a valid mobile number");
+    setAuthLoading(true);
+    try {
+      const { data } = await api.post("/auth/otp/send", { phone: verifiedPhone });
+      setPhoneVerificationStep("otp");
+      if (data.dev_mode) {
+        setDevOtp(data.dev_otp);
+        toast.info(`Demo OTP: ${data.dev_otp}`, { duration: 8000 });
+      } else {
+        toast.success("OTP sent to your mobile");
+      }
+    } catch (e) {
+      toast.error(apiError(e));
+    }
+    setAuthLoading(false);
+  };
+
+  const verifyCustomerPhone = async () => {
+    setAuthLoading(true);
+    try {
+      const { data } = await api.post("/auth/otp/verify-phone", { phone: verifiedPhone, code });
+      setCustomer(data.customer);
+      setAddr((a) => ({ ...a, phone: data.customer.phone || a.phone }));
+      setPhoneVerificationStep("phone");
+      setCode("");
+      setDevOtp(null);
+      toast.success("Mobile number verified");
+    } catch (e) {
+      toast.error(apiError(e));
+    }
+    setAuthLoading(false);
   };
 
   const applyCoupon = async () => {
@@ -115,6 +151,7 @@ export default function Checkout() {
   const finalize = (orderNumber) => { clearCart(); navigate(`/order-success/${orderNumber}`); };
 
   const placeOrder = async () => {
+    if (!customer || !mobileVerified) return toast.error("Please verify your mobile number before checkout");
     for (const f of ["name", "line1", "city", "state", "pincode"]) {
       if (!addr[f]) return toast.error("Please complete your delivery address");
     }
@@ -189,19 +226,36 @@ export default function Checkout() {
           {/* Contact / Auth */}
           <section className="border border-line p-6">
             <div className="flex items-center gap-3 mb-4">
-              <span className={`w-7 h-7 rounded-full flex items-center justify-center text-xs ${customer ? "bg-ok text-white" : "bg-plum text-white"}`}>{customer ? <Check size={15} /> : "1"}</span>
+              <span className={`w-7 h-7 rounded-full flex items-center justify-center text-xs ${customer && mobileVerified ? "bg-ok text-white" : "bg-plum text-white"}`}>{customer && mobileVerified ? <Check size={15} /> : "1"}</span>
               <h2 className="font-serif text-xl text-ink">Contact & Verification</h2>
             </div>
             {customer ? (
-              <p className="text-sm text-ink-secondary pl-10">Signed in as <b>{customer.phone || customer.email}</b> · <Check size={13} className="inline text-ok" /> Verified</p>
+              customer.phone_verified !== false ? (
+                <p className="text-sm text-ink-secondary pl-10">Signed in as <b>{customer.phone || customer.email}</b> · <Check size={13} className="inline text-ok" /> Mobile verified</p>
+              ) : (
+                <div className="pl-10 space-y-3 max-w-sm">
+                  <p className="text-sm text-ink-secondary">Your account needs mobile verification before checkout. Please verify your mobile number with OTP.</p>
+                  {phoneVerificationStep === "phone" ? (
+                    <>
+                      <input value={verifiedPhone} onChange={(e) => setVerifiedPhone(sanitizePhone(e.target.value))} inputMode="numeric" placeholder="Mobile number" className="input-field" data-testid="checkout-verify-phone-input" />
+                      <button onClick={sendPhoneVerificationOtp} disabled={authLoading} className="btn-primary w-full" data-testid="checkout-verify-phone-send">{authLoading ? "Sending…" : "Send OTP"}</button>
+                    </>
+                  ) : (
+                    <>
+                      <input value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="Enter OTP" className="input-field text-center tracking-[0.4em] font-mono" data-testid="checkout-verify-phone-otp" />
+                      {devOtp && <p className="text-xs text-warn">Demo OTP: <b>{devOtp}</b></p>}
+                      <button onClick={verifyCustomerPhone} disabled={authLoading || code.length < 4} className="btn-primary w-full" data-testid="checkout-verify-phone-confirm">{authLoading ? "Verifying…" : "Verify Mobile"}</button>
+                      <button onClick={() => setPhoneVerificationStep("phone")} className="text-xs text-ink-muted">← Change number</button>
+                    </>
+                  )}
+                </div>
+              )
             ) : (
               <div className="pl-10 space-y-3 max-w-sm">
                 {otpStep === "phone" ? (
                   <>
                     <input value={phone} onChange={(e) => setPhone(sanitizePhone(e.target.value))} inputMode="numeric" placeholder="Mobile number" className="input-field" data-testid="checkout-phone-input" />
                     <button onClick={sendOtp} disabled={authLoading} className="btn-primary w-full" data-testid="checkout-send-otp">{authLoading ? "Sending…" : "Send OTP"}</button>
-                    <div className="flex items-center gap-3"><div className="flex-1 h-px bg-line" /><span className="text-xs text-ink-muted">or</span><div className="flex-1 h-px bg-line" /></div>
-                    <button onClick={googleLogin} className="btn-outline w-full !text-sm !normal-case !tracking-normal" data-testid="checkout-google"><img src="https://www.google.com/favicon.ico" alt="" className="w-4 h-4" /> Continue with Google</button>
                   </>
                 ) : (
                   <>
@@ -216,7 +270,7 @@ export default function Checkout() {
           </section>
 
           {/* Address */}
-          <section className={`border border-line p-6 ${!customer ? "opacity-50 pointer-events-none" : ""}`}>
+          <section className={`border border-line p-6 ${!customer || !mobileVerified ? "opacity-50 pointer-events-none" : ""}`}>
             <div className="flex items-center gap-3 mb-5"><span className="w-7 h-7 rounded-full bg-plum text-white flex items-center justify-center text-xs">2</span><h2 className="font-serif text-xl text-ink">Delivery Address</h2></div>
             <div className="grid sm:grid-cols-2 gap-4">
               {field("name", "Full Name", true)}
@@ -241,7 +295,7 @@ export default function Checkout() {
           </section>
 
           {/* Payment */}
-          <section className={`border border-line p-6 ${!customer ? "opacity-50 pointer-events-none" : ""}`}>
+          <section className={`border border-line p-6 ${!customer || !mobileVerified ? "opacity-50 pointer-events-none" : ""}`}>
             <div className="flex items-center gap-3 mb-5"><span className="w-7 h-7 rounded-full bg-plum text-white flex items-center justify-center text-xs">3</span><h2 className="font-serif text-xl text-ink">Payment</h2></div>
             <div className="space-y-3">
               {[["razorpay", "UPI / Cards / Net Banking / Wallets", "Secure payment via Razorpay"], ["cod", "Cash on Delivery", "Pay when your order arrives (+₹99)"]].map(([val, label, desc]) => (

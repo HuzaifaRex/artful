@@ -41,11 +41,6 @@ export default function AuthModal() {
     setLoading(false);
   };
 
-  const googleLogin = () => {
-    // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
-    const redirectUrl = window.location.origin + "/account";
-    window.location.href = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`;
-  };
 
   if (!authOpen) return null;
   return (
@@ -65,10 +60,6 @@ export default function AuthModal() {
               <input value={phone} onChange={(e) => setPhone(sanitizePhone(e.target.value))} inputMode="numeric" placeholder="10-digit mobile number" className="input-field" data-testid="auth-phone-input" autoFocus />
             </div>
             <button className="btn-primary w-full" disabled={loading} data-testid="auth-send-otp-btn">{loading ? "Sending…" : "Send OTP"}</button>
-            <div className="flex items-center gap-3 my-2"><div className="flex-1 h-px bg-line" /><span className="text-xs text-ink-muted">or</span><div className="flex-1 h-px bg-line" /></div>
-            <button type="button" onClick={googleLogin} className="btn-outline w-full !tracking-normal !text-sm !normal-case" data-testid="auth-google-btn">
-              <img src="https://www.google.com/favicon.ico" alt="" className="w-4 h-4" /> Continue with Google
-            </button>
           </form>
         )}
 

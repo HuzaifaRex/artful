@@ -28,6 +28,7 @@ def customer_public(c):
     c = clean(dict(c))
     return {"id": c["id"], "name": c.get("name"), "phone": c.get("phone"),
             "email": c.get("email"), "picture": c.get("picture"),
+            "phone_verified": bool(c.get("phone_verified", bool(c.get("phone") and not c.get("google_id")))),
             "wishlist": c.get("wishlist", [])}
 
 
@@ -39,12 +40,14 @@ async def upsert_customer_by_phone(phone, name=None, email=None):
             upd["name"] = name
         if email and not existing.get("email"):
             upd["email"] = email
+        if existing.get("phone_verified") is not True:
+            upd["phone_verified"] = True
         if upd:
             await db.customers.update_one({"id": existing["id"]}, {"$set": upd})
             existing.update(upd)
         return clean(existing), False
     doc = {"id": str(uuid.uuid4()), "phone": phone, "name": name, "email": email,
-           "picture": None, "google_id": None, "wishlist": [], "status": "New",
+           "picture": None, "google_id": None, "phone_verified": True, "wishlist": [], "status": "New",
            "notes": [], "created_at": now_iso()}
     await db.customers.insert_one(doc)
     return clean(doc), True
@@ -79,30 +82,26 @@ async def otp_verify(payload: dict):
     return {"token": token, "customer": customer_public(cust), "new_account": is_new}
 
 
-@router.post("/auth/google/session")
-async def google_session(payload: dict):
-    session_id = payload.get("session_id")
-    if not session_id:
-        raise HTTPException(400, "Missing session.")
-    data = await ig.fetch_google_session(session_id)
-    if not data or not data.get("email"):
-        raise HTTPException(401, "Google sign-in failed. Please try again.")
-    email = data["email"].lower()
-    existing = await db.customers.find_one({"$or": [{"email": email}, {"google_id": data.get("id")}]})
-    if existing:
-        await db.customers.update_one({"id": existing["id"]}, {"$set": {
-            "google_id": data.get("id"), "picture": data.get("picture") or existing.get("picture"),
-            "name": existing.get("name") or data.get("name")}})
-        cust = clean(await db.customers.find_one({"id": existing["id"]}))
-        is_new = False
-    else:
-        doc = {"id": str(uuid.uuid4()), "phone": None, "name": data.get("name"), "email": email,
-               "picture": data.get("picture"), "google_id": data.get("id"), "wishlist": [],
-               "status": "New", "notes": [], "created_at": now_iso()}
-        await db.customers.insert_one(doc)
-        cust, is_new = clean(doc), True
-    token = create_token(cust["id"], "customer")
-    return {"token": token, "customer": customer_public(cust), "new_account": is_new}
+@router.post("/auth/otp/verify-phone")
+async def otp_verify_phone(payload: dict, cust: dict = Depends(get_current_customer)):
+    phone = norm_phone(payload.get("phone", ""))
+    code = (payload.get("code") or "").strip()
+    if not PHONE_RE.match(phone) or not code:
+        raise HTTPException(400, "Mobile number and OTP are required.")
+    if not await ig.verify_otp(phone, code):
+        raise HTTPException(400, "Invalid or expired OTP. Please try again.")
+
+    clash = await db.customers.find_one({"phone": phone, "id": {"$ne": cust["id"]}})
+    if clash:
+        raise HTTPException(409, "This mobile number is already linked to another account.")
+
+    await db.customers.update_one(
+        {"id": cust["id"]},
+        {"$set": {"phone": phone, "phone_verified": True, "updated_at": now_iso()}}
+    )
+    updated = await db.customers.find_one({"id": cust["id"]})
+    return {"success": True, "customer": customer_public(updated)}
+
 
 
 @router.get("/auth/me")
@@ -122,6 +121,7 @@ async def update_me(payload: dict, cust: dict = Depends(get_current_customer)):
             if clash:
                 raise HTTPException(409, "This mobile number is already linked to another account.")
             upd["phone"] = new_phone
+            upd["phone_verified"] = False
     if upd:
         await db.customers.update_one({"id": cust["id"]}, {"$set": upd})
     return customer_public(await db.customers.find_one({"id": cust["id"]}))
@@ -233,6 +233,8 @@ def order_public(o):
 
 @router.post("/checkout/create-order")
 async def create_order(payload: dict, cust: dict = Depends(get_current_customer)):
+    if not cust.get("phone_verified", bool(cust.get("phone") and not cust.get("google_id"))):
+        raise HTTPException(400, "Please verify your mobile number before placing the order.")
     items = payload.get("items", [])
     address = payload.get("address") or {}
     if not items:

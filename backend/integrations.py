@@ -18,7 +18,6 @@ TWILIO_API_KEY_SECRET = os.environ.get("TWILIO_API_KEY_SECRET") or ""
 RZP_KEY = os.environ.get("RAZORPAY_KEY_ID") or ""
 RZP_SECRET = os.environ.get("RAZORPAY_KEY_SECRET") or ""
 RZP_WEBHOOK_SECRET = os.environ.get("RAZORPAY_WEBHOOK_SECRET") or ""
-EMERGENT_AUTH_BASE = os.environ.get("EMERGENT_AUTH_BASE", "https://demobackend.emergentagent.com/auth/v1/env")
 
 
 def twilio_enabled():
@@ -224,13 +223,3 @@ def create_refund(payment_id, amount_paise, receipt, idempotency_key):
         raise RuntimeError(description or "Razorpay refund request failed.")
 
     return data
-
-
-# ---------------- Emergent Google Auth ----------------
-async def fetch_google_session(session_id: str):
-    async with httpx.AsyncClient(timeout=15) as client:
-        r = await client.get(f"{EMERGENT_AUTH_BASE}/oauth/session-data",
-                             headers={"X-Session-ID": session_id})
-        if r.status_code != 200:
-            return None
-        return r.json()
