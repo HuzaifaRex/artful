@@ -1,10 +1,12 @@
 import asyncio
-import hmac
 import json
 import re
 import uuid
+import os
+import hmac
 from datetime import datetime, timezone
-from fastapi import APIRouter, HTTPException, Request, Depends, BackgroundTasks, UploadFile, File
+from fastapi import APIRouter, HTTPException, Request, Depends, BackgroundTasks, UploadFile, File, Query
+from fastapi.responses import PlainTextResponse
 from db import db, clean
 from security import (create_token, get_current_customer, optional_customer, now_iso)
 from pricing import compute_totals, validate_coupon, build_line_items
@@ -13,6 +15,47 @@ from routers_store import public_product
 
 router = APIRouter()
 PHONE_RE = re.compile(r"^\+?[1-9]\d{7,14}$")
+
+
+# ---------------- WHATSAPP CLOUD API WEBHOOK ----------------
+@router.get("/whatsapp/webhook")
+async def verify_whatsapp_webhook(
+    hub_mode: str | None = Query(default=None, alias="hub.mode"),
+    hub_verify_token: str | None = Query(default=None, alias="hub.verify_token"),
+    hub_challenge: str | None = Query(default=None, alias="hub.challenge"),
+):
+    """Meta WhatsApp webhook verification endpoint.
+
+    Meta sends hub.mode, hub.verify_token and hub.challenge as query params.
+    On a matching verify token we must return the challenge as plain text.
+    """
+    expected_token = os.getenv("WHATSAPP_VERIFY_TOKEN", "")
+    if (
+        hub_mode == "subscribe"
+        and expected_token
+        and hub_verify_token
+        and hmac.compare_digest(hub_verify_token, expected_token)
+        and hub_challenge is not None
+    ):
+        return PlainTextResponse(hub_challenge)
+
+    raise HTTPException(status_code=403, detail="Invalid verification token.")
+
+
+@router.post("/whatsapp/webhook")
+async def receive_whatsapp_webhook(request: Request):
+    """Receive WhatsApp Cloud API message/status events.
+
+    Keep the endpoint fast and acknowledge events with HTTP 200 so Meta
+    does not repeatedly retry the webhook. Detailed event handling can be
+    added here as the production notification flows are wired up.
+    """
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    print(f"[whatsapp] webhook received: {payload}")
+    return {"status": "ok"}
 
 
 def norm_phone(phone: str) -> str:
