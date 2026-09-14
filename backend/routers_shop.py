@@ -867,4 +867,4 @@ async def cancel_order(order_number: str, payload: dict, cust: dict = Depends(ge
         await ig.send_sms(cust["phone"],
                           f"ARTFUL: Your order {o['order_number']} has been cancelled.{refund_note} "
                           f"Need help? Reach us on WhatsApp +91 8871288853.")
-    return {"ok": True, "message": "Your order has been cancelled." + (" A refund has been initiated." if o["payment"]["status"] == "paid" else "")}
+    return {"ok": True, "message": "Your order has been cancelled." + (" A refund has been initiated." if o["payment"]["status"] == "paid" else "")} 
