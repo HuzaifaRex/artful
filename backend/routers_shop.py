@@ -1,9 +1,10 @@
 import asyncio
+import hmac
 import json
 import re
 import uuid
 from datetime import datetime, timezone
-from fastapi import APIRouter, HTTPException, Request, Depends, BackgroundTasks, UploadFile, File, Response
+from fastapi import APIRouter, HTTPException, Request, Depends, BackgroundTasks, UploadFile, File
 from db import db, clean
 from security import (create_token, get_current_customer, optional_customer, now_iso)
 from pricing import compute_totals, validate_coupon, build_line_items
@@ -30,70 +31,6 @@ def customer_public(c):
             "email": c.get("email"), "picture": c.get("picture"),
             "phone_verified": bool(c.get("phone_verified", bool(c.get("phone") and not c.get("google_id")))),
             "wishlist": c.get("wishlist", [])}
-
-
-
-
-# ---------------- WhatsApp webhook ----------------
-@router.get("/whatsapp/webhook")
-async def whatsapp_webhook_verify(request: Request):
-    """Meta webhook verification endpoint."""
-    params = request.query_params
-    mode = params.get("hub.mode")
-    token = params.get("hub.verify_token")
-    challenge = params.get("hub.challenge")
-    expected = ig.whatsapp_webhook_token()
-    if mode == "subscribe" and expected and hmac.compare_digest(token or "", expected):
-        return Response(content=challenge or "", media_type="text/plain")
-    raise HTTPException(status_code=403, detail="Webhook verification failed.")
-
-
-@router.post("/whatsapp/webhook")
-async def whatsapp_webhook(request: Request):
-    """Receive Meta WhatsApp message and delivery/read status webhooks."""
-    try:
-        payload = await request.json()
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid JSON payload.")
-
-    # Keep this endpoint fast: Meta expects a 2xx response promptly.
-    try:
-        entries = payload.get("entry") or []
-        for entry in entries:
-            changes = entry.get("changes") or []
-            for change in changes:
-                value = change.get("value") or {}
-                metadata = value.get("metadata") or {}
-                messages = value.get("messages") or []
-                statuses = value.get("statuses") or []
-                for message in messages:
-                    await db.whatsapp_webhook_events.insert_one({
-                        "id": str(uuid.uuid4()),
-                        "kind": "message",
-                        "phone_number_id": metadata.get("phone_number_id"),
-                        "from": message.get("from"),
-                        "message_id": message.get("id"),
-                        "message_type": message.get("type"),
-                        "payload": message,
-                        "created_at": now_iso(),
-                    })
-                for status in statuses:
-                    await db.whatsapp_webhook_events.insert_one({
-                        "id": str(uuid.uuid4()),
-                        "kind": "status",
-                        "phone_number_id": metadata.get("phone_number_id"),
-                        "recipient_id": status.get("recipient_id"),
-                        "message_id": status.get("id"),
-                        "status": status.get("status"),
-                        "timestamp": status.get("timestamp"),
-                        "payload": status,
-                        "created_at": now_iso(),
-                    })
-    except Exception as exc:
-        # Never turn a valid webhook into repeated retries solely because DB logging failed.
-        print(f"[whatsapp] webhook processing/logging failed: {exc}")
-
-    return {"ok": True}
 
 
 async def upsert_customer_by_phone(phone, name=None, email=None):
@@ -867,4 +804,4 @@ async def cancel_order(order_number: str, payload: dict, cust: dict = Depends(ge
         await ig.send_sms(cust["phone"],
                           f"ARTFUL: Your order {o['order_number']} has been cancelled.{refund_note} "
                           f"Need help? Reach us on WhatsApp +91 8871288853.")
-    return {"ok": True, "message": "Your order has been cancelled." + (" A refund has been initiated." if o["payment"]["status"] == "paid" else "")} 
+    return {"ok": True, "message": "Your order has been cancelled." + (" A refund has been initiated." if o["payment"]["status"] == "paid" else "")}

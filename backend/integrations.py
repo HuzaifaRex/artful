@@ -22,7 +22,6 @@ WHATSAPP_ACCESS_TOKEN = os.environ.get("WHATSAPP_ACCESS_TOKEN") or ""
 WHATSAPP_PHONE_NUMBER_ID = os.environ.get("WHATSAPP_PHONE_NUMBER_ID") or ""
 WHATSAPP_API_VERSION = os.environ.get("WHATSAPP_API_VERSION") or "v24.0"
 WHATSAPP_TEST_TEMPLATE = os.environ.get("WHATSAPP_TEST_TEMPLATE") or "hello_world"
-WHATSAPP_VERIFY_TOKEN = os.environ.get("WHATSAPP_VERIFY_TOKEN") or ""
 
 
 def twilio_enabled():
@@ -32,10 +31,6 @@ def twilio_enabled():
 # ---------------- WhatsApp Cloud API ----------------
 def whatsapp_enabled():
     return bool(WHATSAPP_ACCESS_TOKEN and WHATSAPP_PHONE_NUMBER_ID)
-
-
-def whatsapp_webhook_token():
-    return WHATSAPP_VERIFY_TOKEN
 
 
 def _whatsapp_url():
@@ -299,4 +294,3 @@ def create_refund(payment_id, amount_paise, receipt, idempotency_key):
         raise RuntimeError(description or "Razorpay refund request failed.")
 
     return data
- 
