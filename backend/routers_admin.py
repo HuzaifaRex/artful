@@ -482,9 +482,35 @@ async def update_order_status(order_number: str, payload: dict, request: Request
     await db.orders.update_one({"order_number": order_number},
         {"$set": {"status": new_status, "updated_at": now_iso()},
          "$push": {"status_history": {"status": new_status, "at": now_iso(), "note": payload.get("note", "")}}})
+
+    updated_order = await db.orders.find_one({"order_number": order_number})
+    customer = await db.customers.find_one({"id": o.get("customer_id")}, {"phone": 1, "name": 1, "_id": 0})
+    if customer and customer.get("phone") and o.get("status") != new_status:
+        name = customer.get("name") or (o.get("customer") or {}).get("name") or "there"
+        tracking_number = ((updated_order or {}).get("tracking") or {}).get("number") or "Not available"
+        if new_status == "Confirmed":
+            template = ig.WHATSAPP_TEMPLATE_ORDER_CONFIRMATION
+            params = [name, order_number]
+        elif new_status == "Cancelled":
+            template = ig.WHATSAPP_TEMPLATE_ORDER_CANCELLED
+            params = [name, order_number]
+        elif new_status == "Shipped":
+            template = ig.WHATSAPP_TEMPLATE_ORDER_SHIPPED
+            params = [name, order_number, tracking_number]
+        elif new_status == "Out for Delivery":
+            template = ig.WHATSAPP_TEMPLATE_OUT_FOR_DELIVERY
+            params = [name, order_number]
+        elif new_status == "Delivered":
+            template = ig.WHATSAPP_TEMPLATE_ORDER_DELIVERED
+            params = [name, order_number]
+        else:
+            template = ig.WHATSAPP_TEMPLATE_ORDER_STATUS
+            params = [name, order_number, new_status]
+        asyncio.create_task(ig.send_whatsapp_template(customer["phone"], template, "en_US", params))
+
     await audit(admin, "order_status", "order", order_number,
                 before={"status": o["status"]}, after={"status": new_status}, request=request)
-    return clean(await db.orders.find_one({"order_number": order_number}))
+    return clean(updated_order)
 
 
 @router.put("/orders/{order_number}/tracking")

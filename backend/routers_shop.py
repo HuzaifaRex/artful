@@ -76,6 +76,17 @@ def customer_public(c):
             "wishlist": c.get("wishlist", [])}
 
 
+async def _send_order_whatsapp(order, template_name, body_params, language_code="en_US"):
+    customer = order.get("customer") or {}
+    phone = customer.get("phone") or ""
+    if not phone:
+        return
+    try:
+        await ig.send_whatsapp_template(phone, template_name, language_code, body_params)
+    except Exception as exc:
+        print(f"[whatsapp] order notification failed for {order.get('order_number')}: {exc}")
+
+
 async def upsert_customer_by_phone(phone, name=None, email=None):
     existing = await db.customers.find_one({"phone": phone})
     if existing:
@@ -551,16 +562,18 @@ async def _finalize_paid_order(order, payment_id=None, method="razorpay"):
         "title": f"New order {order['order_number']}",
         "order_number": order["order_number"], "read": False, "at": now_iso(),
     })
-    customer = await db.customers.find_one({"id": order["customer_id"]}, {"phone": 1, "_id": 0})
+    customer = await db.customers.find_one({"id": order["customer_id"]}, {"phone": 1, "name": 1, "_id": 0})
     if customer and customer.get("phone"):
-        # Do not hold the payment response on a third-party SMS provider.
-        asyncio.create_task(
-            ig.send_sms(
-                customer["phone"],
-                f"ARTFUL: Your order {order['order_number']} is confirmed! "
-                f"Amount Rs.{order['pricing']['total']}. Track it in your account. Thank you for shopping with us.",
-            )
-        )
+        order_for_message = dict(order)
+        order_for_message["customer"] = {
+            "phone": customer.get("phone"),
+            "name": customer.get("name") or (order.get("customer") or {}).get("name") or "there",
+        }
+        asyncio.create_task(_send_order_whatsapp(
+            order_for_message,
+            ig.WHATSAPP_TEMPLATE_ORDER_CONFIRMATION,
+            [order_for_message["customer"]["name"], order["order_number"]],
+        ))
 
 
 async def _mark_payment_failed(order, reason="Payment failed."):
@@ -843,8 +856,10 @@ async def cancel_order(order_number: str, payload: dict, cust: dict = Depends(ge
         "title": f"Order {o['order_number']} cancelled", "order_number": o["order_number"],
         "read": False, "at": now_iso()})
     if cust.get("phone"):
-        refund_note = " A refund has been initiated." if o["payment"]["status"] == "paid" else ""
-        await ig.send_sms(cust["phone"],
-                          f"ARTFUL: Your order {o['order_number']} has been cancelled.{refund_note} "
-                          f"Need help? Reach us on WhatsApp +91 8871288853.")
+        customer_name = cust.get("name") or (o.get("customer") or {}).get("name") or "there"
+        asyncio.create_task(_send_order_whatsapp(
+            {"order_number": o["order_number"], "customer": {"phone": cust["phone"], "name": customer_name}},
+            ig.WHATSAPP_TEMPLATE_ORDER_CANCELLED,
+            [customer_name, o["order_number"]],
+        ))
     return {"ok": True, "message": "Your order has been cancelled." + (" A refund has been initiated." if o["payment"]["status"] == "paid" else "")}

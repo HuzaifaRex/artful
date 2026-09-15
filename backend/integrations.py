@@ -2,6 +2,7 @@
 DEV mode NEVER simulates a real production transaction silently — responses flag dev_mode=True."""
 import os
 import random
+import secrets
 import hmac
 import hashlib
 from datetime import datetime, timezone, timedelta
@@ -22,6 +23,13 @@ WHATSAPP_ACCESS_TOKEN = os.environ.get("WHATSAPP_ACCESS_TOKEN") or ""
 WHATSAPP_PHONE_NUMBER_ID = os.environ.get("WHATSAPP_PHONE_NUMBER_ID") or ""
 WHATSAPP_API_VERSION = os.environ.get("WHATSAPP_API_VERSION") or "v24.0"
 WHATSAPP_TEST_TEMPLATE = os.environ.get("WHATSAPP_TEST_TEMPLATE") or "hello_world"
+WHATSAPP_TEMPLATE_ORDER_CONFIRMATION = os.environ.get("WHATSAPP_TEMPLATE_ORDER_CONFIRMATION") or "artful_order_confirmation"
+WHATSAPP_TEMPLATE_ORDER_CANCELLED = os.environ.get("WHATSAPP_TEMPLATE_ORDER_CANCELLED") or "artful_order_cancelled"
+WHATSAPP_TEMPLATE_ORDER_SHIPPED = os.environ.get("WHATSAPP_TEMPLATE_ORDER_SHIPPED") or "artful_order_shipped"
+WHATSAPP_TEMPLATE_OUT_FOR_DELIVERY = os.environ.get("WHATSAPP_TEMPLATE_OUT_FOR_DELIVERY") or "artful_out_for_delivery"
+WHATSAPP_TEMPLATE_ORDER_DELIVERED = os.environ.get("WHATSAPP_TEMPLATE_ORDER_DELIVERED") or "artful_order_delivered"
+WHATSAPP_TEMPLATE_ORDER_STATUS = os.environ.get("WHATSAPP_TEMPLATE_ORDER_STATUS") or "artful_order_status"
+WHATSAPP_TEMPLATE_OTP = os.environ.get("WHATSAPP_TEMPLATE_OTP") or "artful_login_otp"
 
 
 def twilio_enabled():
@@ -46,7 +54,7 @@ def _normalize_whatsapp_phone(phone: str):
     return p
 
 
-async def send_whatsapp_template(phone: str, template_name: str = None, language_code: str = "en_US", body_params=None):
+async def send_whatsapp_template(phone: str, template_name: str = None, language_code: str = "en_US", body_params=None, extra_components=None):
     """Send an approved WhatsApp template through Meta Cloud API.
 
     The Meta access token is read only from the server environment and is never returned.
@@ -59,11 +67,16 @@ async def send_whatsapp_template(phone: str, template_name: str = None, language
     template_name = (template_name or WHATSAPP_TEST_TEMPLATE).strip()
     template = {"name": template_name, "language": {"code": language_code}}
     params = body_params or []
+    components = []
     if params:
-        template["components"] = [{
+        components.append({
             "type": "body",
             "parameters": [{"type": "text", "text": str(v)} for v in params],
-        }]
+        })
+    if extra_components:
+        components.extend(extra_components)
+    if components:
+        template["components"] = components
 
     payload = {
         "messaging_product": "whatsapp",
@@ -97,25 +110,102 @@ async def send_whatsapp_template(phone: str, template_name: str = None, language
         return {"sent": False, "configured": True, "error": str(e)}
 
 
+async def send_whatsapp_auth_otp(phone: str, code: str, language_code: str = "en_US"):
+    """Send an OTP using Meta's authentication template.
+
+    Meta's OTP templates pass the same code in the body and OTP button.
+    The button is sent as a URL subtype when calling the messages API.
+    """
+    if not phone:
+        return {"sent": False, "configured": whatsapp_enabled(), "message": "No phone on file."}
+    if not whatsapp_enabled():
+        return {"sent": False, "configured": False, "message": "WhatsApp Cloud API is not configured."}
+    template_name = WHATSAPP_TEMPLATE_OTP.strip()
+    template = {
+        "name": template_name,
+        "language": {"code": language_code},
+        "components": [
+            {
+                "type": "body",
+                "parameters": [{"type": "text", "text": str(code)}],
+            },
+            {
+                "type": "button",
+                "sub_type": "url",
+                "index": "0",
+                "parameters": [{"type": "text", "text": str(code)}],
+            },
+        ],
+    }
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": _normalize_whatsapp_phone(phone),
+        "type": "template",
+        "template": template,
+    }
+    headers = {
+        "Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}",
+        "Content-Type": "application/json",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            response = await client.post(_whatsapp_url(), headers=headers, json=payload)
+        try:
+            data = response.json()
+        except ValueError:
+            data = {}
+        if response.status_code >= 400:
+            err = data.get("error") if isinstance(data, dict) else None
+            message = (err or {}).get("message") if isinstance(err, dict) else None
+            print(f"[whatsapp][otp] send failed: {response.status_code} {message or data}")
+            return {"sent": False, "configured": True, "status_code": response.status_code, "error": message or "WhatsApp OTP send failed."}
+        messages = data.get("messages") if isinstance(data, dict) else None
+        message_id = messages[0].get("id") if messages else None
+        return {"sent": True, "configured": True, "message_id": message_id}
+    except Exception as e:
+        print(f"[whatsapp][otp] request failed: {e}")
+        return {"sent": False, "configured": True, "error": str(e)}
+
+
 # ---------------- OTP ----------------
 async def send_otp(phone: str):
+    if whatsapp_enabled():
+        code = f"{secrets.randbelow(1000000):06d}"
+        expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
+        result = await send_whatsapp_auth_otp(phone, code)
+        if not result.get("sent"):
+            return {"sent": False, "dev_mode": False, "error": result.get("error") or result.get("message") or "Could not send WhatsApp OTP."}
+        await db.otp_codes.update_one(
+            {"phone": phone},
+            {"$set": {
+                "phone": phone,
+                "code": code,
+                "attempts": 0,
+                "channel": "whatsapp",
+                "expires_at": expires_at.isoformat(),
+            }},
+            upsert=True,
+        )
+        return {"sent": True, "dev_mode": False, "channel": "whatsapp", "status": "sent"}
+
     if twilio_enabled():
         try:
             from twilio.rest import Client
             client = Client(TWILIO_SID, TWILIO_TOKEN)
             v = client.verify.v2.services(TWILIO_VERIFY).verifications.create(to=phone, channel="sms")
-            return {"sent": True, "dev_mode": False, "status": v.status}
+            return {"sent": True, "dev_mode": False, "channel": "sms", "status": v.status}
         except Exception as e:
             return {"sent": False, "dev_mode": False, "error": str(e)}
+
     # DEV fallback
-    code = f"{random.randint(0, 999999):06d}"
+    code = f"{secrets.randbelow(1000000):06d}"
     await db.otp_codes.update_one(
         {"phone": phone},
         {"$set": {"phone": phone, "code": code, "attempts": 0,
                   "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat()}},
         upsert=True)
     return {"sent": True, "dev_mode": True, "dev_otp": code,
-            "message": "SMS not configured — DEV OTP returned for testing only."}
+            "message": "SMS/WhatsApp not configured — DEV OTP returned for testing only."}
 
 
 async def verify_otp(phone: str, code: str):
