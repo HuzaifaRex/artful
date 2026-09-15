@@ -93,7 +93,7 @@ export default function Footer() {
           </div>
         </div>
         <div className="border-t border-cream/15 pt-8 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <p className="text-xs text-cream/50">© {new Date().getFullYear()} ARTFUL. All rights reserved.</p>
+          <p className="text-xs text-cream/50">© {new Date().getFullYear()} Perfection Graphics | ARTFUL™ — A Perfection Graphics Brand. All Rights Reserved</p>
           <div className="flex items-center gap-4">
             <button onClick={() => window.dispatchEvent(new Event("artful-open-cookie-settings"))} className="text-xs text-cream/60 hover:text-gold flex items-center gap-1.5" data-testid="footer-cookie-settings"><Cookie size={14} /> Cookie Settings</button>
             <span className="text-xs text-cream/60">{handle}</span>
