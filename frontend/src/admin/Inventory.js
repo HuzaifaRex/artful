@@ -118,7 +118,7 @@ export default function Inventory() {
             const [s, a, r, m, sup, pos, f, c] = await Promise.all([
                 adminApi.get("/inventory/summary"), adminApi.get(`/inventory/analytics?days=${days}`),
                 adminApi.get(`/inventory?q=${encodeURIComponent(q)}&status=${status}&category=${encodeURIComponent(category)}&supplier_id=${supplier}&sort=${sort}&page=${page}&page_size=25`),
-                adminApi.get(`/inventory/movements?page=${movementPage}&page_size=50`), adminApi.get("/inventory/suppliers"), adminApi.get("/inventory/purchase-orders?limit=50"), adminApi.get(`/inventory/forecast?days=${days}`), api.get("/categories")
+                adminApi.get(`/inventory/movements?page=${movementPage}&page_size=50`), adminApi.get("/inventory/suppliers"), adminApi.get("/inventory/purchase-orders?limit=50"), adminApi.get(`/inventory/forecast?days=${days}`), api.get("/categories") 
             ]); setSummary(s.data); setAnalytics(a.data); setRows(r.data); setMovements(m.data); setSuppliers(sup.data.items || []); setPurchaseOrders(pos.data.items || []); setForecast(f.data.items || []); setCategories(c.data.items || []);
         } catch (e) { toast.error(apiError(e)); } finally { setLoading(false); }
     }, [q, status, category, supplier, sort, page, movementPage, days]);
