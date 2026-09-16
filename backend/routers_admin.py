@@ -224,20 +224,62 @@ def _safe_float(value, default=0.0):
 
 async def _inventory_product_rows():
     rows = []
-    async for p in db.products.find({"status": {"$ne": "Archived"}}, {"_id": 0}):
-        supplier_id = p.get("supplier_id") or ""
-        supplier = await db.inventory_suppliers.find_one({"id": supplier_id}, {"name": 1, "_id": 0}) if supplier_id else None
-        variants = p.get("variants") or []
-        if variants:
-            for v in variants:
-                stock = _safe_int(v.get("stock", 0)); reserved = _safe_int(v.get("reserved", 0))
-                available = max(0, stock - reserved); reorder = _safe_int(v.get("reorder_level", p.get("low_stock_threshold", 5)))
+    cursor = db.products.find({"status": {"$ne": "Archived"}}, {"_id": 0})
+    async for raw in cursor:
+        try:
+            p = dict(raw or {})
+            pid = str(p.get("id") or p.get("_id") or "")
+            if not pid:
+                continue
+            supplier_id = str(p.get("supplier_id") or "")
+            supplier_name = ""
+            if supplier_id:
+                supplier = await db.inventory_suppliers.find_one({"id": supplier_id}, {"name": 1, "_id": 0})
+                supplier_name = str((supplier or {}).get("name") or "")
+
+            raw_variants = p.get("variants")
+            variants = raw_variants if isinstance(raw_variants, list) else []
+            if variants:
+                for v in variants:
+                    if not isinstance(v, dict):
+                        continue
+                    vid = str(v.get("id") or "variant")
+                    stock = _safe_int(v.get("stock"))
+                    reserved = _safe_int(v.get("reserved"))
+                    available = max(0, stock - reserved)
+                    reorder = _safe_int(v.get("reorder_level", p.get("low_stock_threshold", 5)), 5)
+                    status = "Out of Stock" if available <= 0 else ("Low Stock" if available <= reorder else "Healthy")
+                    cost = _safe_float(v.get("cost_price", p.get("cost_price", 0)))
+                    price = _safe_float(v.get("price", p.get("price", 0)))
+                    rows.append({
+                        "key": f"{pid}::{vid}", "product_id": pid, "variant_id": v.get("id"),
+                        "name": str(p.get("name") or "Unnamed product"), "variant_label": v.get("label") or v.get("name"),
+                        "sku": v.get("sku") or p.get("sku"), "category_slug": p.get("category_slug"),
+                        "supplier_id": supplier_id, "supplier_name": supplier_name,
+                        "stock": stock, "reserved": reserved, "available": available, "reorder_level": reorder,
+                        "status_label": status, "sales_count": _safe_int(v.get("sales_count")),
+                        "cost_price": cost, "price": price, "inventory_value": stock * cost,
+                        "updated_at": v.get("updated_at") or p.get("updated_at")
+                    })
+            else:
+                stock = _safe_int(p.get("stock")); reserved = _safe_int(p.get("reserved"))
+                available = max(0, stock - reserved)
+                reorder = _safe_int(p.get("reorder_level", p.get("low_stock_threshold", 5)), 5)
                 status = "Out of Stock" if available <= 0 else ("Low Stock" if available <= reorder else "Healthy")
-                rows.append({"key": f"{p['id']}::{v.get('id','variant')}", "product_id": p["id"], "variant_id": v.get("id"), "name": p.get("name"), "variant_label": v.get("label"), "sku": v.get("sku") or p.get("sku"), "category_slug": p.get("category_slug"), "supplier_id": supplier_id, "supplier_name": (supplier or {}).get("name"), "stock": stock, "reserved": reserved, "available": available, "reorder_level": reorder, "status_label": status, "sales_count": _safe_int(v.get("sales_count",0)), "cost_price": _safe_float(v.get("cost_price", p.get("cost_price",0))), "price": _safe_float(v.get("price",p.get("price",0))), "inventory_value": stock * _safe_float(v.get("cost_price",p.get("cost_price",p.get("price",0)))), "updated_at": v.get("updated_at") or p.get("updated_at")})
-        else:
-            stock = _safe_int(p.get("stock", 0)); reserved = _safe_int(p.get("reserved", 0)); available = max(0, stock-reserved); reorder = _safe_int(p.get("reorder_level", p.get("low_stock_threshold",5)))
-            status = "Out of Stock" if available <= 0 else ("Low Stock" if available <= reorder else "Healthy")
-            rows.append({"key": p["id"], "product_id": p["id"], "variant_id": None, "name": p.get("name"), "variant_label": None, "sku": p.get("sku"), "category_slug": p.get("category_slug"), "supplier_id": supplier_id, "supplier_name": (supplier or {}).get("name"), "stock": stock, "reserved": reserved, "available": available, "reorder_level": reorder, "status_label": status, "sales_count": _safe_int(p.get("sales_count",0)), "cost_price": _safe_float(p.get("cost_price",0)), "price": _safe_float(p.get("price",0)), "inventory_value": stock * _safe_float(p.get("cost_price",p.get("price",0))), "updated_at": p.get("updated_at")})
+                cost = _safe_float(p.get("cost_price", 0)); price = _safe_float(p.get("price", 0))
+                rows.append({
+                    "key": pid, "product_id": pid, "variant_id": None,
+                    "name": str(p.get("name") or "Unnamed product"), "variant_label": None,
+                    "sku": p.get("sku"), "category_slug": p.get("category_slug"),
+                    "supplier_id": supplier_id, "supplier_name": supplier_name,
+                    "stock": stock, "reserved": reserved, "available": available, "reorder_level": reorder,
+                    "status_label": status, "sales_count": _safe_int(p.get("sales_count")),
+                    "cost_price": cost, "price": price, "inventory_value": stock * cost,
+                    "updated_at": p.get("updated_at")
+                })
+        except Exception:
+            # Skip a malformed legacy product instead of taking down the whole inventory endpoint.
+            continue
     return rows
 
 async def _inventory_apply_delta(product_id: str, variant_id=None, delta: int = 0, admin_email="system", reason="Inventory movement", movement_type="Adjustment", unit_cost=0, request=None):
