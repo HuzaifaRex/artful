@@ -184,8 +184,8 @@ async def dashboard(from_date: str = "", to_date: str = "", granularity: str = "
     stock_units = 0
     reserved_units = 0
     async for p in db.products.find({"status": {"$ne": "Archived"}}, {"stock": 1, "reserved": 1, "price": 1, "_id": 0}):
-        stock = _safe_int(p.get("stock", 0))
-        reserved = _safe_int(p.get("reserved", 0))
+        stock = int(p.get("stock", 0) or 0)
+        reserved = int(p.get("reserved", 0) or 0)
         stock_units += stock
         reserved_units += reserved
         stock_value += stock * float(p.get("price", 0) or 0)
@@ -205,81 +205,22 @@ async def dashboard(from_date: str = "", to_date: str = "", granularity: str = "
 
 
 # ---------------- INVENTORY ----------------
-def _safe_int(value, default=0):
-    try:
-        if value is None or value == "":
-            return default
-        return int(float(value))
-    except (TypeError, ValueError):
-        return default
-
-
-def _safe_float(value, default=0.0):
-    try:
-        if value is None or value == "":
-            return default
-        return float(value)
-    except (TypeError, ValueError):
-        return default
-
 async def _inventory_product_rows():
     rows = []
-    cursor = db.products.find({"status": {"$ne": "Archived"}}, {"_id": 0})
-    async for raw in cursor:
-        try:
-            p = dict(raw or {})
-            pid = str(p.get("id") or p.get("_id") or "")
-            if not pid:
-                continue
-            supplier_id = str(p.get("supplier_id") or "")
-            supplier_name = ""
-            if supplier_id:
-                supplier = await db.inventory_suppliers.find_one({"id": supplier_id}, {"name": 1, "_id": 0})
-                supplier_name = str((supplier or {}).get("name") or "")
-
-            raw_variants = p.get("variants")
-            variants = raw_variants if isinstance(raw_variants, list) else []
-            if variants:
-                for v in variants:
-                    if not isinstance(v, dict):
-                        continue
-                    vid = str(v.get("id") or "variant")
-                    stock = _safe_int(v.get("stock"))
-                    reserved = _safe_int(v.get("reserved"))
-                    available = max(0, stock - reserved)
-                    reorder = _safe_int(v.get("reorder_level", p.get("low_stock_threshold", 5)), 5)
-                    status = "Out of Stock" if available <= 0 else ("Low Stock" if available <= reorder else "Healthy")
-                    cost = _safe_float(v.get("cost_price", p.get("cost_price", 0)))
-                    price = _safe_float(v.get("price", p.get("price", 0)))
-                    rows.append({
-                        "key": f"{pid}::{vid}", "product_id": pid, "variant_id": v.get("id"),
-                        "name": str(p.get("name") or "Unnamed product"), "variant_label": v.get("label") or v.get("name"),
-                        "sku": v.get("sku") or p.get("sku"), "category_slug": p.get("category_slug"),
-                        "supplier_id": supplier_id, "supplier_name": supplier_name,
-                        "stock": stock, "reserved": reserved, "available": available, "reorder_level": reorder,
-                        "status_label": status, "sales_count": _safe_int(v.get("sales_count")),
-                        "cost_price": cost, "price": price, "inventory_value": stock * cost,
-                        "updated_at": v.get("updated_at") or p.get("updated_at")
-                    })
-            else:
-                stock = _safe_int(p.get("stock")); reserved = _safe_int(p.get("reserved"))
-                available = max(0, stock - reserved)
-                reorder = _safe_int(p.get("reorder_level", p.get("low_stock_threshold", 5)), 5)
+    async for p in db.products.find({"status": {"$ne": "Archived"}}, {"_id": 0}):
+        supplier_id = p.get("supplier_id") or ""
+        supplier = await db.inventory_suppliers.find_one({"id": supplier_id}, {"name": 1, "_id": 0}) if supplier_id else None
+        variants = p.get("variants") or []
+        if variants:
+            for v in variants:
+                stock = int(v.get("stock", 0) or 0); reserved = int(v.get("reserved", 0) or 0)
+                available = max(0, stock - reserved); reorder = int(v.get("reorder_level", p.get("low_stock_threshold", 5)) or 0)
                 status = "Out of Stock" if available <= 0 else ("Low Stock" if available <= reorder else "Healthy")
-                cost = _safe_float(p.get("cost_price", 0)); price = _safe_float(p.get("price", 0))
-                rows.append({
-                    "key": pid, "product_id": pid, "variant_id": None,
-                    "name": str(p.get("name") or "Unnamed product"), "variant_label": None,
-                    "sku": p.get("sku"), "category_slug": p.get("category_slug"),
-                    "supplier_id": supplier_id, "supplier_name": supplier_name,
-                    "stock": stock, "reserved": reserved, "available": available, "reorder_level": reorder,
-                    "status_label": status, "sales_count": _safe_int(p.get("sales_count")),
-                    "cost_price": cost, "price": price, "inventory_value": stock * cost,
-                    "updated_at": p.get("updated_at")
-                })
-        except Exception:
-            # Skip a malformed legacy product instead of taking down the whole inventory endpoint.
-            continue
+                rows.append({"key": f"{p['id']}::{v.get('id','variant')}", "product_id": p["id"], "variant_id": v.get("id"), "name": p.get("name"), "variant_label": v.get("label"), "sku": v.get("sku") or p.get("sku"), "category_slug": p.get("category_slug"), "supplier_id": supplier_id, "supplier_name": (supplier or {}).get("name"), "stock": stock, "reserved": reserved, "available": available, "reorder_level": reorder, "status_label": status, "sales_count": int(v.get("sales_count",0) or 0), "cost_price": float(v.get("cost_price", p.get("cost_price",0)) or 0), "price": float(v.get("price",p.get("price",0)) or 0), "inventory_value": stock * float(v.get("cost_price",p.get("cost_price",p.get("price",0))) or 0), "updated_at": v.get("updated_at") or p.get("updated_at")})
+        else:
+            stock = int(p.get("stock", 0) or 0); reserved = int(p.get("reserved", 0) or 0); available = max(0, stock-reserved); reorder = int(p.get("reorder_level", p.get("low_stock_threshold",5)) or 0)
+            status = "Out of Stock" if available <= 0 else ("Low Stock" if available <= reorder else "Healthy")
+            rows.append({"key": p["id"], "product_id": p["id"], "variant_id": None, "name": p.get("name"), "variant_label": None, "sku": p.get("sku"), "category_slug": p.get("category_slug"), "supplier_id": supplier_id, "supplier_name": (supplier or {}).get("name"), "stock": stock, "reserved": reserved, "available": available, "reorder_level": reorder, "status_label": status, "sales_count": int(p.get("sales_count",0) or 0), "cost_price": float(p.get("cost_price",0) or 0), "price": float(p.get("price",0) or 0), "inventory_value": stock * float(p.get("cost_price",p.get("price",0)) or 0), "updated_at": p.get("updated_at")})
     return rows
 
 async def _inventory_apply_delta(product_id: str, variant_id=None, delta: int = 0, admin_email="system", reason="Inventory movement", movement_type="Adjustment", unit_cost=0, request=None):
@@ -310,7 +251,7 @@ async def inventory_summary(admin: dict = Depends(require_permission("catalog"))
     rows = await _inventory_product_rows(); now = datetime.now(timezone.utc); since = (now - timedelta(days=30)).isoformat()
     stock_in = stock_out = 0
     async for t in db.inventory_transactions.find({"at": {"$gte": since}}, {"quantity":1,"change":1,"_id":0}):
-        q = _safe_int(t.get("quantity", t.get("change", 0)))
+        q = int(t.get("quantity",t.get("change",0)) or 0)
         if q > 0: stock_in += q
         elif q < 0: stock_out += abs(q)
     total_products = len({r["product_id"] for r in rows}); active_skus = len(rows); stock_units=sum(r["stock"] for r in rows); reserved_units=sum(r["reserved"] for r in rows); available_units=sum(r["available"] for r in rows)
@@ -327,7 +268,16 @@ async def inventory_list(q: str="", status: str="", level: str="", category: str
     if category: rows=[r for r in rows if r.get("category_slug")==category]
     if supplier_id: rows=[r for r in rows if r.get("supplier_id")==supplier_id]
     fields={"available_asc":("available",False),"stock_desc":("stock",True),"value_desc":("inventory_value",True),"sales_desc":("sales_count",True),"updated_desc":("updated_at",True)}
-    field,rev=fields.get(sort,("available",False)); rows.sort(key=lambda x:x.get(field) or "", reverse=rev)
+    field,rev=fields.get(sort,("available",False))
+    def _inventory_sort_key(row):
+        value=row.get(field)
+        if field in {"available","stock","inventory_value","sales_count"}:
+            try:
+                return float(value or 0)
+            except (TypeError, ValueError):
+                return 0.0
+        return str(value or "")
+    rows.sort(key=_inventory_sort_key, reverse=rev)
     total=len(rows); pages=max(1,(total+page_size-1)//page_size); page=min(max(page,1),pages)
     return {"items":rows[(page-1)*page_size:page*page_size],"total":total,"pages":pages,"page":page}
 
@@ -335,7 +285,7 @@ async def inventory_list(q: str="", status: str="", level: str="", category: str
 async def inventory_analytics(days:int=30, admin:dict=Depends(require_permission("catalog"))):
     days=max(7,min(int(days or 30),180)); start=(datetime.now(timezone.utc)-timedelta(days=days)).isoformat(); buckets={}; stock_in=stock_out=0
     async for t in db.inventory_transactions.find({"at":{"$gte":start}}, {"at":1,"quantity":1,"change":1,"_id":0}):
-        q=_safe_int(t.get("quantity", t.get("change", 0))); raw_at=t.get("at") or ""; dt=(raw_at.isoformat() if hasattr(raw_at, "isoformat") else str(raw_at))[:10]; b=buckets.setdefault(dt,{"label":dt,"value":0}); b["value"] += abs(q) if q else 0
+        q=int(t.get("quantity",t.get("change",0)) or 0); dt=(t.get("at") or "")[:10]; b=buckets.setdefault(dt,{"label":dt,"value":0}); b["value"] += abs(q) if q else 0
         if q>0: stock_in+=q
         elif q<0: stock_out+=abs(q)
     return {"days":days,"stock_in":stock_in,"stock_out":stock_out,"series":[buckets[k] for k in sorted(buckets)]}
