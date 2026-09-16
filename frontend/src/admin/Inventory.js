@@ -119,7 +119,11 @@ export default function Inventory() {
       adminApi.get(`/inventory?q=${encodeURIComponent(q)}&status=${status}&category=${encodeURIComponent(category)}&supplier_id=${supplier}&sort=${sort}&page=${page}&page_size=25`),
       adminApi.get(`/inventory/movements?page=${movementPage}&page_size=50`), Promise.resolve({ data: { items: [] } }), Promise.resolve({ data: { items: [] } }), Promise.resolve({ data: { items: [] } }), Promise.resolve({ data: { items: [] } })
     ]); setSummary(s.data); setAnalytics(a.data); setRows(r.data); setMovements(m.data); setSuppliers(sup.data.items||[]); setPurchaseOrders(pos.data.items||[]); setForecast(f.data.items||[]); setCategories(c.data.items||[]);
-  } catch(e) { toast.error(apiError(e)); } finally { setLoading(false); } }, [q,status,category,supplier,sort,page,movementPage,days]);
+  } catch(e) {
+    const status = e?.response?.status ? `HTTP ${e.response.status}` : "Network";
+    toast.error(`Inventory API error (${status}). ${apiError(e, "Unable to load inventory data.")}`);
+    console.error("Inventory load failed", { url: e?.config?.url, status: e?.response?.status, data: e?.response?.data, message: e?.message });
+  } finally { setLoading(false); } }, [q,status,category,supplier,sort,page,movementPage,days]);
   useEffect(()=>{ const t=setTimeout(load,180); return ()=>clearTimeout(t); },[load]);
   useEffect(()=>{setPage(1);},[q,status,category,supplier,sort]);
   useEffect(()=>{setMovementPage(1);},[days]);
