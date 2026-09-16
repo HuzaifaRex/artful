@@ -419,13 +419,19 @@ async def _finalize_paid_order(order, payment_id=None, method="razorpay"):
         return
 
     for line in order["items"]:
-        await db.products.update_one(
-            {"id": line["product_id"]},
-            {"$inc": {"reserved": -line["qty"], "stock": -line["qty"], "sales_count": line["qty"]}},
+        qty = int(line.get("qty", 0) or 0)
+        before_doc = await db.products.find_one({"id": line["product_id"]}, {"stock": 1, "_id": 0})
+        before_stock = int((before_doc or {}).get("stock", 0) or 0)
+        guard_stock = await db.products.update_one(
+            {"id": line["product_id"], "$expr": {"$gte": [{"$subtract": [{"$ifNull": ["$stock", 0]}, {"$ifNull": ["$reserved", 0]}]}, qty]}},
+            {"$inc": {"reserved": -qty, "stock": -qty, "sales_count": qty}},
         )
+        if guard_stock.modified_count == 0:
+            raise HTTPException(409, "Inventory became unavailable before order confirmation. Please retry.")
         await db.inventory_transactions.insert_one({
-            "id": str(uuid.uuid4()), "product_id": line["product_id"], "change": -line["qty"],
-            "reason": f"Order {order['order_number']}", "at": now_iso(),
+            "id": str(uuid.uuid4()), "product_id": line["product_id"], "sku": line.get("sku"), "quantity": -qty, "change": -qty,
+            "before_stock": before_stock, "after_stock": before_stock - qty, "movement_type": "Order",
+            "reason": f"Order {order['order_number']}", "source": "order", "at": now_iso(),
         })
         prod = await db.products.find_one({"id": line["product_id"]}, {"stock": 1, "status": 1, "_id": 0})
         if prod and prod.get("stock", 0) <= 0 and prod.get("status") == "Active":
@@ -535,13 +541,19 @@ async def _finalize_paid_order(order, payment_id=None, method="razorpay"):
         return
 
     for line in order["items"]:
-        await db.products.update_one(
-            {"id": line["product_id"]},
-            {"$inc": {"reserved": -line["qty"], "stock": -line["qty"], "sales_count": line["qty"]}},
+        qty = int(line.get("qty", 0) or 0)
+        before_doc = await db.products.find_one({"id": line["product_id"]}, {"stock": 1, "_id": 0})
+        before_stock = int((before_doc or {}).get("stock", 0) or 0)
+        guard_stock = await db.products.update_one(
+            {"id": line["product_id"], "$expr": {"$gte": [{"$subtract": [{"$ifNull": ["$stock", 0]}, {"$ifNull": ["$reserved", 0]}]}, qty]}},
+            {"$inc": {"reserved": -qty, "stock": -qty, "sales_count": qty}},
         )
+        if guard_stock.modified_count == 0:
+            raise HTTPException(409, "Inventory became unavailable before order confirmation. Please retry.")
         await db.inventory_transactions.insert_one({
-            "id": str(uuid.uuid4()), "product_id": line["product_id"], "change": -line["qty"],
-            "reason": f"Order {order['order_number']}", "at": now_iso(),
+            "id": str(uuid.uuid4()), "product_id": line["product_id"], "sku": line.get("sku"), "quantity": -qty, "change": -qty,
+            "before_stock": before_stock, "after_stock": before_stock - qty, "movement_type": "Order",
+            "reason": f"Order {order['order_number']}", "source": "order", "at": now_iso(),
         })
         prod = await db.products.find_one({"id": line["product_id"]}, {"stock": 1, "status": 1, "_id": 0})
         if prod and prod.get("stock", 0) <= 0 and prod.get("status") == "Active":
@@ -842,7 +854,10 @@ async def cancel_order(order_number: str, payload: dict, cust: dict = Depends(ge
     paid = o["payment"]["status"] in ("paid", "cod_confirmed")
     for l in o["items"]:
         if paid:
+            before_doc = await db.products.find_one({"id": l["product_id"]}, {"stock": 1, "_id": 0})
             await db.products.update_one({"id": l["product_id"]}, {"$inc": {"stock": l["qty"]}})
+            before_stock = int((before_doc or {}).get("stock", 0) or 0)
+            await db.inventory_transactions.insert_one({"id": str(uuid.uuid4()), "product_id": l["product_id"], "sku": l.get("sku"), "quantity": l["qty"], "change": l["qty"], "before_stock": before_stock, "after_stock": before_stock + int(l["qty"]), "movement_type": "Order Cancellation", "reason": f"Order {o['order_number']} cancelled", "source": "order", "at": now_iso()})
         else:
             await db.products.update_one({"id": l["product_id"]}, {"$inc": {"reserved": -l["qty"]}})
     await db.orders.update_one({"id": o["id"]}, {"$set": {"status": "Cancelled", "updated_at": now_iso()},

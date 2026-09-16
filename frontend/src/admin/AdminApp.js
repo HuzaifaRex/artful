@@ -7,7 +7,8 @@ import {
 } from "lucide-react";
 import { adminApi } from "../lib/api";
 import Dashboard from "./Dashboard";
-import { Products, Categories, Collections, Reviews, Inventory } from "./Catalog";
+import { Products, Categories, Collections, Reviews } from "./Catalog";
+import Inventory from "./Inventory";
 import Orders from "./Orders";
 import Customers from "./Customers";
 import { Coupons } from "./Marketing";

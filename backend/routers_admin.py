@@ -205,99 +205,199 @@ async def dashboard(from_date: str = "", to_date: str = "", granularity: str = "
 
 
 # ---------------- INVENTORY ----------------
+async def _inventory_product_rows():
+    rows = []
+    async for p in db.products.find({"status": {"$ne": "Archived"}}, {"_id": 0}):
+        supplier_id = p.get("supplier_id") or ""
+        supplier = await db.inventory_suppliers.find_one({"id": supplier_id}, {"name": 1, "_id": 0}) if supplier_id else None
+        variants = p.get("variants") or []
+        if variants:
+            for v in variants:
+                stock = int(v.get("stock", 0) or 0); reserved = int(v.get("reserved", 0) or 0)
+                available = max(0, stock - reserved); reorder = int(v.get("reorder_level", p.get("low_stock_threshold", 5)) or 0)
+                status = "Out of Stock" if available <= 0 else ("Low Stock" if available <= reorder else "Healthy")
+                rows.append({"key": f"{p['id']}::{v.get('id','variant')}", "product_id": p["id"], "variant_id": v.get("id"), "name": p.get("name"), "variant_label": v.get("label"), "sku": v.get("sku") or p.get("sku"), "category_slug": p.get("category_slug"), "supplier_id": supplier_id, "supplier_name": (supplier or {}).get("name"), "stock": stock, "reserved": reserved, "available": available, "reorder_level": reorder, "status_label": status, "sales_count": int(v.get("sales_count",0) or 0), "cost_price": float(v.get("cost_price", p.get("cost_price",0)) or 0), "price": float(v.get("price",p.get("price",0)) or 0), "inventory_value": stock * float(v.get("cost_price",p.get("cost_price",p.get("price",0))) or 0), "updated_at": v.get("updated_at") or p.get("updated_at")})
+        else:
+            stock = int(p.get("stock", 0) or 0); reserved = int(p.get("reserved", 0) or 0); available = max(0, stock-reserved); reorder = int(p.get("reorder_level", p.get("low_stock_threshold",5)) or 0)
+            status = "Out of Stock" if available <= 0 else ("Low Stock" if available <= reorder else "Healthy")
+            rows.append({"key": p["id"], "product_id": p["id"], "variant_id": None, "name": p.get("name"), "variant_label": None, "sku": p.get("sku"), "category_slug": p.get("category_slug"), "supplier_id": supplier_id, "supplier_name": (supplier or {}).get("name"), "stock": stock, "reserved": reserved, "available": available, "reorder_level": reorder, "status_label": status, "sales_count": int(p.get("sales_count",0) or 0), "cost_price": float(p.get("cost_price",0) or 0), "price": float(p.get("price",0) or 0), "inventory_value": stock * float(p.get("cost_price",p.get("price",0)) or 0), "updated_at": p.get("updated_at")})
+    return rows
+
+async def _inventory_apply_delta(product_id: str, variant_id=None, delta: int = 0, admin_email="system", reason="Inventory movement", movement_type="Adjustment", unit_cost=0, request=None):
+    p = await db.products.find_one({"id": product_id}, {"_id": 0})
+    if not p: raise HTTPException(404, "Product not found.")
+    delta = int(delta)
+    if delta == 0: raise HTTPException(400, "Inventory change cannot be zero.")
+    if variant_id:
+        variants = list(p.get("variants") or []); found = None
+        for v in variants:
+            if str(v.get("id")) == str(variant_id): found = v; break
+        if not found: raise HTTPException(404, "Variant not found.")
+        before = int(found.get("stock",0) or 0); after = before + delta
+        if after < 0: raise HTTPException(409, "Negative stock is not allowed.")
+        found["stock"] = after; found["updated_at"] = now_iso()
+        pstock = sum(int(v.get("stock",0) or 0) for v in variants)
+        await db.products.update_one({"id": product_id}, {"$set": {"variants": variants, "stock": pstock, "updated_at": now_iso(), "status": "Out of Stock" if pstock <= 0 else ("Active" if p.get("status")=="Out of Stock" else p.get("status","Active"))}})
+    else:
+        before = int(p.get("stock",0) or 0); after = before + delta
+        if after < 0: raise HTTPException(409, "Negative stock is not allowed.")
+        await db.products.update_one({"id": product_id}, {"$set": {"stock": after, "updated_at": now_iso(), "status": "Out of Stock" if after <= 0 else ("Active" if p.get("status")=="Out of Stock" else p.get("status","Active"))}})
+    await db.inventory_transactions.insert_one({"id": str(uuid.uuid4()), "product_id": product_id, "variant_id": variant_id, "sku": (found or {}).get("sku") if variant_id else p.get("sku"), "quantity": delta, "change": delta, "before_stock": before, "after_stock": after, "movement_type": movement_type, "reason": reason, "unit_cost": float(unit_cost or 0), "admin": admin_email, "source": "admin", "at": now_iso()})
+    await audit({"id":"system","email":admin_email}, "inventory_movement", "product", product_id, before={"stock":before}, after={"stock":after,"quantity":delta,"type":movement_type,"reason":reason}, request=request) if admin_email != "system" else None
+    return {"before": before, "after": after, "delta": delta}
+
 @router.get("/inventory/summary")
 async def inventory_summary(admin: dict = Depends(require_permission("catalog"))):
-    base = {"status": {"$ne": "Archived"}}
-    total_skus = await db.products.count_documents(base)
-    out_of_stock = await db.products.count_documents({**base, "$or": [{"stock": {"$lte": 0}}, {"status": "Out of Stock"}]})
-    low_stock = await db.products.count_documents({**base, "$expr": {"$lte": ["$stock", "$low_stock_threshold"]}})
-    stock_units = reserved_units = stock_value = 0
-    async for p in db.products.find(base, {"stock": 1, "reserved": 1, "price": 1, "_id": 0}):
-        stock = int(p.get("stock", 0) or 0); reserved = int(p.get("reserved", 0) or 0)
-        stock_units += stock; reserved_units += reserved; stock_value += stock * float(p.get("price", 0) or 0)
-    inbound = 0
-    async for t in db.inventory_transactions.find({"change": {"$gt": 0}}, {"change": 1, "_id": 0}): inbound += int(t.get("change", 0) or 0)
-    outbound = 0
-    async for t in db.inventory_transactions.find({"change": {"$lt": 0}}, {"change": 1, "_id": 0}): outbound += abs(int(t.get("change", 0) or 0))
-    return {"total_skus": total_skus, "stock_units": stock_units, "reserved_units": reserved_units, "available_units": max(0, stock_units-reserved_units),
-            "stock_value": round(stock_value, 2), "low_stock": low_stock, "out_of_stock": out_of_stock, "inbound": inbound, "outbound": outbound}
-
+    rows = await _inventory_product_rows(); now = datetime.now(timezone.utc); since = (now - timedelta(days=30)).isoformat()
+    stock_in = stock_out = 0
+    async for t in db.inventory_transactions.find({"at": {"$gte": since}}, {"quantity":1,"change":1,"_id":0}):
+        q = int(t.get("quantity",t.get("change",0)) or 0)
+        if q > 0: stock_in += q
+        elif q < 0: stock_out += abs(q)
+    total_products = len({r["product_id"] for r in rows}); active_skus = len(rows); stock_units=sum(r["stock"] for r in rows); reserved_units=sum(r["reserved"] for r in rows); available_units=sum(r["available"] for r in rows)
+    low=sum(1 for r in rows if r["status_label"]=="Low Stock"); out=sum(1 for r in rows if r["status_label"]=="Out of Stock"); healthy=sum(1 for r in rows if r["status_label"]=="Healthy")
+    return {"total_products":total_products,"active_skus":active_skus,"stock_units":stock_units,"reserved_units":reserved_units,"available_units":available_units,"low_stock":low,"out_of_stock":out,"healthy":healthy,"reserved_skus":sum(1 for r in rows if r["reserved"]>0),"stock_in_30d":stock_in,"stock_out_30d":stock_out,"inventory_value":round(sum(r["inventory_value"] for r in rows),2),"retail_value":round(sum(r["stock"]*r["price"] for r in rows),2),"at_risk_value":round(sum(r["stock"]*r["cost_price"] for r in rows if r["status_label"] in ("Low Stock","Out of Stock")),2)}
 
 @router.get("/inventory")
-async def inventory_list(q: str = "", level: str = "", page: int = 1, page_size: int = 25, sort: str = "stock_asc",
-                        admin: dict = Depends(require_permission("catalog"))):
-    prods = [p async for p in db.products.find({"status": {"$ne": "Archived"}}, {"_id": 0})]
-    ql = q.strip().lower()
-    rows = []
-    for p in prods:
-        stock = int(p.get("stock", 0) or 0); reserved = int(p.get("reserved", 0) or 0); threshold = int(p.get("low_stock_threshold", 5) or 5)
-        available = max(0, stock - reserved)
-        state = "out" if stock <= 0 else ("low" if stock <= threshold else "healthy")
-        if level and state != level: continue
-        if ql and ql not in str(p.get("name", "")).lower() and ql not in str(p.get("sku", "")).lower(): continue
-        rows.append({**clean(p), "available": available, "inventory_status": state, "stock_value": round(stock * float(p.get("price", 0) or 0), 2)})
-    reverse = sort.endswith("desc")
-    field = sort.replace("_desc", "").replace("_asc", "")
-    if field in {"stock", "available", "stock_value", "price", "sales_count"}:
-        rows.sort(key=lambda x: x.get(field, 0) or 0, reverse=reverse)
-    total = len(rows); pages = max(1, (total + page_size - 1) // page_size); page = min(max(page, 1), pages)
-    return {"items": rows[(page-1)*page_size:page*page_size], "total": total, "pages": pages, "page": page}
+async def inventory_list(q: str="", status: str="", level: str="", category: str="", supplier_id: str="", page:int=1, page_size:int=25, sort:str="available_asc", admin: dict = Depends(require_permission("catalog"))):
+    rows = await _inventory_product_rows(); needle=q.strip().casefold()
+    if status and not level: level=status
+    if needle: rows=[r for r in rows if needle in str(r.get("name","")).casefold() or needle in str(r.get("sku","")).casefold() or needle in str(r.get("supplier_name","")).casefold()]
+    if level:
+        mapv={"healthy":"Healthy","low":"Low Stock","out":"Out of Stock"}; rows=[r for r in rows if r["status_label"]==mapv.get(level,level)]
+    if category: rows=[r for r in rows if r.get("category_slug")==category]
+    if supplier_id: rows=[r for r in rows if r.get("supplier_id")==supplier_id]
+    fields={"available_asc":("available",False),"stock_desc":("stock",True),"value_desc":("inventory_value",True),"sales_desc":("sales_count",True),"updated_desc":("updated_at",True)}
+    field,rev=fields.get(sort,("available",False)); rows.sort(key=lambda x:x.get(field) or "", reverse=rev)
+    total=len(rows); pages=max(1,(total+page_size-1)//page_size); page=min(max(page,1),pages)
+    return {"items":rows[(page-1)*page_size:page*page_size],"total":total,"pages":pages,"page":page}
 
+@router.get("/inventory/analytics")
+async def inventory_analytics(days:int=30, admin:dict=Depends(require_permission("catalog"))):
+    days=max(7,min(int(days or 30),180)); start=(datetime.now(timezone.utc)-timedelta(days=days)).isoformat(); buckets={}; stock_in=stock_out=0
+    async for t in db.inventory_transactions.find({"at":{"$gte":start}}, {"at":1,"quantity":1,"change":1,"_id":0}):
+        q=int(t.get("quantity",t.get("change",0)) or 0); dt=(t.get("at") or "")[:10]; b=buckets.setdefault(dt,{"label":dt,"value":0}); b["value"] += abs(q) if q else 0
+        if q>0: stock_in+=q
+        elif q<0: stock_out+=abs(q)
+    return {"days":days,"stock_in":stock_in,"stock_out":stock_out,"series":[buckets[k] for k in sorted(buckets)]}
 
 @router.get("/inventory/movements")
-async def inventory_movements(product_id: str = "", limit: int = 100, admin: dict = Depends(require_permission("catalog"))):
-    query = {"product_id": product_id} if product_id else {}
-    rows = [clean(x) async for x in db.inventory_transactions.find(query, {"_id": 0}).sort("at", -1).limit(min(max(limit, 1), 500))]
-    ids = list({r.get("product_id") for r in rows if r.get("product_id")})
-    products = {p["id"]: p.get("name", "") async for p in db.products.find({"id": {"$in": ids}}, {"id": 1, "name": 1, "_id": 0})}
-    for r in rows: r["product_name"] = products.get(r.get("product_id"), "")
-    return {"items": rows}
+async def inventory_movements(page:int=1,page_size:int=50,product_id:str="",admin:dict=Depends(require_permission("catalog"))):
+    q={"product_id":product_id} if product_id else {}; total=await db.inventory_transactions.count_documents(q); pages=max(1,(total+page_size-1)//page_size); page=min(max(page,1),pages); docs=[clean(x) async for x in db.inventory_transactions.find(q,{"_id":0}).sort("at",-1).skip((page-1)*page_size).limit(page_size)]; ids=list({x.get("product_id") for x in docs if x.get("product_id")}); products={p["id"]:p for p in [clean(x) async for x in db.products.find({"id":{"$in":ids}},{"id":1,"name":1,"sku":1,"_id":0})]};
+    for x in docs:
+        p=products.get(x.get("product_id"),{}); x["product_name"]=p.get("name"); x["sku"]=x.get("sku") or p.get("sku")
+    return {"items":docs,"total":total,"pages":pages,"page":page}
 
+@router.post("/inventory/stock-in")
+async def inventory_stock_in(payload:dict,request:Request,admin:dict=Depends(require_permission("catalog"))):
+    return await _inventory_apply_delta(str(payload.get("product_id") or ""),payload.get("variant_id"),int(payload.get("quantity",0)),admin["email"],payload.get("reason") or "Stock received", "Stock In", payload.get("unit_cost",0), request)
+
+@router.post("/inventory/stock-out")
+async def inventory_stock_out(payload:dict,request:Request,admin:dict=Depends(require_permission("catalog"))):
+    qty=int(payload.get("quantity",0)); return await _inventory_apply_delta(str(payload.get("product_id") or ""),payload.get("variant_id"),-qty,admin["email"],payload.get("reason") or "Stock issued", "Stock Out", payload.get("unit_cost",0), request)
 
 @router.post("/inventory/adjust")
-async def inventory_adjust(payload: dict, request: Request, admin: dict = Depends(require_permission("catalog"))):
-    pid = str(payload.get("product_id") or "")
-    if not pid: raise HTTPException(400, "product_id is required.")
-    p = await db.products.find_one({"id": pid}, {"_id": 0})
-    if not p: raise HTTPException(404, "Product not found.")
-    change = int(payload.get("change", 0)); reason = (payload.get("reason") or "Manual adjustment").strip()[:200]
-    if change == 0: raise HTTPException(400, "Adjustment cannot be zero.")
-    new_stock = max(0, int(p.get("stock", 0) or 0) + change)
-    update = {"stock": new_stock, "updated_at": now_iso()}
-    if new_stock > 0 and p.get("status") == "Out of Stock": update["status"] = "Active"
-    if new_stock <= 0 and p.get("status") == "Active": update["status"] = "Out of Stock"
-    await db.products.update_one({"id": pid}, {"$set": update})
-    await db.inventory_transactions.insert_one({"id": str(uuid.uuid4()), "product_id": pid, "change": change, "reason": reason, "admin": admin["email"], "at": now_iso()})
-    await audit(admin, "inventory_adjust", "product", pid, before={"stock": p.get("stock")}, after={"stock": new_stock, "change": change, "reason": reason}, request=request)
-    return {"ok": True, "stock": new_stock, "available": max(0, new_stock - int(p.get("reserved", 0) or 0))}
+async def inventory_adjust(payload:dict,request:Request,admin:dict=Depends(require_permission("catalog"))):
+    pid=str(payload.get("product_id") or ""); vid=payload.get("variant_id"); target=int(payload.get("new_stock",0)); p=await db.products.find_one({"id":pid},{"_id":0});
+    if not p: raise HTTPException(404,"Product not found.")
+    current=int(p.get("stock",0) or 0)
+    if vid:
+        v=next((x for x in p.get("variants",[]) if str(x.get("id"))==str(vid)),None); current=int((v or {}).get("stock",0) or 0)
+    return await _inventory_apply_delta(pid,vid,target-current,admin["email"],payload.get("reason") or "Physical count adjustment","Adjustment",0,request)
 
+@router.post("/inventory/bulk-in")
+async def inventory_bulk_in(payload:dict,request:Request,admin:dict=Depends(require_permission("catalog"))):
+    ids=[str(x) for x in payload.get("ids",[])]; qty=int(payload.get("quantity",0));
+    if not ids or qty<=0: raise HTTPException(400,"Select SKUs and enter a positive quantity.")
+    done=0
+    for key in ids:
+        pid,_,vid=key.partition("::");
+        try: await _inventory_apply_delta(pid,vid or None,qty,admin["email"],payload.get("reason") or "Bulk stock-in","Stock In",0,request); done+=1
+        except HTTPException: continue
+    return {"ok":True,"updated":done}
 
-@router.post("/inventory/bulk-adjust")
-async def inventory_bulk_adjust(payload: dict, request: Request, admin: dict = Depends(require_permission("catalog"))):
-    ids = [str(x) for x in payload.get("ids", []) if str(x).strip()]
-    change = int(payload.get("change", 0)); reason = (payload.get("reason") or "Bulk adjustment").strip()[:200]
-    if not ids or change == 0: raise HTTPException(400, "Select products and enter a non-zero adjustment.")
-    updated = 0
-    async for p in db.products.find({"id": {"$in": ids}}, {"_id": 0}):
-        new_stock = max(0, int(p.get("stock", 0) or 0) + change)
-        status = p.get("status")
-        if new_stock <= 0 and status == "Active": status = "Out of Stock"
-        elif new_stock > 0 and status == "Out of Stock": status = "Active"
-        await db.products.update_one({"id": p["id"]}, {"$set": {"stock": new_stock, "status": status, "updated_at": now_iso()}})
-        await db.inventory_transactions.insert_one({"id": str(uuid.uuid4()), "product_id": p["id"], "change": change, "reason": reason, "admin": admin["email"], "at": now_iso()})
-        updated += 1
-    await audit(admin, "inventory_bulk_adjust", "products", None, after={"ids": ids, "change": change, "reason": reason}, request=request)
-    return {"ok": True, "updated": updated}
+@router.post("/inventory/bulk-out")
+async def inventory_bulk_out(payload:dict,request:Request,admin:dict=Depends(require_permission("catalog"))):
+    ids=[str(x) for x in payload.get("ids",[])]; qty=int(payload.get("quantity",0));
+    if not ids or qty<=0: raise HTTPException(400,"Select SKUs and enter a positive quantity.")
+    done=0
+    for key in ids:
+        pid,_,vid=key.partition("::");
+        try: await _inventory_apply_delta(pid,vid or None,-qty,admin["email"],payload.get("reason") or "Bulk stock-out","Stock Out",0,request); done+=1
+        except HTTPException: continue
+    return {"ok":True,"updated":done}
 
+@router.post("/inventory/return")
+async def inventory_return(payload:dict,request:Request,admin:dict=Depends(require_permission("catalog"))):
+    return await _inventory_apply_delta(str(payload.get("product_id") or ""),payload.get("variant_id"),int(payload.get("quantity",0)),admin["email"],payload.get("reason") or "Customer return","Return",payload.get("unit_cost",0),request)
 
-@router.post("/inventory/set-threshold")
-async def inventory_threshold(payload: dict, request: Request, admin: dict = Depends(require_permission("catalog"))):
-    pid = str(payload.get("product_id") or ""); threshold = max(0, int(payload.get("threshold", 5)))
-    if not pid: raise HTTPException(400, "product_id is required.")
-    await db.products.update_one({"id": pid}, {"$set": {"low_stock_threshold": threshold, "updated_at": now_iso()}})
-    await audit(admin, "inventory_threshold", "product", pid, after={"low_stock_threshold": threshold}, request=request)
-    return {"ok": True, "threshold": threshold}
+@router.get("/inventory/forecast")
+async def inventory_forecast(days:int=30,admin:dict=Depends(require_permission("catalog"))):
+    rows=await _inventory_product_rows(); cutoff=(datetime.now(timezone.utc)-timedelta(days=max(30,min(days*2,180)))).isoformat(); sales={}
+    async for o in db.orders.find({"created_at":{"$gte":cutoff},"payment.status":{"$in":["paid","cod_confirmed"]}}, {"items":1,"_id":0}):
+        for l in o.get("items",[]): sales[l.get("product_id")]=sales.get(l.get("product_id"),0)+int(l.get("qty",0) or 0)
+    out=[]
+    for r in rows:
+        sold=sales.get(r["product_id"],0); velocity=sold/max(1,days*2); cover=(r["available"]/velocity) if velocity else None; target=max(r["reorder_level"]*2,round(velocity*30))
+        status="Critical" if r["available"]<=0 or (cover is not None and cover<7) else ("Watch" if r["available"]<=r["reorder_level"] or (cover is not None and cover<21) else "Healthy")
+        out.append({**r,"daily_velocity":round(velocity,2),"days_of_cover":round(cover,1) if cover is not None else None,"suggested_reorder":max(0,target-r["available"]),"status":status})
+    out.sort(key=lambda x:(0 if x["status"]=="Critical" else 1 if x["status"]=="Watch" else 2, x["days_of_cover"] if x["days_of_cover"] is not None else 99999)); return {"items":out}
 
+@router.get("/inventory/export")
+async def inventory_export(admin:dict=Depends(require_permission("catalog"))):
+    rows=await _inventory_product_rows(); buf=io.StringIO(); w=csv.writer(buf); w.writerow(["Product","Variant","SKU","Supplier","On Hand","Reserved","Available","Reorder Level","Status","Cost","Retail","Inventory Value"])
+    for r in rows: w.writerow([r["name"],r.get("variant_label") or "",r.get("sku") or "",r.get("supplier_name") or "",r["stock"],r["reserved"],r["available"],r["reorder_level"],r["status_label"],r["cost_price"],r["price"],r["inventory_value"]])
+    return StreamingResponse(iter([buf.getvalue()]),media_type="text/csv",headers={"Content-Disposition":"attachment; filename=artful-inventory.csv"})
+
+# Supplier / purchasing controls
+@router.get("/inventory/suppliers")
+async def inventory_suppliers(admin:dict=Depends(require_permission("catalog"))):
+    items=[clean(x) async for x in db.inventory_suppliers.find({}, {"_id":0}).sort("name",1)]
+    for x in items: x["open_pos"]=await db.purchase_orders.count_documents({"supplier_id":x["id"],"status":"Open"})
+    return {"items":items}
+
+@router.post("/inventory/suppliers")
+async def create_supplier(payload:dict,request:Request,admin:dict=Depends(require_permission("catalog"))):
+    doc={"id":str(uuid.uuid4()),"name":(payload.get("name") or "").strip(),"code":(payload.get("code") or "").strip().upper(),"contact_name":payload.get("contact_name"),"phone":payload.get("phone"),"email":payload.get("email"),"address":payload.get("address"),"payment_terms":payload.get("payment_terms"),"lead_time_days":int(payload.get("lead_time_days",7) or 0),"active":bool(payload.get("active",True)),"created_at":now_iso()}
+    if not doc["name"]: raise HTTPException(400,"Supplier name is required.")
+    await db.inventory_suppliers.insert_one(doc); await audit(admin,"supplier_create","supplier",doc["id"],after=doc,request=request); return clean(doc)
+
+@router.put("/inventory/suppliers/{sid}")
+async def update_supplier(sid:str,payload:dict,request:Request,admin:dict=Depends(require_permission("catalog"))):
+    fields={k:payload[k] for k in ("name","code","contact_name","phone","email","address","payment_terms","lead_time_days","active") if k in payload}; await db.inventory_suppliers.update_one({"id":sid},{"$set":fields}); return clean(await db.inventory_suppliers.find_one({"id":sid}))
+
+@router.get("/inventory/purchase-orders")
+async def purchase_orders(limit:int=50,admin:dict=Depends(require_permission("catalog"))):
+    docs=[clean(x) async for x in db.purchase_orders.find({}, {"_id":0}).sort("created_at",-1).limit(min(max(limit,1),200))]; ids={x.get("supplier_id") for x in docs if x.get("supplier_id")}; sup={s["id"]:s.get("name") async for s in db.inventory_suppliers.find({"id":{"$in":list(ids)}},{"id":1,"name":1,"_id":0})}
+    for x in docs: x["supplier_name"]=sup.get(x.get("supplier_id"),"Unknown"); x["items_count"]=len(x.get("items",[])); x["total_value"]=sum(int(i.get("quantity",0))*float(i.get("unit_cost",0)) for i in x.get("items",[]))
+    return {"items":docs}
+
+@router.post("/inventory/purchase-orders")
+async def create_purchase_order(payload:dict,request:Request,admin:dict=Depends(require_permission("catalog"))):
+    supplier_id=str(payload.get("supplier_id") or ""); items=payload.get("items") or []; sup=await db.inventory_suppliers.find_one({"id":supplier_id})
+    if not sup: raise HTTPException(404,"Supplier not found.")
+    cleaned=[]
+    for i in items:
+        sku=str(i.get("sku") or "").strip(); qty=int(i.get("quantity",0) or 0); cost=float(i.get("unit_cost",0) or 0)
+        if sku and qty>0: cleaned.append({"sku":sku,"quantity":qty,"unit_cost":cost})
+    if not cleaned: raise HTTPException(400,"Add at least one valid SKU line.")
+    counter=await db.counters.find_one_and_update({"id":"po"},{"$inc":{"seq":1}},upsert=True,return_document=True); po=f"PO-{datetime.now(timezone.utc).year}-{int((counter or {}).get('seq',1)):05d}"
+    doc={"id":str(uuid.uuid4()),"po_number":po,"supplier_id":supplier_id,"items":cleaned,"notes":payload.get("notes"),"status":"Open","created_by":admin["email"],"created_at":now_iso()}; await db.purchase_orders.insert_one(doc); return clean(doc)
+
+@router.post("/inventory/purchase-orders/{poid}/receive")
+async def receive_purchase_order(poid:str,request:Request,admin:dict=Depends(require_permission("catalog"))):
+    po=await db.purchase_orders.find_one({"id":poid},{"_id":0});
+    if not po: raise HTTPException(404,"Purchase order not found.")
+    if po.get("status")!="Open": raise HTTPException(400,"Purchase order is already closed.")
+    for line in po.get("items",[]):
+        p=await db.products.find_one({"sku":line["sku"]},{"_id":0})
+        variant_id=None
+        if not p:
+            p=await db.products.find_one({"variants":{"$elemMatch":{"sku":line["sku"]}}},{"_id":0})
+            if p:
+                v=next((v for v in p.get("variants",[]) if v.get("sku")==line["sku"]),None); variant_id=(v or {}).get("id")
+        if p: await _inventory_apply_delta(p["id"],variant_id,int(line["quantity"]),admin["email"],f"PO {po['po_number']}","Purchase Receipt",line.get("unit_cost",0),request)
+    await db.purchase_orders.update_one({"id":poid},{"$set":{"status":"Received","received_at":now_iso(),"received_by":admin["email"]}}); return {"ok":True}
 
 # ---------------- PRODUCTS ----------------
 @router.get("/products")
@@ -663,7 +763,10 @@ async def update_order_status(order_number: str, payload: dict, request: Request
         paid = o["payment"]["status"] in ("paid", "cod_confirmed")
         for l in o["items"]:
             if paid:
+                before_doc = await db.products.find_one({"id": l["product_id"]}, {"stock": 1, "_id": 0})
                 await db.products.update_one({"id": l["product_id"]}, {"$inc": {"stock": l["qty"]}})
+                before_stock = int((before_doc or {}).get("stock", 0) or 0)
+                await db.inventory_transactions.insert_one({"id": str(uuid.uuid4()), "product_id": l["product_id"], "sku": l.get("sku"), "quantity": l["qty"], "change": l["qty"], "before_stock": before_stock, "after_stock": before_stock + int(l["qty"]), "movement_type": "Order Cancellation/Return", "reason": f"Order {o['order_number']} {new_status}", "source": "order", "at": now_iso()})
             else:
                 await db.products.update_one({"id": l["product_id"]}, {"$inc": {"reserved": -l["qty"]}})
     await db.orders.update_one({"order_number": order_number},
