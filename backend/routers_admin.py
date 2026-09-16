@@ -61,55 +61,242 @@ async def admin_me(admin: dict = Depends(get_current_admin)):
 
 
 # ---------------- DASHBOARD ----------------
+def _parse_dashboard_date(value, default):
+    if not value:
+        return default
+    try:
+        raw = value.strip()
+        if len(raw) == 10:
+            raw = raw + "T00:00:00+00:00"
+        dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    except Exception:
+        return default
+
+
+def _bucket_key(dt, granularity):
+    if granularity == "monthly":
+        return dt.strftime("%Y-%m")
+    if granularity == "weekly":
+        monday = dt - timedelta(days=dt.weekday())
+        return monday.strftime("%Y-%m-%d")
+    return dt.strftime("%Y-%m-%d")
+
+
+def _next_bucket(dt, granularity):
+    if granularity == "monthly":
+        month = 12 if dt.month == 12 else dt.month + 1
+        year = dt.year + 1 if dt.month == 12 else dt.year
+        return dt.replace(year=year, month=month, day=1)
+    if granularity == "weekly":
+        return dt + timedelta(days=7)
+    return dt + timedelta(days=1)
+
+
+def _bucket_start(dt, granularity):
+    if granularity == "monthly":
+        return dt.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    if granularity == "weekly":
+        base = dt - timedelta(days=dt.weekday())
+        return base.replace(hour=0, minute=0, second=0, microsecond=0)
+    return dt.replace(hour=0, minute=0, second=0, microsecond=0)
+
+
 @router.get("/dashboard/stats")
-async def dashboard(admin: dict = Depends(get_current_admin)):
+async def dashboard(from_date: str = "", to_date: str = "", granularity: str = "daily", admin: dict = Depends(get_current_admin)):
     now = datetime.now(timezone.utc)
-    today = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    week = today - timedelta(days=7)
-    month = today - timedelta(days=30)
+    end = _parse_dashboard_date(to_date, now)
+    if len(to_date) == 10:
+        end = end.replace(hour=23, minute=59, second=59, microsecond=999999)
+    start = _parse_dashboard_date(from_date, end - timedelta(days=29))
+    if start > end:
+        start, end = end - timedelta(days=29), end
+    granularity = granularity if granularity in {"daily", "weekly", "monthly"} else "daily"
 
-    async def revenue_since(dt):
-        total = 0
-        cur = db.orders.find({"payment.status": {"$in": ["paid", "cod_confirmed"]},
-                              "created_at": {"$gte": dt.isoformat()}}, {"pricing.total": 1, "_id": 0})
-        async for o in cur:
-            total += o["pricing"]["total"]
-        return total
+    paid_status = {"$in": ["paid", "cod_confirmed"]}
+    order_q = {"created_at": {"$gte": start.isoformat(), "$lte": end.isoformat()}}
+    paid_q = {**order_q, "payment.status": paid_status}
 
-    paid_q = {"payment.status": {"$in": ["paid", "cod_confirmed"]}}
-    all_paid = await db.orders.count_documents(paid_q)
-    total_rev = await revenue_since(datetime(2000, 1, 1, tzinfo=timezone.utc))
-    orders_by_status = {}
-    for st in ["Pending", "Confirmed", "Processing", "Shipped", "Delivered", "Cancelled", "Returned", "Refunded", "Failed"]:
-        orders_by_status[st] = await db.orders.count_documents({"status": st})
+    total_orders = await db.orders.count_documents(order_q)
+    paid_orders = await db.orders.count_documents(paid_q)
+    cancelled_orders = await db.orders.count_documents({**order_q, "status": "Cancelled"})
+    pending_orders = await db.orders.count_documents({**order_q, "status": "Pending"})
+    delivered_orders = await db.orders.count_documents({**order_q, "status": "Delivered"})
+    failed_orders = await db.orders.count_documents({**order_q, "status": "Failed"})
 
-    bestsellers = [clean(p) async for p in db.products.find({}, {"_id": 0}).sort("sales_count", -1).limit(5)]
-    low_stock = [clean(p) async for p in db.products.find(
-        {"$expr": {"$lte": ["$stock", "$low_stock_threshold"]}, "status": {"$ne": "Archived"}}, {"_id": 0}).limit(8)]
-    recent_orders = [clean(o) async for o in db.orders.find({}, {"_id": 0}).sort("created_at", -1).limit(6)]
-    recent_customers = [{"id": c["id"], "name": c.get("name"), "phone": c.get("phone"),
-                         "email": c.get("email"), "created_at": c.get("created_at")}
-                        async for c in db.customers.find({}, {"_id": 0}).sort("created_at", -1).limit(6)]
-    recent_activity = [clean(a) async for a in db.audit_logs.find({}, {"_id": 0}).sort("at", -1).limit(8)]
+    revenue = 0
+    discount = 0
+    shipping = 0
+    tax = 0
+    units_sold = 0
+    product_stats = {}
+    series = {}
+    cursor = db.orders.find(order_q, {"pricing": 1, "items": 1, "payment.status": 1, "created_at": 1, "customer_id": 1, "_id": 0})
+    async for o in cursor:
+        try:
+            dt = datetime.fromisoformat(o.get("created_at", "").replace("Z", "+00:00"))
+        except Exception:
+            continue
+        key = _bucket_key(dt, granularity)
+        point = series.setdefault(key, {"label": key, "revenue": 0, "orders": 0, "units": 0})
+        point["orders"] += 1
+        if o.get("payment", {}).get("status") in ["paid", "cod_confirmed"]:
+            pricing = o.get("pricing", {}) or {}
+            rev = float(pricing.get("total", 0) or 0)
+            revenue += rev
+            discount += float(pricing.get("discount", 0) or 0)
+            shipping += float(pricing.get("shipping", 0) or 0)
+            tax += float(pricing.get("tax", 0) or 0)
+            point["revenue"] += rev
+            for line in o.get("items", []) or []:
+                qty = int(line.get("qty", 0) or 0)
+                units_sold += qty
+                point["units"] += qty
+                pid = line.get("product_id")
+                if pid:
+                    ps = product_stats.setdefault(pid, {"id": pid, "name": line.get("name", "Unknown"), "qty": 0, "revenue": 0})
+                    ps["qty"] += qty
+                    ps["revenue"] += float(line.get("line_total", line.get("price", 0) * qty) or 0)
+
+    bucket_cursor = _bucket_start(start, granularity)
+    points = []
+    while bucket_cursor <= end:
+        key = _bucket_key(bucket_cursor, granularity)
+        points.append(series.get(key, {"label": key, "revenue": 0, "orders": 0, "units": 0}))
+        bucket_cursor = _next_bucket(bucket_cursor, granularity)
+
+    new_customers = await db.customers.count_documents({"created_at": {"$gte": start.isoformat(), "$lte": end.isoformat()}})
+    repeat_customers = await db.customers.count_documents({"order_count": {"$gt": 1}})
+    active_products = await db.products.count_documents({"status": "Active"})
+    out_of_stock = await db.products.count_documents({"$or": [{"status": "Out of Stock"}, {"stock": {"$lte": 0}}]})
+    low_stock = [clean(p) async for p in db.products.find({"$expr": {"$lte": ["$stock", "$low_stock_threshold"]}, "status": {"$ne": "Archived"}}, {"_id": 0}).sort("stock", 1).limit(10)]
+
+    status_counts = {}
+    for st in ["Pending", "Confirmed", "Processing", "Packed", "Shipped", "Out for Delivery", "Delivered", "Cancelled", "Returned", "Refunded", "Failed"]:
+        status_counts[st] = await db.orders.count_documents({**order_q, "status": st})
+
+    payment_counts = {}
+    for method in ["razorpay", "cod"]:
+        payment_counts[method] = await db.orders.count_documents({**order_q, "payment.method": method, "payment.status": paid_status})
+
+    top_products = sorted(product_stats.values(), key=lambda x: x["revenue"], reverse=True)[:10]
+    stock_value = 0
+    stock_units = 0
+    reserved_units = 0
+    async for p in db.products.find({"status": {"$ne": "Archived"}}, {"stock": 1, "reserved": 1, "price": 1, "_id": 0}):
+        stock = int(p.get("stock", 0) or 0)
+        reserved = int(p.get("reserved", 0) or 0)
+        stock_units += stock
+        reserved_units += reserved
+        stock_value += stock * float(p.get("price", 0) or 0)
 
     return {
-        "sales": {"total": total_rev, "today": await revenue_since(today),
-                  "week": await revenue_since(week), "month": await revenue_since(month),
-                  "orders_paid": all_paid,
-                  "aov": round(total_rev / all_paid) if all_paid else 0},
-        "orders": {"total": await db.orders.count_documents({}), "by_status": orders_by_status},
-        "customers": {"total": await db.customers.count_documents({}),
-                      "new_month": await db.customers.count_documents({"created_at": {"$gte": month.isoformat()}})},
-        "products": {"total": await db.products.count_documents({}),
-                     "active": await db.products.count_documents({"status": "Active"}),
-                     "out_of_stock": await db.products.count_documents({"status": "Out of Stock"}),
-                     "bestsellers": bestsellers},
-        "alerts": {"low_stock": low_stock,
-                   "refund_requests": await db.refunds.count_documents({"status": "Requested"}),
-                   "corporate_inquiries": await db.corporate_inquiries.count_documents({"status": "New"}),
-                   "failed_payments": await db.orders.count_documents({"status": "Failed"})},
-        "recent": {"orders": recent_orders, "customers": recent_customers, "activity": recent_activity},
+        "period": {"from": start.isoformat(), "to": end.isoformat(), "granularity": granularity},
+        "sales": {"revenue": round(revenue, 2), "discount": round(discount, 2), "shipping": round(shipping, 2), "tax": round(tax, 2),
+                  "paid_orders": paid_orders, "aov": round(revenue / paid_orders, 2) if paid_orders else 0,
+                  "units_sold": units_sold},
+        "orders": {"total": total_orders, "pending": pending_orders, "cancelled": cancelled_orders, "delivered": delivered_orders, "failed": failed_orders, "by_status": status_counts},
+        "customers": {"new": new_customers, "repeat": repeat_customers, "total": await db.customers.count_documents({})},
+        "products": {"active": active_products, "out_of_stock": out_of_stock, "low_stock": low_stock, "bestsellers": top_products},
+        "inventory": {"stock_units": stock_units, "reserved_units": reserved_units, "available_units": max(0, stock_units - reserved_units), "stock_value": round(stock_value, 2)},
+        "payments": payment_counts,
+        "series": points,
     }
+
+
+# ---------------- INVENTORY ----------------
+@router.get("/inventory/summary")
+async def inventory_summary(admin: dict = Depends(require_permission("catalog"))):
+    base = {"status": {"$ne": "Archived"}}
+    total_skus = await db.products.count_documents(base)
+    out_of_stock = await db.products.count_documents({**base, "$or": [{"stock": {"$lte": 0}}, {"status": "Out of Stock"}]})
+    low_stock = await db.products.count_documents({**base, "$expr": {"$lte": ["$stock", "$low_stock_threshold"]}})
+    stock_units = reserved_units = stock_value = 0
+    async for p in db.products.find(base, {"stock": 1, "reserved": 1, "price": 1, "_id": 0}):
+        stock = int(p.get("stock", 0) or 0); reserved = int(p.get("reserved", 0) or 0)
+        stock_units += stock; reserved_units += reserved; stock_value += stock * float(p.get("price", 0) or 0)
+    inbound = 0
+    async for t in db.inventory_transactions.find({"change": {"$gt": 0}}, {"change": 1, "_id": 0}): inbound += int(t.get("change", 0) or 0)
+    outbound = 0
+    async for t in db.inventory_transactions.find({"change": {"$lt": 0}}, {"change": 1, "_id": 0}): outbound += abs(int(t.get("change", 0) or 0))
+    return {"total_skus": total_skus, "stock_units": stock_units, "reserved_units": reserved_units, "available_units": max(0, stock_units-reserved_units),
+            "stock_value": round(stock_value, 2), "low_stock": low_stock, "out_of_stock": out_of_stock, "inbound": inbound, "outbound": outbound}
+
+
+@router.get("/inventory")
+async def inventory_list(q: str = "", level: str = "", page: int = 1, page_size: int = 25, sort: str = "stock_asc",
+                        admin: dict = Depends(require_permission("catalog"))):
+    prods = [p async for p in db.products.find({"status": {"$ne": "Archived"}}, {"_id": 0})]
+    ql = q.strip().lower()
+    rows = []
+    for p in prods:
+        stock = int(p.get("stock", 0) or 0); reserved = int(p.get("reserved", 0) or 0); threshold = int(p.get("low_stock_threshold", 5) or 5)
+        available = max(0, stock - reserved)
+        state = "out" if stock <= 0 else ("low" if stock <= threshold else "healthy")
+        if level and state != level: continue
+        if ql and ql not in str(p.get("name", "")).lower() and ql not in str(p.get("sku", "")).lower(): continue
+        rows.append({**clean(p), "available": available, "inventory_status": state, "stock_value": round(stock * float(p.get("price", 0) or 0), 2)})
+    reverse = sort.endswith("desc")
+    field = sort.replace("_desc", "").replace("_asc", "")
+    if field in {"stock", "available", "stock_value", "price", "sales_count"}:
+        rows.sort(key=lambda x: x.get(field, 0) or 0, reverse=reverse)
+    total = len(rows); pages = max(1, (total + page_size - 1) // page_size); page = min(max(page, 1), pages)
+    return {"items": rows[(page-1)*page_size:page*page_size], "total": total, "pages": pages, "page": page}
+
+
+@router.get("/inventory/movements")
+async def inventory_movements(product_id: str = "", limit: int = 100, admin: dict = Depends(require_permission("catalog"))):
+    query = {"product_id": product_id} if product_id else {}
+    rows = [clean(x) async for x in db.inventory_transactions.find(query, {"_id": 0}).sort("at", -1).limit(min(max(limit, 1), 500))]
+    ids = list({r.get("product_id") for r in rows if r.get("product_id")})
+    products = {p["id"]: p.get("name", "") async for p in db.products.find({"id": {"$in": ids}}, {"id": 1, "name": 1, "_id": 0})}
+    for r in rows: r["product_name"] = products.get(r.get("product_id"), "")
+    return {"items": rows}
+
+
+@router.post("/inventory/adjust")
+async def inventory_adjust(payload: dict, request: Request, admin: dict = Depends(require_permission("catalog"))):
+    pid = str(payload.get("product_id") or "")
+    if not pid: raise HTTPException(400, "product_id is required.")
+    p = await db.products.find_one({"id": pid}, {"_id": 0})
+    if not p: raise HTTPException(404, "Product not found.")
+    change = int(payload.get("change", 0)); reason = (payload.get("reason") or "Manual adjustment").strip()[:200]
+    if change == 0: raise HTTPException(400, "Adjustment cannot be zero.")
+    new_stock = max(0, int(p.get("stock", 0) or 0) + change)
+    update = {"stock": new_stock, "updated_at": now_iso()}
+    if new_stock > 0 and p.get("status") == "Out of Stock": update["status"] = "Active"
+    if new_stock <= 0 and p.get("status") == "Active": update["status"] = "Out of Stock"
+    await db.products.update_one({"id": pid}, {"$set": update})
+    await db.inventory_transactions.insert_one({"id": str(uuid.uuid4()), "product_id": pid, "change": change, "reason": reason, "admin": admin["email"], "at": now_iso()})
+    await audit(admin, "inventory_adjust", "product", pid, before={"stock": p.get("stock")}, after={"stock": new_stock, "change": change, "reason": reason}, request=request)
+    return {"ok": True, "stock": new_stock, "available": max(0, new_stock - int(p.get("reserved", 0) or 0))}
+
+
+@router.post("/inventory/bulk-adjust")
+async def inventory_bulk_adjust(payload: dict, request: Request, admin: dict = Depends(require_permission("catalog"))):
+    ids = [str(x) for x in payload.get("ids", []) if str(x).strip()]
+    change = int(payload.get("change", 0)); reason = (payload.get("reason") or "Bulk adjustment").strip()[:200]
+    if not ids or change == 0: raise HTTPException(400, "Select products and enter a non-zero adjustment.")
+    updated = 0
+    async for p in db.products.find({"id": {"$in": ids}}, {"_id": 0}):
+        new_stock = max(0, int(p.get("stock", 0) or 0) + change)
+        status = p.get("status")
+        if new_stock <= 0 and status == "Active": status = "Out of Stock"
+        elif new_stock > 0 and status == "Out of Stock": status = "Active"
+        await db.products.update_one({"id": p["id"]}, {"$set": {"stock": new_stock, "status": status, "updated_at": now_iso()}})
+        await db.inventory_transactions.insert_one({"id": str(uuid.uuid4()), "product_id": p["id"], "change": change, "reason": reason, "admin": admin["email"], "at": now_iso()})
+        updated += 1
+    await audit(admin, "inventory_bulk_adjust", "products", None, after={"ids": ids, "change": change, "reason": reason}, request=request)
+    return {"ok": True, "updated": updated}
+
+
+@router.post("/inventory/set-threshold")
+async def inventory_threshold(payload: dict, request: Request, admin: dict = Depends(require_permission("catalog"))):
+    pid = str(payload.get("product_id") or ""); threshold = max(0, int(payload.get("threshold", 5)))
+    if not pid: raise HTTPException(400, "product_id is required.")
+    await db.products.update_one({"id": pid}, {"$set": {"low_stock_threshold": threshold, "updated_at": now_iso()}})
+    await audit(admin, "inventory_threshold", "product", pid, after={"low_stock_threshold": threshold}, request=request)
+    return {"ok": True, "threshold": threshold}
 
 
 # ---------------- PRODUCTS ----------------

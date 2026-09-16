@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { Plus, Search, Copy, Archive, Edit, Trash2 } from "lucide-react";
+import { Plus, Search, Copy, Archive, Edit, Trash2, Boxes, AlertTriangle, ArrowDownToLine, ArrowUpFromLine, PackageCheck, RotateCcw } from "lucide-react";
 import { adminApi, apiError } from "../lib/api";
 import { toast } from "sonner";
 import { inr } from "../lib/utils";
@@ -402,34 +402,90 @@ export function Reviews() {
 }
 
 export function Inventory() {
-  const [items, setItems] = useState([]);
+  const [summary, setSummary] = useState(null);
+  const [data, setData] = useState({ items: [], pages: 1, total: 0 });
+  const [movements, setMovements] = useState([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
+  const [level, setLevel] = useState("");
+  const [sort, setSort] = useState("stock_asc");
   const [page, setPage] = useState(1);
-  const load = () => { setLoading(true); adminApi.get("/products?page_size=200").then(({ data }) => setItems(data.items)).catch(() => {}).finally(() => setLoading(false)); };
-  useEffect(() => { load(); }, []);
-  const adjust = async (e, p, change) => { e.stopPropagation(); await adminApi.post(`/products/${p.id}/inventory`, { change, reason: "Manual adjustment" }); toast.success("Stock updated"); load(); };
-  const filtered = items.filter((p) => !q || p.name.toLowerCase().includes(q.toLowerCase()) || (p.sku || "").toLowerCase().includes(q.toLowerCase()));
-  const pages = Math.max(1, Math.ceil(filtered.length / 15));
-  const rows = filtered.slice((page - 1) * 15, page * 15);
+  const [selected, setSelected] = useState(new Set());
+  const [adjustOpen, setAdjustOpen] = useState(null);
+  const [adjustValue, setAdjustValue] = useState(0);
+  const [reason, setReason] = useState("Manual stock adjustment");
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [sm, rows, mv] = await Promise.all([
+        adminApi.get("/inventory/summary"),
+        adminApi.get(`/inventory?q=${encodeURIComponent(q)}&level=${level}&sort=${sort}&page=${page}&page_size=25`),
+        adminApi.get("/inventory/movements?limit=12"),
+      ]);
+      setSummary(sm.data); setData(rows.data); setMovements(mv.data.items || []);
+    } catch (e) { toast.error(apiError(e)); }
+    finally { setLoading(false); }
+  }, [q, level, sort, page]);
+  useEffect(() => { const t = setTimeout(load, 180); return () => clearTimeout(t); }, [load]);
+  useEffect(() => { setPage(1); }, [q, level, sort]);
+  useEffect(() => { setSelected(new Set()); }, [q, level, sort, page]);
+
+  const toggle = (id) => setSelected((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const toggleAll = () => setSelected((prev) => data.items.length && data.items.every((p) => prev.has(p.id)) ? new Set() : new Set(data.items.map((p) => p.id)));
+  const applyBulk = async () => {
+    if (!selected.size || !Number(adjustValue)) return toast.error("Select products and enter an adjustment.");
+    try { await adminApi.post("/inventory/bulk-adjust", { ids: [...selected], change: Number(adjustValue), reason }); toast.success("Inventory updated"); setSelected(new Set()); setAdjustValue(0); await load(); }
+    catch (e) { toast.error(apiError(e)); }
+  };
+  const applyOne = async () => {
+    try { await adminApi.post("/inventory/adjust", { product_id: adjustOpen.id, change: Number(adjustValue), reason }); toast.success("Stock updated"); setAdjustOpen(null); setAdjustValue(0); await load(); }
+    catch (e) { toast.error(apiError(e)); }
+  };
+  const setThreshold = async (p) => {
+    const value = Number(window.prompt("Low-stock threshold", p.low_stock_threshold ?? 5));
+    if (!Number.isFinite(value) || value < 0) return;
+    try { await adminApi.post("/inventory/set-threshold", { product_id: p.id, threshold: value }); toast.success("Threshold updated"); load(); }
+    catch (e) { toast.error(apiError(e)); }
+  };
+  const kpis = summary ? [
+    ["Inventory Value", inr(summary.stock_value), Boxes, "Current stock × selling price"],
+    ["Units Available", summary.available_units, PackageCheck, `${summary.reserved_units} reserved`],
+    ["Low Stock", summary.low_stock, AlertTriangle, `${summary.out_of_stock} out of stock`],
+    ["Inbound / Outbound", `${summary.inbound} / ${summary.outbound}`, ArrowDownToLine, "Movement units"],
+  ] : [];
+
   return (
     <div>
-      <PageHead title="Inventory" subtitle="Adjust stock levels" />
-      <DataTable
-        testid="inventory" loading={loading} q={q} setQ={(v) => { setQ(v); setPage(1); }} searchPlaceholder="Search product or SKU…"
-        page={page} pages={pages} setPage={setPage} rows={rows} empty="No products"
-        columns={[
-          { key: "__select", label: <input type="checkbox" aria-label="Select all products on this page" checked={data.items.length > 0 && data.items.every((p) => selected.has(p.id))} onChange={toggleAll} className="accent-plum w-4 h-4" />, render: (p) => <input type="checkbox" aria-label={`Select ${p.name}`} checked={selected.has(p.id)} onChange={() => toggleSelected(p.id)} onClick={(e) => e.stopPropagation()} className="accent-plum w-4 h-4" /> },
-          { key: "name", label: "Product", render: (p) => <span className="artful-product-name text-gray-900">{p.name}</span> },
-          { key: "sku", label: "SKU", render: (p) => <span className="text-gray-500 font-mono text-xs">{p.sku}</span> },
-          { key: "stock", label: "Stock", render: (p) => <span className={p.stock <= p.low_stock_threshold ? "text-red-600 font-medium" : "text-gray-700"}>{p.stock}</span> },
-          { key: "adjust", label: "Adjust", render: (p) => <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
-            <button onClick={(e) => adjust(e, p, -1)} className="w-7 h-7 border border-gray-300 rounded text-gray-600">−</button>
-            <button onClick={(e) => adjust(e, p, 1)} className="w-7 h-7 border border-gray-300 rounded text-gray-600">+</button>
-            <button onClick={(e) => adjust(e, p, 10)} className="px-2 h-7 border border-gray-300 rounded text-gray-600 text-xs">+10</button>
-          </div> },
-        ]}
-      />
+      <PageHead title="Inventory Management" subtitle="Stock, availability, thresholds and movement history in one place" />
+      {summary && <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">{kpis.map(([label, value, Icon, sub]) => <div key={label} className="bg-white rounded-xl border border-gray-200 p-4"><div className="flex justify-between"><span className="text-xs text-gray-500">{label}</span><span className="w-8 h-8 rounded-lg bg-plum/10 text-plum flex items-center justify-center"><Icon size={16}/></span></div><p className="text-xl font-semibold mt-2">{value}</p><p className="text-[11px] text-gray-400 mt-1">{sub}</p></div>)}</div>}
+
+      <div className="bg-white rounded-xl border border-gray-200 p-4 mb-6">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="relative flex-1 min-w-[220px] max-w-sm"><Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/><input value={q} onChange={(e)=>setQ(e.target.value)} placeholder="Search product / SKU…" className={inputCls + " pl-9"}/></div>
+          <select value={level} onChange={(e)=>setLevel(e.target.value)} className={inputCls + " w-auto"}><option value="">All stock levels</option><option value="healthy">Healthy</option><option value="low">Low stock</option><option value="out">Out of stock</option></select>
+          <select value={sort} onChange={(e)=>setSort(e.target.value)} className={inputCls + " w-auto"}><option value="stock_asc">Lowest stock first</option><option value="stock_desc">Highest stock first</option><option value="available_asc">Lowest available</option><option value="stock_value_desc">Highest inventory value</option><option value="sales_count_desc">Top sellers</option></select>
+          {selected.size > 0 && <div className="flex items-center gap-2 ml-auto"><input type="number" value={adjustValue} onChange={(e)=>setAdjustValue(e.target.value)} className={inputCls+" w-24"} placeholder="±Qty"/><input value={reason} onChange={(e)=>setReason(e.target.value)} className={inputCls+" w-48"}/><button onClick={applyBulk} className="px-3 py-2 rounded-lg bg-plum text-white text-sm">Apply to {selected.size}</button></div>}
+        </div>
+      </div>
+
+      <DataTable testid="inventory" loading={loading} rows={data.items} page={data.page} pages={data.pages} setPage={setPage} empty="No inventory records" columns={[
+        { key:"__select", label:<input type="checkbox" checked={data.items.length>0 && data.items.every(p=>selected.has(p.id))} onChange={toggleAll}/>, render:(p)=><input type="checkbox" checked={selected.has(p.id)} onChange={()=>toggle(p.id)} onClick={e=>e.stopPropagation()} /> },
+        { key:"name", label:"Product", render:p=><div><div className="artful-product-name text-gray-900">{p.name}</div><div className="text-[11px] text-gray-400">{p.sku || "No SKU"}</div></div> },
+        { key:"stock", label:"On Hand", render:p=><span className={p.inventory_status === "out" ? "text-red-600 font-semibold" : p.inventory_status === "low" ? "text-amber-600 font-semibold" : "text-gray-800"}>{p.stock}</span> },
+        { key:"reserved", label:"Reserved", render:p=><span>{p.reserved || 0}</span> },
+        { key:"available", label:"Available", render:p=><span className="font-semibold">{p.available}</span> },
+        { key:"threshold", label:"Low Stock @", render:p=><button onClick={(e)=>{e.stopPropagation();setThreshold(p)}} className="text-xs text-plum underline">{p.low_stock_threshold ?? 5}</button> },
+        { key:"value", label:"Stock Value", align:"right", render:p=>inr(p.stock_value) },
+        { key:"adjust", label:"Actions", render:p=><div className="flex gap-1" onClick={e=>e.stopPropagation()}><button onClick={()=>{setAdjustOpen(p);setAdjustValue(1);setReason("Manual restock")}} title="Restock" className="w-8 h-8 border rounded-lg text-emerald-700"><ArrowDownToLine size={14} className="mx-auto"/></button><button onClick={()=>{setAdjustOpen(p);setAdjustValue(-1);setReason("Manual issue")}} title="Issue stock" className="w-8 h-8 border rounded-lg text-red-600"><ArrowUpFromLine size={14} className="mx-auto"/></button><button onClick={()=>{setAdjustOpen(p);setAdjustValue(0);setReason("Manual adjustment")}} className="px-2 border rounded-lg text-xs">Adjust</button></div>},
+      ]} />
+
+      <div className="grid lg:grid-cols-2 gap-6 mt-6">
+        <div className="bg-white rounded-xl border border-gray-200 p-5"><h3 className="font-semibold mb-3 flex items-center gap-2"><RotateCcw size={15} className="text-plum"/> Recent stock movements</h3><div className="space-y-2 text-sm">{movements.map(m=><div key={m.id} className="flex justify-between gap-3 border-b border-gray-50 pb-2"><div><p className="text-gray-800 truncate">{m.product_name || m.product_id}</p><p className="text-[11px] text-gray-400">{m.reason} · {m.admin || "system"}</p></div><b className={m.change > 0 ? "text-emerald-600" : "text-red-600"}>{m.change > 0 ? "+" : ""}{m.change}</b></div>)}{movements.length===0&&<p className="text-gray-400">No movements yet.</p>}</div></div>
+        <div className="bg-white rounded-xl border border-gray-200 p-5"><h3 className="font-semibold mb-3">Inventory health</h3><div className="space-y-4 text-sm"><div><div className="flex justify-between mb-1"><span>Available units</span><b>{summary?.available_units || 0}</b></div><div className="h-2 bg-gray-100 rounded-full"><div className="h-2 rounded-full bg-plum" style={{width:`${summary?.stock_units ? Math.min(100, ((summary.available_units/summary.stock_units)*100)) : 0}%`}}/></div></div><div className="flex justify-between"><span>SKUs tracked</span><b>{summary?.total_skus || 0}</b></div><div className="flex justify-between"><span>Low stock SKUs</span><b className="text-amber-600">{summary?.low_stock || 0}</b></div><div className="flex justify-between"><span>Out of stock SKUs</span><b className="text-red-600">{summary?.out_of_stock || 0}</b></div></div></div>
+      </div>
+
+      {adjustOpen && <Modal open title={`Adjust stock — ${adjustOpen.name}`} onClose={()=>setAdjustOpen(null)}><div className="space-y-4"><Field label="Quantity change"><input type="number" value={adjustValue} onChange={e=>setAdjustValue(e.target.value)} className={inputCls}/></Field><Field label="Reason"><input value={reason} onChange={e=>setReason(e.target.value)} className={inputCls}/></Field><p className="text-xs text-gray-400">Current stock: {adjustOpen.stock} · Available: {adjustOpen.available}</p><div className="flex justify-end gap-2"><button onClick={()=>setAdjustOpen(null)} className="px-4 py-2 text-sm">Cancel</button><button onClick={applyOne} className="px-4 py-2 bg-plum text-white rounded-lg text-sm">Save adjustment</button></div></div></Modal>}
     </div>
   );
 }
