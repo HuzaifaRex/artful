@@ -99,7 +99,7 @@ function ProductRail({ heading, subheading, collectionSlug }) {
         </div>
         <Link to={`/collections/${collectionSlug}`} className="btn-ghost !px-0 hidden sm:flex">View All <ArrowRight size={15} /></Link>
       </div>
-      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-x-5 gap-y-10">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-5 gap-y-10">
         {!items ? [0, 1, 2, 3].map((i) => <ProductSkeleton key={i} />)
           : items.slice(0, 4).map((p, i) => <ProductCard key={p.id} product={p} index={i} />)}
       </div>
@@ -233,7 +233,7 @@ function ValuesSection({ s }) {
           <h2 className="font-serif text-3xl sm:text-4xl lg:text-5xl font-light">{s.heading}</h2>
           {s.subheading && <p className="text-cream/70 mt-4">{s.subheading}</p>}
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-5 lg:gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 lg:gap-6">
           {(s.items || []).map((v, i) => {
             const IconCmp = getIcon(v.icon);
             return (
@@ -259,7 +259,7 @@ function PromiseSection({ s }) {
         <h2 className="section-title">{s.heading}</h2>
         {s.subheading && <p className="text-ink-secondary mt-3">{s.subheading}</p>}
       </div>
-      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
         {(s.items || []).map((it, i) => {
           const IconCmp = getIcon(it.icon);
           return (
