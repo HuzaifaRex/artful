@@ -314,6 +314,9 @@ async def create_order(payload: dict, cust: dict = Depends(get_current_customer)
             {"id": line["product_id"]},
             {"$inc": {"reserved": line["qty"]}},
         )
+        prod = await db.products.find_one({"id": line["product_id"]}, {"stock":1,"reserved":1,"status":1,"_id":0})
+        if prod and prod.get("status") == "Active" and int(prod.get("stock",0) or 0) - int(prod.get("reserved",0) or 0) <= 0:
+            await db.products.update_one({"id": line["product_id"]}, {"$set": {"status": "Out of Stock"}})
 
     try:
         if method == "cod":
@@ -400,7 +403,7 @@ async def create_order(payload: dict, cust: dict = Depends(get_current_customer)
 
 
 async def _finalize_paid_order(order, payment_id=None, method="razorpay"):
-    """Idempotently finalize a captured payment or COD order."""
+    """Confirm payment while keeping inventory reserved until delivery."""
     guard = await db.orders.update_one(
         {"id": order["id"], "payment.status": {"$nin": ["paid", "cod_confirmed"]}},
         {"$set": {
@@ -409,56 +412,28 @@ async def _finalize_paid_order(order, payment_id=None, method="razorpay"):
             "payment.razorpay_payment_id": payment_id if method != "cod" else None,
             "payment.method": method,
             "status": "Confirmed", "updated_at": now_iso(),
-        },
-         "$push": {"status_history": {
-             "status": "Confirmed", "at": now_iso(),
-             "note": "Payment confirmed." if method != "cod" else "COD order confirmed.",
-         }}}
+        }, "$push": {"status_history": {
+            "status": "Confirmed", "at": now_iso(),
+            "note": "Payment confirmed." if method != "cod" else "COD order confirmed.",
+        }}}
     )
     if guard.modified_count == 0:
         return
-
     for line in order["items"]:
-        qty = int(line.get("qty", 0) or 0)
-        before_doc = await db.products.find_one({"id": line["product_id"]}, {"stock": 1, "_id": 0})
-        before_stock = int((before_doc or {}).get("stock", 0) or 0)
-        guard_stock = await db.products.update_one(
-            {"id": line["product_id"], "$expr": {"$gte": [{"$subtract": [{"$ifNull": ["$stock", 0]}, {"$ifNull": ["$reserved", 0]}]}, qty]}},
-            {"$inc": {"reserved": -qty, "stock": -qty, "sales_count": qty}},
-        )
-        if guard_stock.modified_count == 0:
-            raise HTTPException(409, "Inventory became unavailable before order confirmation. Please retry.")
+        await db.products.update_one({"id": line["product_id"]}, {"$inc": {"sales_count": line["qty"]}})
         await db.inventory_transactions.insert_one({
-            "id": str(uuid.uuid4()), "product_id": line["product_id"], "sku": line.get("sku"), "quantity": -qty, "change": -qty,
-            "before_stock": before_stock, "after_stock": before_stock - qty, "movement_type": "Order",
-            "reason": f"Order {order['order_number']}", "source": "order", "at": now_iso(),
+            "id": str(uuid.uuid4()), "product_id": line["product_id"], "change": 0,
+            "reserved_change": 0, "reason": f"Order {order['order_number']} confirmed; stock remains reserved",
+            "at": now_iso(), "source": "order_confirmed", "order_number": order["order_number"],
         })
-        prod = await db.products.find_one({"id": line["product_id"]}, {"stock": 1, "status": 1, "_id": 0})
-        if prod and prod.get("stock", 0) <= 0 and prod.get("status") == "Active":
-            await db.products.update_one({"id": line["product_id"]}, {"$set": {"status": "Out of Stock"}})
-
     if order["pricing"].get("coupon_code"):
-        await db.coupons.update_one(
-            {"code": order["pricing"]["coupon_code"]},
-            {"$inc": {"used_count": 1}},
-        )
-    await db.customers.update_one(
-        {"id": order["customer_id"]},
-        {"$set": {"status": "Active"}, "$inc": {
-            "order_count": 1, "total_spend": order["pricing"]["total"]}},
-    )
-    await db.notifications.insert_one({
-        "id": str(uuid.uuid4()), "type": "new_order",
-        "title": f"New order {order['order_number']}",
-        "order_number": order["order_number"], "read": False, "at": now_iso(),
-    })
-    customer = await db.customers.find_one({"id": order["customer_id"]}, {"phone": 1, "_id": 0})
+        await db.coupons.update_one({"code": order["pricing"]["coupon_code"]}, {"$inc": {"used_count": 1}})
+    await db.customers.update_one({"id": order["customer_id"]}, {"$set": {"status": "Active"}, "$inc": {"order_count": 1, "total_spend": order["pricing"]["total"]}})
+    await db.notifications.insert_one({"id":str(uuid.uuid4()),"type":"new_order","title":f"New order {order['order_number']}","order_number":order["order_number"],"read":False,"at":now_iso()})
+    customer = await db.customers.find_one({"id": order["customer_id"]}, {"phone":1,"name":1,"_id":0})
     if customer and customer.get("phone"):
-        await ig.send_sms(
-            customer["phone"],
-            f"ARTFUL: Your order {order['order_number']} is confirmed! "
-            f"Amount Rs.{order['pricing']['total']}. Track it in your account. Thank you for shopping with us.",
-        )
+        order_for_message = dict(order); order_for_message["customer"] = {"phone":customer.get("phone"),"name":customer.get("name") or (order.get("customer") or {}).get("name") or "there"}
+        asyncio.create_task(_send_order_whatsapp(order_for_message, ig.WHATSAPP_TEMPLATE_ORDER_CONFIRMATION, [order_for_message["customer"]["name"], order["order_number"]]))
 
 
 async def _mark_payment_failed(order, reason="Payment failed."):
@@ -522,7 +497,7 @@ async def _reconcile_payment(order_id, payment_id):
 
 
 async def _finalize_paid_order(order, payment_id=None, method="razorpay"):
-    """Idempotently finalize a captured payment or COD order."""
+    """Confirm payment while keeping inventory reserved until delivery."""
     guard = await db.orders.update_one(
         {"id": order["id"], "payment.status": {"$nin": ["paid", "cod_confirmed"]}},
         {"$set": {
@@ -531,61 +506,28 @@ async def _finalize_paid_order(order, payment_id=None, method="razorpay"):
             "payment.razorpay_payment_id": payment_id if method != "cod" else None,
             "payment.method": method,
             "status": "Confirmed", "updated_at": now_iso(),
-        },
-         "$push": {"status_history": {
-             "status": "Confirmed", "at": now_iso(),
-             "note": "Payment confirmed." if method != "cod" else "COD order confirmed.",
-         }}}
+        }, "$push": {"status_history": {
+            "status": "Confirmed", "at": now_iso(),
+            "note": "Payment confirmed." if method != "cod" else "COD order confirmed.",
+        }}}
     )
     if guard.modified_count == 0:
         return
-
     for line in order["items"]:
-        qty = int(line.get("qty", 0) or 0)
-        before_doc = await db.products.find_one({"id": line["product_id"]}, {"stock": 1, "_id": 0})
-        before_stock = int((before_doc or {}).get("stock", 0) or 0)
-        guard_stock = await db.products.update_one(
-            {"id": line["product_id"], "$expr": {"$gte": [{"$subtract": [{"$ifNull": ["$stock", 0]}, {"$ifNull": ["$reserved", 0]}]}, qty]}},
-            {"$inc": {"reserved": -qty, "stock": -qty, "sales_count": qty}},
-        )
-        if guard_stock.modified_count == 0:
-            raise HTTPException(409, "Inventory became unavailable before order confirmation. Please retry.")
+        await db.products.update_one({"id": line["product_id"]}, {"$inc": {"sales_count": line["qty"]}})
         await db.inventory_transactions.insert_one({
-            "id": str(uuid.uuid4()), "product_id": line["product_id"], "sku": line.get("sku"), "quantity": -qty, "change": -qty,
-            "before_stock": before_stock, "after_stock": before_stock - qty, "movement_type": "Order",
-            "reason": f"Order {order['order_number']}", "source": "order", "at": now_iso(),
+            "id": str(uuid.uuid4()), "product_id": line["product_id"], "change": 0,
+            "reserved_change": 0, "reason": f"Order {order['order_number']} confirmed; stock remains reserved",
+            "at": now_iso(), "source": "order_confirmed", "order_number": order["order_number"],
         })
-        prod = await db.products.find_one({"id": line["product_id"]}, {"stock": 1, "status": 1, "_id": 0})
-        if prod and prod.get("stock", 0) <= 0 and prod.get("status") == "Active":
-            await db.products.update_one({"id": line["product_id"]}, {"$set": {"status": "Out of Stock"}})
-
     if order["pricing"].get("coupon_code"):
-        await db.coupons.update_one(
-            {"code": order["pricing"]["coupon_code"]},
-            {"$inc": {"used_count": 1}},
-        )
-    await db.customers.update_one(
-        {"id": order["customer_id"]},
-        {"$set": {"status": "Active"}, "$inc": {
-            "order_count": 1, "total_spend": order["pricing"]["total"]}},
-    )
-    await db.notifications.insert_one({
-        "id": str(uuid.uuid4()), "type": "new_order",
-        "title": f"New order {order['order_number']}",
-        "order_number": order["order_number"], "read": False, "at": now_iso(),
-    })
-    customer = await db.customers.find_one({"id": order["customer_id"]}, {"phone": 1, "name": 1, "_id": 0})
+        await db.coupons.update_one({"code": order["pricing"]["coupon_code"]}, {"$inc": {"used_count": 1}})
+    await db.customers.update_one({"id": order["customer_id"]}, {"$set": {"status": "Active"}, "$inc": {"order_count": 1, "total_spend": order["pricing"]["total"]}})
+    await db.notifications.insert_one({"id":str(uuid.uuid4()),"type":"new_order","title":f"New order {order['order_number']}","order_number":order["order_number"],"read":False,"at":now_iso()})
+    customer = await db.customers.find_one({"id": order["customer_id"]}, {"phone":1,"name":1,"_id":0})
     if customer and customer.get("phone"):
-        order_for_message = dict(order)
-        order_for_message["customer"] = {
-            "phone": customer.get("phone"),
-            "name": customer.get("name") or (order.get("customer") or {}).get("name") or "there",
-        }
-        asyncio.create_task(_send_order_whatsapp(
-            order_for_message,
-            ig.WHATSAPP_TEMPLATE_ORDER_CONFIRMATION,
-            [order_for_message["customer"]["name"], order["order_number"]],
-        ))
+        order_for_message = dict(order); order_for_message["customer"] = {"phone":customer.get("phone"),"name":customer.get("name") or (order.get("customer") or {}).get("name") or "there"}
+        asyncio.create_task(_send_order_whatsapp(order_for_message, ig.WHATSAPP_TEMPLATE_ORDER_CONFIRMATION, [order_for_message["customer"]["name"], order["order_number"]]))
 
 
 async def _mark_payment_failed(order, reason="Payment failed."):
@@ -851,15 +793,12 @@ async def cancel_order(order_number: str, payload: dict, cust: dict = Depends(ge
         raise HTTPException(404, "Order not found.")
     if o["status"] in ("Shipped", "Out for Delivery", "Delivered", "Cancelled", "Returned", "Refunded"):
         raise HTTPException(400, f"This order cannot be cancelled once it is {o['status'].lower()}.")
-    paid = o["payment"]["status"] in ("paid", "cod_confirmed")
     for l in o["items"]:
-        if paid:
-            before_doc = await db.products.find_one({"id": l["product_id"]}, {"stock": 1, "_id": 0})
-            await db.products.update_one({"id": l["product_id"]}, {"$inc": {"stock": l["qty"]}})
-            before_stock = int((before_doc or {}).get("stock", 0) or 0)
-            await db.inventory_transactions.insert_one({"id": str(uuid.uuid4()), "product_id": l["product_id"], "sku": l.get("sku"), "quantity": l["qty"], "change": l["qty"], "before_stock": before_stock, "after_stock": before_stock + int(l["qty"]), "movement_type": "Order Cancellation", "reason": f"Order {o['order_number']} cancelled", "source": "order", "at": now_iso()})
-        else:
-            await db.products.update_one({"id": l["product_id"]}, {"$inc": {"reserved": -l["qty"]}})
+        await db.products.update_one({"id": l["product_id"]}, {"$inc": {"reserved": -l["qty"]}})
+        prod = await db.products.find_one({"id": l["product_id"]}, {"stock":1,"reserved":1,"status":1,"_id":0})
+        if prod and prod.get("status") == "Out of Stock" and int(prod.get("stock",0) or 0) - int(prod.get("reserved",0) or 0) > 0:
+            await db.products.update_one({"id": l["product_id"]}, {"$set": {"status": "Active"}})
+        await db.inventory_transactions.insert_one({"id":str(uuid.uuid4()),"product_id":l["product_id"],"change":0,"reason":f"Order {o['order_number']} cancelled; reservation released","at":now_iso(),"source":"order_cancel","order_number":o["order_number"]})
     await db.orders.update_one({"id": o["id"]}, {"$set": {"status": "Cancelled", "updated_at": now_iso()},
         "$push": {"status_history": {"status": "Cancelled", "at": now_iso(),
                   "note": payload.get("reason") or "Cancelled by customer."}}})

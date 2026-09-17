@@ -101,7 +101,7 @@ export function Products() {
 function ProductForm({ product, cats, onClose, onSaved }) {
   const isNew = !product.id;
   const [f, setF] = useState({
-    name: "", price: "", compare_at_price: "", stock: 0, low_stock_threshold: 5, sku: "",
+    name: "", price: "", cost_price: "", mrp: "", compare_at_price: "", stock: 0, low_stock_threshold: 5, sku: "",
     category_slug: cats[0]?.slug || "", short_description: "", description: "", material: "", color: "",
     status: "Active", badges: [], tags: [], images: [], occasion: [], recipient: [],
     personalization: { enabled: false, char_limit: 30 },
@@ -119,7 +119,7 @@ function ProductForm({ product, cats, onClose, onSaved }) {
     if (!f.name || f.price === "") return toast.error("Name and price are required");
     setSaving(true);
     const bulk = f.bulk_order?.enabled ? { enabled: true, min_quantity: Math.max(2, Number(f.bulk_order?.min_quantity || 2)), tiers: (f.bulk_order?.tiers || []).map((t) => ({ min_quantity: Math.max(2, Number(t.min_quantity || 0)), price: Math.max(1, Number(t.price || 0)) })).filter((t) => t.min_quantity > 0 && t.price > 0) } : { enabled: false, min_quantity: Number(f.bulk_order?.min_quantity || 10), tiers: [] };
-    const payload = { ...f, price: Number(f.price), compare_at_price: f.compare_at_price ? Number(f.compare_at_price) : null, stock: Number(f.stock), low_stock_threshold: Number(f.low_stock_threshold), bulk_order: bulk, tags: typeof f.tags === "string" ? f.tags.split(",").map((x) => x.trim()).filter(Boolean) : f.tags, images: typeof f.images === "string" ? f.images.split("\n").map((x) => x.trim()).filter(Boolean) : f.images, occasion: typeof f.occasion === "string" ? f.occasion.split(",").map((x) => x.trim()).filter(Boolean) : f.occasion, recipient: typeof f.recipient === "string" ? f.recipient.split(",").map((x) => x.trim()).filter(Boolean) : f.recipient };
+    const payload = { ...f, price: Number(f.price), cost_price: Number(f.cost_price || 0), mrp: f.mrp ? Number(f.mrp) : (f.compare_at_price ? Number(f.compare_at_price) : null), compare_at_price: f.mrp ? Number(f.mrp) : (f.compare_at_price ? Number(f.compare_at_price) : null), stock: Number(f.stock), low_stock_threshold: Number(f.low_stock_threshold), bulk_order: bulk, tags: typeof f.tags === "string" ? f.tags.split(",").map((x) => x.trim()).filter(Boolean) : f.tags, images: typeof f.images === "string" ? f.images.split("\n").map((x) => x.trim()).filter(Boolean) : f.images, occasion: typeof f.occasion === "string" ? f.occasion.split(",").map((x) => x.trim()).filter(Boolean) : f.occasion, recipient: typeof f.recipient === "string" ? f.recipient.split(",").map((x) => x.trim()).filter(Boolean) : f.recipient };
     try {
       if (isNew) await adminApi.post("/products", payload);
       else await adminApi.put(`/products/${product.id}`, payload);
@@ -134,9 +134,10 @@ function ProductForm({ product, cats, onClose, onSaved }) {
       <div className="grid sm:grid-cols-2 gap-4">
         <Field label="Name *"><input value={f.name} onChange={(e) => set("name", e.target.value)} className={inputCls} data-testid="pf-name" /></Field>
         <Field label="SKU"><input value={f.sku} onChange={(e) => set("sku", e.target.value)} className={inputCls} /></Field>
-        <Field label="Price (₹) *"><input type="number" value={f.price} onChange={(e) => set("price", e.target.value)} className={inputCls} data-testid="pf-price" /></Field>
-        <Field label="Compare-at Price (₹)"><input type="number" value={f.compare_at_price || ""} onChange={(e) => set("compare_at_price", e.target.value)} className={inputCls} /></Field>
-        <Field label="Stock"><input type="number" value={f.stock} onChange={(e) => set("stock", e.target.value)} className={inputCls} data-testid="pf-stock" /></Field>
+        <Field label="Selling Price (₹) *"><input type="number" value={f.price} onChange={(e) => set("price", e.target.value)} className={inputCls} data-testid="pf-price" /></Field>
+        <Field label="Purchase Price / COGS (₹)"><input type="number" min="0" value={f.cost_price ?? ""} onChange={(e) => set("cost_price", e.target.value)} className={inputCls} /></Field>
+        <Field label="MRP (₹)"><input type="number" min="0" value={f.mrp ?? ""} onChange={(e) => set("mrp", e.target.value)} className={inputCls} /></Field>
+        <Field label="Stock Quantity"><input type="number" min="0" value={f.stock} onChange={(e) => set("stock", e.target.value)} className={inputCls} data-testid="pf-stock" /></Field>
         <Field label="Low stock threshold"><input type="number" value={f.low_stock_threshold} onChange={(e) => set("low_stock_threshold", e.target.value)} className={inputCls} /></Field>
         <Field label="Category"><select value={f.category_slug} onChange={(e) => set("category_slug", e.target.value)} className={inputCls}>{cats.map((c) => <option key={c.slug} value={c.slug}>{c.name}</option>)}</select></Field>
         <Field label="Status"><select value={f.status} onChange={(e) => set("status", e.target.value)} className={inputCls} data-testid="pf-status">{STATUSES.map((s) => <option key={s}>{s}</option>)}</select></Field>

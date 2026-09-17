@@ -49,6 +49,11 @@ async def build_line_items(items):
             errors.append({"product_id": prod["id"], "name": prod["name"], "error": "Out of stock."})
             continue
         price = bulk_unit_price(prod, capped, base_price)
+        unit_cost = (variant or {}).get("cost_price", prod.get("cost_price", 0)) if variant else prod.get("cost_price", 0)
+        try:
+            unit_cost = float(unit_cost or 0)
+        except (TypeError, ValueError):
+            unit_cost = 0.0
         gift_wrap = bool(it.get("gift_wrap"))
         wrap_price = 199 if gift_wrap else 0
         bulk_config = prod.get("bulk_order") or {}
@@ -57,7 +62,7 @@ async def build_line_items(items):
             "product_id": prod["id"], "name": prod["name"], "slug": prod["slug"],
             "image": (prod.get("images") or [None])[0], "sku": prod.get("sku"),
             "variant_id": it.get("variant_id"), "variant_label": (variant or {}).get("label") if variant else None,
-            "price": price, "base_price": base_price, "qty": capped, "requested_qty": qty,
+            "price": price, "base_price": base_price, "cost_price": unit_cost, "qty": capped, "requested_qty": qty,
             "bulk_order": {"enabled": bool(bulk_config.get("enabled")), "applied": bulk_enabled_for_line,
                            "min_quantity": int(bulk_config.get("min_quantity", 0) or 0), "tiers": bulk_config.get("tiers", [])},
             "gift_wrap": gift_wrap, "wrap_price": wrap_price,

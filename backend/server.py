@@ -66,6 +66,10 @@ async def startup():
     await db.orders.create_index("customer_id")
     await db.coupons.create_index("code", unique=True)
     await db.admin_users.create_index("email", unique=True)
+    await db.pnl_expenses.create_index("date")
+    await db.pnl_expenses.create_index("category")
+    await db.inventory_transactions.create_index("product_id")
+    await db.inventory_transactions.create_index("at")
     await seed_module.seed()
     await seed_admin()
     try:

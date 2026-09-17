@@ -9,6 +9,7 @@ import { adminApi } from "../lib/api";
 import Dashboard from "./Dashboard";
 import { Products, Categories, Collections, Reviews } from "./Catalog";
 import Inventory from "./Inventory";
+import Pnl from "./Pnl";
 import Orders from "./Orders";
 import Customers from "./Customers";
 import { Coupons } from "./Marketing";
@@ -28,7 +29,7 @@ const NAV = [
   { section: "Leads", items: [["visitors", "Visitors", Eye], ["newsletter", "Newsletter", Mail], ["support", "Support Inbox", MessageSquare]] },
   { section: "Marketing", items: [["coupons", "Coupons & Discounts", Ticket], ["campaigns", "Campaigns", Image], ["search", "Search Rules", SearchIcon]] },
   { section: "Content", items: [["homepage", "Homepage CMS", LayoutDashboard], ["site-pages", "Site Pages", Globe], ["pages", "Legal Pages", FileText], ["faqs", "FAQs", FileText]] },
-  { section: "Business", items: [["corporate", "Corporate", Briefcase], ["settings", "Settings", SettingsIcon], ["admin-users", "Admin Users", ShieldCheck], ["audit", "Audit Logs", ScrollText]] },
+  { section: "Business", items: [["pnl", "P&L", FileText], ["corporate", "Corporate", Briefcase], ["settings", "Settings", SettingsIcon], ["admin-users", "Admin Users", ShieldCheck], ["audit", "Audit Logs", ScrollText]] },
 ];
 
 export default function AdminApp() {
@@ -112,6 +113,7 @@ export default function AdminApp() {
             <Route path="collections" element={<Collections />} />
             <Route path="inventory" element={<Inventory />} />
             <Route path="reviews" element={<Reviews />} />
+            <Route path="pnl" element={<Pnl />} />
             <Route path="orders" element={<Orders />} />
             <Route path="transactions" element={<Transactions />} />
             <Route path="refunds" element={<Refunds />} />
