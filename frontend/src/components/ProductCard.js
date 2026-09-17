@@ -81,13 +81,13 @@ export default function ProductCard({ product, index = 0 }) {
 
       <div className="flex flex-1 flex-col p-4 sm:p-5">
         <Link to={`/products/${product.slug}`}>
-          <h3 className="line-clamp-2 min-h-[3rem] text-base font-semibold leading-6 text-ink transition-colors hover:text-plum">
+          <h3 className="line-clamp-2  text-base font-semibold leading-6 text-ink transition-colors hover:text-plum">
             {product.name}
           </h3>
         </Link>
 
         {description && (
-          <p className="mt-2 line-clamp-2 min-h-[2.5rem] text-xs leading-5 text-ink-muted">
+          <p className="mt-3 line-clamp-2  text-xs leading-5 text-ink-muted">
             {description}
           </p>
         )}
@@ -112,7 +112,7 @@ export default function ProductCard({ product, index = 0 }) {
           )}
         </div>
 
-        <div className="mt-auto pt-2">
+        <div className="mt-auto pt-3">
           {soldOut ? (
             <div className="rounded-full border border-line py-3 text-center text-[11px] font-semibold uppercase tracking-widest2 text-ink-muted">
               Sold Out
