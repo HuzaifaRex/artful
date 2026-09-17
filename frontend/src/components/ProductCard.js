@@ -87,7 +87,7 @@ export default function ProductCard({ product, index = 0 }) {
         </Link>
 
         {description && (
-          <p className="mt-3 line-clamp-2  text-xs leading-5 text-ink-muted">
+          <p className="mt-1 line-clamp-2  text-xs leading-5 text-ink-muted">
             {description}
           </p>
         )}
