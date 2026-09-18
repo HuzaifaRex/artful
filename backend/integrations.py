@@ -108,7 +108,7 @@ async def send_whatsapp_template(phone: str, template_name: str = None, language
     except Exception as e:
         print(f"[whatsapp] request failed: {e}")
         return {"sent": False, "configured": True, "error": str(e)}
-
+ 
 
 async def send_whatsapp_auth_otp(phone: str, code: str, language_code: str = "en"):
     """Send an OTP using Meta's authentication template.
