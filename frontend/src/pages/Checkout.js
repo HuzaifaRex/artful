@@ -283,8 +283,9 @@ export default function Checkout() {
               {field("line1", "Flat / House No., Building", true, { full: true })}
               {field("line2", "Apartment / Road (optional)", false, { full: true })}
               {field("area", "Area / Locality", false)}
-              {field("city", "City", true, { type: "select", options: getCitiesForState(addr.state) })}
               {field("state", "State", true, { type: "select", options: INDIAN_STATES })}
+              {field("city", "City", true, { type: "select", options: getCitiesForState(addr.state) })}
+              
               {field("pincode", "Pincode", true, { numeric: true })}
               {field("instructions", "Delivery instructions (optional)", false, { full: true })}
             </div>
