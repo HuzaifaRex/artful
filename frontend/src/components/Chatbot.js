@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Bot, ChevronDown, MessageCircle, Send, Sparkles, X } from "lucide-react";
+import { Bot, ChevronDown, MessageCircle, MessageCircleMore, Send, Sparkles, X } from "lucide-react";
 import { api, apiError } from "../lib/api";
 
 const QUICK_QUESTIONS = [
@@ -78,7 +78,7 @@ export default function Chatbot() {
             aria-label="Chat with ARTFUL on WhatsApp"
             data-testid="chat-whatsapp"
           >
-            <MessageCircle size={16} /> Chat on WhatsApp
+            <MessageCircleMore size={22} />  WhatsApp
           </a>
           <button
             type="button"
@@ -88,7 +88,7 @@ export default function Chatbot() {
             title="Ask ARTFUL"
             data-testid="chatbot-open"
           >
-            <MessageCircle size={22} />
+            <Sparkles size={22} />
             <span className="text-xs font-semibold uppercase tracking-wider">Ask ARTFUL</span>
           </button>
         </div>
