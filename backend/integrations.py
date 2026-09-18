@@ -54,7 +54,7 @@ def _normalize_whatsapp_phone(phone: str):
     return p
 
 
-async def send_whatsapp_template(phone: str, template_name: str = None, language_code: str = "en_US", body_params=None, extra_components=None):
+async def send_whatsapp_template(phone: str, template_name: str = None, language_code: str = "en", body_params=None, extra_components=None):
     """Send an approved WhatsApp template through Meta Cloud API.
 
     The Meta access token is read only from the server environment and is never returned.

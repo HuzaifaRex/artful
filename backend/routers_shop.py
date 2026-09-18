@@ -76,7 +76,7 @@ def customer_public(c):
             "wishlist": c.get("wishlist", [])}
 
 
-async def _send_order_whatsapp(order, template_name, body_params, language_code="en_US"):
+async def _send_order_whatsapp(order, template_name, body_params, language_code="en"):
     customer = order.get("customer") or {}
     phone = customer.get("phone") or ""
     if not phone:
