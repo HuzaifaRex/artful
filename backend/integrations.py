@@ -29,6 +29,9 @@ WHATSAPP_TEMPLATE_ORDER_SHIPPED = os.environ.get("WHATSAPP_TEMPLATE_ORDER_SHIPPE
 WHATSAPP_TEMPLATE_OUT_FOR_DELIVERY = os.environ.get("WHATSAPP_TEMPLATE_OUT_FOR_DELIVERY") or "artful_out_for_delivery"
 WHATSAPP_TEMPLATE_ORDER_DELIVERED = os.environ.get("WHATSAPP_TEMPLATE_ORDER_DELIVERED") or "artful_order_delivered"
 WHATSAPP_TEMPLATE_ORDER_STATUS = os.environ.get("WHATSAPP_TEMPLATE_ORDER_STATUS") or "artful_order_status"
+# Utility/order templates: Meta template language must match the approved template exactly.
+# Keep OTP separate because the authentication template may use a different language code.
+WHATSAPP_TEMPLATE_LANGUAGE = os.environ.get("WHATSAPP_TEMPLATE_LANGUAGE") or "en_US"
 WHATSAPP_TEMPLATE_OTP = os.environ.get("WHATSAPP_TEMPLATE_OTP") or "artful_login_otp"
 
 
@@ -54,7 +57,7 @@ def _normalize_whatsapp_phone(phone: str):
     return p
 
 
-async def send_whatsapp_template(phone: str, template_name: str = None, language_code: str = "en", body_params=None, extra_components=None):
+async def send_whatsapp_template(phone: str, template_name: str = None, language_code: str = None, body_params=None, extra_components=None):
     """Send an approved WhatsApp template through Meta Cloud API.
 
     The Meta access token is read only from the server environment and is never returned.
@@ -65,6 +68,7 @@ async def send_whatsapp_template(phone: str, template_name: str = None, language
         return {"sent": False, "configured": False, "message": "WhatsApp Cloud API is not configured."}
 
     template_name = (template_name or WHATSAPP_TEST_TEMPLATE).strip()
+    language_code = (language_code or WHATSAPP_TEMPLATE_LANGUAGE).strip()
     template = {"name": template_name, "language": {"code": language_code}}
     params = body_params or []
     components = []

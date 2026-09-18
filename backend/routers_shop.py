@@ -76,13 +76,15 @@ def customer_public(c):
             "wishlist": c.get("wishlist", [])}
 
 
-async def _send_order_whatsapp(order, template_name, body_params, language_code="en"):
+async def _send_order_whatsapp(order, template_name, body_params, language_code=None):
     customer = order.get("customer") or {}
     phone = customer.get("phone") or ""
     if not phone:
         return
     try:
-        await ig.send_whatsapp_template(phone, template_name, language_code, body_params)
+        result = await ig.send_whatsapp_template(phone, template_name, language_code, body_params)
+        if not result.get("sent"):
+            print(f"[whatsapp] order notification failed for {order.get('order_number')} template={template_name!r}: {result}")
     except Exception as exc:
         print(f"[whatsapp] order notification failed for {order.get('order_number')}: {exc}")
 

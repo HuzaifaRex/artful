@@ -856,7 +856,7 @@ async def whatsapp_test(payload: dict, admin: dict = Depends(require_permission(
     if not phone:
         raise HTTPException(400, "Phone is required.")
     template_name = (payload.get("template_name") or "").strip() or None
-    language_code = (payload.get("language_code") or "en").strip()
+    language_code = (payload.get("language_code") or ig.WHATSAPP_TEMPLATE_LANGUAGE).strip()
     params = payload.get("body_params") or []
     if not isinstance(params, list):
         raise HTTPException(400, "body_params must be a list.")
@@ -934,7 +934,7 @@ async def update_order_status(order_number: str, payload: dict, request: Request
         else:
             template = ig.WHATSAPP_TEMPLATE_ORDER_STATUS
             params = [name, order_number, new_status]
-        asyncio.create_task(ig.send_whatsapp_template(customer["phone"], template, "en", params))
+        asyncio.create_task(ig.send_whatsapp_template(customer["phone"], template, ig.WHATSAPP_TEMPLATE_LANGUAGE, params))
 
     await audit(admin, "order_status", "order", order_number,
                 before={"status": o["status"]}, after={"status": new_status}, request=request)
