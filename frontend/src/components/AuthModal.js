@@ -47,7 +47,7 @@ export default function AuthModal() {
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" data-testid="auth-modal">
       <div className="absolute inset-0 bg-black/50" onClick={close} />
-      <div className="relative bg-cream w-full max-w-md p-8 sm:p-10 animate-fadeUp border-rounded-lg">
+      <div className="relative bg-cream w-full max-w-md p-8 sm:p-10 animate-fadeUp rounded-[20px]">
         <button onClick={close} className="absolute top-5 right-5 text-plum" data-testid="auth-close"><X size={22} /></button>
         <div className="text-center mb-4">
           <div className="mb-4">
@@ -60,9 +60,9 @@ export default function AuthModal() {
           <form onSubmit={sendOtp} className="space-y-4">
             <div>
               <label className="label-caption block mb-2">Mobile Number</label>
-              <input value={phone} onChange={(e) => setPhone(sanitizePhone(e.target.value))} inputMode="numeric" placeholder="10-digit mobile number" className="input-field border-rounded-lg" data-testid="auth-phone-input" autoFocus />
+              <input value={phone} onChange={(e) => setPhone(sanitizePhone(e.target.value))} inputMode="numeric" placeholder="10-digit mobile number" className="input-field rounded-[10px]" data-testid="auth-phone-input" autoFocus />
             </div>
-            <button className="btn-primary w-full border-rounded-lg" disabled={loading} data-testid="auth-send-otp-btn">{loading ? "Sending…" : "Send OTP"}</button>
+            <button className="btn-primary w-full rounded-[10px]" disabled={loading} data-testid="auth-send-otp-btn">{loading ? "Sending…" : "Send OTP"}</button>
           </form>
         )}
 
