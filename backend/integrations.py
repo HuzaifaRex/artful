@@ -110,7 +110,7 @@ async def send_whatsapp_template(phone: str, template_name: str = None, language
         return {"sent": False, "configured": True, "error": str(e)}
 
 
-async def send_whatsapp_auth_otp(phone: str, code: str, language_code: str = "en_US"):
+async def send_whatsapp_auth_otp(phone: str, code: str, language_code: str = "en"):
     """Send an OTP using Meta's authentication template.
 
     Meta's OTP templates pass the same code in the body and OTP button.
