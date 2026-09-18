@@ -145,6 +145,6 @@ background: linear-gradient(152deg, rgba(18, 68, 204, 0) 0%, rgba(13, 44, 168, 0
   background: rgba(0, 0, 0, 0) !important;
 }
 
-.fixed.inset-0.z-50.flex.tems-start.justify-center.p-4.overflow-y-auto{
+.fixed.inset-0.z-50.flex{
   background: rgba(0, 0, 0, .7) !important;
 }
