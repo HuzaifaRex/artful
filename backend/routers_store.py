@@ -126,7 +126,7 @@ async def list_products(
 
 @router.get("/products/{slug}")
 async def get_product(slug: str):
-    p = await db.products.find_one({"slug": slug}, {"_id": 0})
+    p = await db.products.find_one({"slug": slug, "status": {"$in": ["Active", "Out of Stock"]}}, {"_id": 0})
     if not p:
         raise HTTPException(404, "Product not found.")
     await db.products.update_one({"slug": slug}, {"$inc": {"views": 1}})

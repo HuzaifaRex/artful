@@ -74,7 +74,7 @@ export default function Chatbot() {
             href="https://wa.me/918871288853"
             target="_blank"
             rel="noreferrer"
-            className="inline-flex items-center gap-2 rounded-full bg-[#25D366] px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-white shadow-lg transition-transform hover:-translate-y-0.5 hover:brightness-95"
+            className="inline-flex items-center gap-2 rounded-full bg-[#128C32] px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-white shadow-lg transition-transform hover:-translate-y-0.5 hover:brightness-95"
             aria-label="Chat with ARTFUL on WhatsApp"
             data-testid="chat-whatsapp"
           >

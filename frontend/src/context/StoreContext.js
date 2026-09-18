@@ -59,12 +59,13 @@ export function StoreProvider({ children }) {
     const available = Math.max(0, Number(product?.stock || 0) - Number(product?.reserved || 0));
     if (available <= 0) { toast.error("This product is out of stock"); return; }
     setCart((prev) => {
-      const key = product.id + (opts.variant_id || "") + (opts.gift_wrap ? "gw" : "") + (opts.personalization || "");
+      const key = product.id + (opts.variant_id || "") + (opts.gift_wrap ? "gw" : "") + (opts.personalization || "") + (opts.bulk_tier_quantity ? `bulk${opts.bulk_tier_quantity}` : "");
       const idx = prev.findIndex((i) => i.key === key);
       if (idx >= 0) {
         const next = [...prev];
         const nextQty = Math.min(available, next[idx].qty + qty);
         if (nextQty === next[idx].qty && qty > 0) toast.error(`Only ${available} units are available`);
+        if (next[idx].bulk_locked) return next;
         next[idx] = { ...next[idx], qty: nextQty, available, price: getBulkUnitPrice(next[idx], nextQty) };
         return next;
       }
@@ -77,6 +78,9 @@ export function StoreProvider({ children }) {
         compare_at_price: product.compare_at_price, qty: nextQty, available,
         variant_id: opts.variant_id || null, gift_wrap: !!opts.gift_wrap,
         personalization: opts.personalization || null,
+        bulk_locked: !!opts.bulk_locked,
+        bulk_tier_quantity: opts.bulk_tier_quantity || null,
+        bulk_tier_price: opts.bulk_tier_price || null,
       }];
     });
     setCartOpen(true);
@@ -86,6 +90,10 @@ export function StoreProvider({ children }) {
   const updateQty = useCallback((key, qty) => {
     setCart((prev) => prev.map((i) => {
       if (i.key !== key) return i;
+      if (i.bulk_locked) {
+        toast.info("Bulk pack quantity is fixed for this order.");
+        return i;
+      }
       const available = Number(i.available ?? 0);
       const nextQty = available > 0 ? Math.min(available, Math.max(1, qty)) : Math.max(1, qty);
       if (available > 0 && nextQty < qty) toast.error(`Only ${available} units are available`);
@@ -122,6 +130,7 @@ export function StoreProvider({ children }) {
   const cartPayload = cart.map((i) => ({
     product_id: i.product_id, variant_id: i.variant_id, qty: i.qty,
     gift_wrap: i.gift_wrap, personalization: i.personalization,
+    bulk_tier_quantity: i.bulk_tier_quantity || null,
   }));
 
   return (

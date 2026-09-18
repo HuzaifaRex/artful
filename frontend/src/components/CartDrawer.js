@@ -59,11 +59,11 @@ export default function CartDrawer() {
                     {item.personalization && <p className="text-[11px] text-ink-muted mt-0.5 truncate">"{item.personalization}"</p>}
                     {item.bulk_order && item.qty >= Number(item.bulk_order.min_quantity || 0) && <p className="text-[11px] text-violet-700 mt-0.5">Bulk rate applied · {inr(item.price)} / pc</p>}
                     <div className="flex items-center justify-between mt-2">
-                      <div className="flex items-center border border-line">
+                      {item.bulk_locked ? <span className="rounded-full bg-violet-50 text-violet-700 px-2.5 py-1 text-[11px] font-medium">Fixed bulk pack · {item.qty} pcs</span> : <div className="flex items-center border border-line">
                         <button onClick={() => updateQty(item.key, item.qty - 1)} className="p-1.5 text-plum" data-testid={`cart-dec-${item.slug}`}><Minus size={13} /></button>
                         <span className="px-3 text-sm" data-testid={`cart-qty-${item.slug}`}>{item.qty}</span>
                         <button onClick={() => updateQty(item.key, item.qty + 1)} className="p-1.5 text-plum" data-testid={`cart-inc-${item.slug}`}><Plus size={13} /></button>
-                      </div>
+                      </div>}
                       <span className="text-sm text-plum font-medium">{inr(item.price * item.qty)}</span>
                     </div>
                   </div>

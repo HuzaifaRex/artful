@@ -30,6 +30,7 @@ export default function ProductDetail() {
   const [reviews, setReviews] = useState([]);
   const [activeImg, setActiveImg] = useState(0);
   const [qty, setQty] = useState(1);
+  const [selectedBulkTier, setSelectedBulkTier] = useState(null);
   const [giftWrap, setGiftWrap] = useState(false);
   const [message, setMessage] = useState("");
   const [deliveryState, setDeliveryState] = useState("");
@@ -39,7 +40,7 @@ export default function ProductDetail() {
   const [reviewUploading, setReviewUploading] = useState(false);
 
   useEffect(() => {
-    setP(null); setActiveImg(0); setQty(1); setGiftWrap(false); setMessage(""); setDeliveryState(""); setDeliveryResult(null);
+    setP(null); setActiveImg(0); setQty(1); setSelectedBulkTier(null); setGiftWrap(false); setMessage(""); setDeliveryState(""); setDeliveryResult(null);
     api.get(`/products/${slug}`).then(({ data }) => setP(data)).catch(() => setP(false));
     api.get(`/products/${slug}/related`).then(({ data }) => setRelated(data.items)).catch(() => {});
     api.get(`/products/${slug}/reviews`).then(({ data }) => setReviews(data.items)).catch(() => {});
@@ -94,9 +95,28 @@ export default function ProductDetail() {
   const disc = discountPct(p.price, p.compare_at_price);
   const saved = wishlist.includes(p.id);
 
-  const opts = () => ({ gift_wrap: giftWrap, personalization: message.trim() || null });
+  const bulkTiers = (p.bulk_order?.enabled ? (p.bulk_order?.tiers || []) : [])
+    .map((tier) => ({ min_quantity: Number(tier.min_quantity || 0), price: Number(tier.price || 0) }))
+    .filter((tier) => tier.min_quantity > 0 && tier.price > 0)
+    .sort((a, b) => a.min_quantity - b.min_quantity);
+  const selectedTier = selectedBulkTier ? bulkTiers.find((tier) => tier.min_quantity === selectedBulkTier.min_quantity) : null;
+  const bulkSelected = !!selectedTier;
+  const displayUnitPrice = selectedTier ? selectedTier.price : Number(p.price || 0);
+  const bulkProductTotal = selectedTier ? selectedTier.price * selectedTier.min_quantity : 0;
+  const opts = () => ({
+    gift_wrap: giftWrap,
+    personalization: message.trim() || null,
+    bulk_locked: bulkSelected,
+    bulk_tier_quantity: selectedTier?.min_quantity || null,
+    bulk_tier_price: selectedTier?.price || null,
+  });
   const handleAdd = () => addToCart(p, qty, opts());
-  const handleBuy = () => { addToCart(p, qty, opts()); navigate("/checkout"); };
+  const handleBuy = () => { addToCart(p, selectedTier?.min_quantity || qty, opts()); navigate("/checkout"); };
+  const selectBulkTier = (tier) => {
+    if (tier.min_quantity > available) return toast.error(`Only ${available} units are available for this bulk pack.`);
+    setSelectedBulkTier(tier);
+    setQty(tier.min_quantity);
+  };
 
   return (
     <div>
@@ -127,20 +147,32 @@ export default function ProductDetail() {
             <div className="flex items-center gap-1 mt-3">{[...Array(5)].map((_, i) => <Star key={i} size={15} className={i < Math.round(p.rating) ? "fill-gold text-gold" : "text-line"} />)}<span className="text-xs text-ink-muted ml-2">{p.rating} ({p.review_count})</span></div>
           )}
           <div className="flex items-baseline gap-3 mt-5">
-            <span className="text-2xl text-plum font-medium" data-testid="pdp-price">{inr(p.price)}</span>
-            {p.compare_at_price > p.price && <span className="text-ink-muted line-through">{inr(p.compare_at_price)}</span>}
+            <span className="text-2xl text-plum font-medium" data-testid="pdp-price">{inr(displayUnitPrice)}</span>
+            {selectedTier && <span className="text-ink-muted line-through">{inr(p.price)} / pc</span>}
+            {!selectedTier && p.compare_at_price > p.price && <span className="text-ink-muted line-through">{inr(p.compare_at_price)}</span>}
             <span className="text-xs text-ink-muted">(incl. of taxes)</span>
           </div>
-          {p.bulk_order?.enabled && Array.isArray(p.bulk_order?.tiers) && p.bulk_order.tiers.length > 0 && (
+          {bulkTiers.length > 0 && (
             <div className="mt-4 rounded-2xl border border-line bg-surface/70 p-4" data-testid="bulk-pricing">
-              <div className="flex items-center justify-between gap-3 mb-2">
-                <div><p className="text-sm font-semibold text-plum">Bulk pricing available</p><p className="text-xs text-ink-muted">Save more as quantity increases.</p></div>
-                <span className="text-[10px] uppercase tracking-widest2 text-ink-muted">Min {p.bulk_order.min_quantity || 1} pcs</span>
+              <div className="flex items-center justify-between gap-3 mb-3">
+                <div><p className="text-sm font-semibold text-plum">Bulk ordering</p><p className="text-xs text-ink-muted">Select a pack to unlock the special unit price.</p></div>
+                <span className="text-[10px] uppercase tracking-widest2 text-ink-muted">From {p.bulk_order.min_quantity || bulkTiers[0].min_quantity} pcs</span>
               </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                {p.bulk_order.tiers.map((tier, i) => <div key={i} className="rounded-xl bg-white border border-line px-3 py-2"><p className="text-xs text-ink-muted">{tier.min_quantity}+ pcs</p><p className="text-sm font-semibold text-plum">{inr(tier.price)} / pc</p></div>)}
+              <div className="grid gap-2">
+                {bulkTiers.map((tier) => {
+                  const checked = selectedTier?.min_quantity === tier.min_quantity;
+                  const unavailable = tier.min_quantity > available;
+                  const saving = Math.max(0, (Number(p.price || 0) - tier.price) * tier.min_quantity);
+                  return <label key={tier.min_quantity} className={`flex items-center justify-between gap-4 rounded-2xl border px-4 py-3 transition ${checked ? "border-plum bg-plum/5 ring-1 ring-plum" : "border-line bg-white hover:border-plum/50"} ${unavailable ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}>
+                    <span className="flex items-center gap-3 min-w-0">
+                      <input type="radio" name="bulk-tier" checked={checked} disabled={unavailable} onChange={() => selectBulkTier(tier)} className="accent-plum" />
+                      <span><span className="block text-sm font-semibold text-ink">{tier.min_quantity} pcs</span><span className="block text-xs text-ink-muted">{unavailable ? "Not enough stock" : `${inr(tier.price)} / piece`}</span></span>
+                    </span>
+                    <span className="text-right shrink-0"><span className="block text-sm font-semibold text-plum">{inr(tier.price * tier.min_quantity)}</span>{saving > 0 && !unavailable && <span className="block text-[11px] text-ok">Save {inr(saving)}</span>}</span>
+                  </label>;
+                })}
               </div>
-              {qty >= Number(p.bulk_order.min_quantity || 0) && <p className="text-xs text-ok mt-2">Current quantity rate: <b>{inr(getBulkUnitPrice(p, qty))}</b> per piece</p>}
+              {selectedTier && <div className="mt-3 flex items-center justify-between rounded-xl bg-white border border-plum/20 px-4 py-3 text-sm"><span className="text-ink-secondary">Selected bulk total</span><b className="text-plum text-lg">{inr(bulkProductTotal)}</b></div>}
             </div>
           )}
           <p className="mt-5 text-ink-secondary leading-relaxed">{p.short_description}</p>
@@ -165,17 +197,17 @@ export default function ProductDetail() {
           </label>
 
           <div className="mt-6 flex items-center gap-4">
-            <div className="flex items-center border border-line">
+            {!bulkSelected ? <div className="flex items-center border border-line">
               <button onClick={() => setQty(Math.max(1, qty - 1))} className="p-3 text-plum" data-testid="qty-dec"><Minus size={15} /></button>
               <span className="px-5 text-sm" data-testid="qty-value">{qty}</span>
               <button onClick={() => setQty(Math.min(available, qty + 1))} disabled={qty >= available} className="p-3 text-plum disabled:opacity-30" data-testid="qty-inc"><Plus size={15} /></button>
-            </div>
+            </div> : <div className="rounded-xl border border-plum/20 bg-plum/5 px-4 py-3 text-sm text-plum font-medium">Bulk pack quantity: {selectedTier.min_quantity} pcs</div>}
             <button onClick={() => toggleWishlist(p.id)} className="p-3 border border-line text-plum hover:border-plum" data-testid="wishlist-toggle-button"><Heart size={18} className={saved ? "fill-accent text-accent" : ""} /></button>
           </div>
 
           <div className="mt-5 flex flex-col sm:flex-row gap-3">
-            <button onClick={handleAdd} disabled={soldOut} className="btn-outline flex-1" data-testid="add-to-cart-button">Add to Cart</button>
-            <button onClick={handleBuy} disabled={soldOut} className="btn-primary flex-1" data-testid="buy-now-button">Buy Now</button>
+            {!bulkSelected && <button onClick={handleAdd} disabled={soldOut} className="btn-outline flex-1" data-testid="add-to-cart-button">Add to Cart</button>}
+            <button onClick={handleBuy} disabled={soldOut || (bulkSelected && selectedTier.min_quantity > available)} className="btn-primary flex-1" data-testid="buy-now-button">{bulkSelected ? `Buy ${selectedTier.min_quantity} pcs · ${inr(bulkProductTotal)}` : "Buy Now"}</button>
           </div>
 
           <div className="mt-6 bg-surface p-4">

@@ -326,13 +326,13 @@ export default function Checkout() {
                     <p className="text-ink leading-tight line-clamp-2">{i.name}</p>
                     {i.bulk_order?.applied && <p className="text-[11px] text-violet-700 mt-1">Bulk rate applied · {inr(i.price)} / pc</p>}
                     <div className="flex items-center justify-between mt-2">
-                      <div className="inline-flex items-center border border-line rounded-full">
+                      {i.bulk_locked ? <span className="rounded-full bg-violet-50 text-violet-700 px-2.5 py-1 text-[11px] font-medium">Bulk pack · {i.qty} pcs</span> : <div className="inline-flex items-center border border-line rounded-full">
                         <button onClick={() => i.qty > 1 ? updateQty(i.key, i.qty - 1) : removeItem(i.key)} className="w-7 h-7 flex items-center justify-center text-plum hover:bg-surface rounded-l-full" data-testid={`checkout-qty-dec-${i.key}`} aria-label="Decrease">
                           {i.qty > 1 ? <Minus size={13} /> : <Trash2 size={13} />}
                         </button>
                         <span className="w-8 text-center text-plum font-medium" data-testid={`checkout-qty-${i.key}`}>{i.qty}</span>
                         <button onClick={() => updateQty(i.key, i.qty + 1)} className="w-7 h-7 flex items-center justify-center text-plum hover:bg-surface rounded-r-full" data-testid={`checkout-qty-inc-${i.key}`} aria-label="Increase"><Plus size={13} /></button>
-                      </div>
+                      </div>}
                       <span className="text-plum font-medium">{inr(i.price * i.qty)}</span>
                     </div>
                   </div>

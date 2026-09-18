@@ -63,11 +63,11 @@ export default function CartPage() {
                 {item.personalization && <p className="text-xs text-ink-muted mt-1">Personalization: "{item.personalization}"</p>}
                 {item.bulk_order && item.qty >= Number(item.bulk_order.min_quantity || 0) && <p className="text-xs text-violet-700 mt-1">Bulk price applied · {inr(item.price)} / piece</p>}
                 <div className="flex items-center justify-between mt-4">
-                  <div className="flex items-center border border-line">
+                  {item.bulk_locked ? <span className="rounded-full bg-violet-50 text-violet-700 px-3 py-1 text-xs font-medium">Fixed bulk pack · {item.qty} pcs</span> : <div className="flex items-center border border-line">
                     <button onClick={() => updateQty(item.key, item.qty - 1)} className="p-2 text-plum"><Minus size={14} /></button>
                     <span className="px-4 text-sm">{item.qty}</span>
                     <button onClick={() => updateQty(item.key, item.qty + 1)} className="p-2 text-plum"><Plus size={14} /></button>
-                  </div>
+                  </div>}
                   <span className="text-plum font-medium">{inr(item.price * item.qty)}</span>
                 </div>
               </div>

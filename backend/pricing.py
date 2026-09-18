@@ -61,14 +61,40 @@ async def build_line_items(items):
         gift_wrap = bool(it.get("gift_wrap"))
         wrap_price = 199 if gift_wrap else 0
         bulk_config = prod.get("bulk_order") or {}
+        applicable_bulk_tier = None
+        if bulk_config.get("enabled"):
+            selected_tier_qty = int(it.get("bulk_tier_quantity") or 0)
+            for tier in bulk_config.get("tiers") or []:
+                try:
+                    tier_qty = int(tier.get("min_quantity", 0))
+                    tier_price = int(round(float(tier.get("price"))))
+                except (TypeError, ValueError):
+                    continue
+                if tier_qty == selected_tier_qty and tier_price == int(price):
+                    applicable_bulk_tier = {"min_quantity": tier_qty, "price": tier_price}
+                    break
+            if applicable_bulk_tier is None:
+                for tier in sorted((bulk_config.get("tiers") or []), key=lambda t: int(t.get("min_quantity", 0) or 0), reverse=True):
+                    try:
+                        tier_qty = int(tier.get("min_quantity", 0))
+                        tier_price = int(round(float(tier.get("price"))))
+                    except (TypeError, ValueError):
+                        continue
+                    if tier_qty <= capped and tier_qty >= int(bulk_config.get("min_quantity", 0) or 0) and tier_price == int(price):
+                        applicable_bulk_tier = {"min_quantity": tier_qty, "price": tier_price}
+                        break
         bulk_enabled_for_line = bool(bulk_config.get("enabled") and capped >= int(bulk_config.get("min_quantity", 0) or 0) and price != int(base_price))
+        bulk_savings = max(0, (int(base_price) - int(price)) * capped) if bulk_enabled_for_line else 0
         lines.append({
             "product_id": prod["id"], "name": prod["name"], "slug": prod["slug"],
             "image": (prod.get("images") or [None])[0], "sku": prod.get("sku"),
             "variant_id": it.get("variant_id"), "variant_label": (variant or {}).get("label") if variant else None,
             "price": price, "base_price": base_price, "cost_price": unit_cost, "qty": capped, "requested_qty": qty,
             "bulk_order": {"enabled": bool(bulk_config.get("enabled")), "applied": bulk_enabled_for_line,
-                           "min_quantity": int(bulk_config.get("min_quantity", 0) or 0), "tiers": bulk_config.get("tiers", [])},
+                           "min_quantity": int(bulk_config.get("min_quantity", 0) or 0), "tiers": bulk_config.get("tiers", []),
+                           "selected_tier_quantity": applicable_bulk_tier["min_quantity"] if applicable_bulk_tier else None,
+                           "selected_tier_unit_price": applicable_bulk_tier["price"] if applicable_bulk_tier else None,
+                           "regular_unit_price": int(base_price), "savings": bulk_savings},
             "gift_wrap": gift_wrap, "wrap_price": wrap_price,
             "personalization": it.get("personalization") or None,
             "line_total": price * capped + wrap_price,

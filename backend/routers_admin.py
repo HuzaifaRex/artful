@@ -607,8 +607,20 @@ async def bulk_products(payload: dict, request: Request, admin: dict = Depends(r
     if not ids or not action:
         raise HTTPException(400, "Select products and an action.")
     upd = None
-    if action == "publish":
-        upd = {"status": "Active"}
+    if action == "publish" or action == "activate":
+        # Re-activate non-archived products; archived products remain archived.
+        updated = 0
+        async for p in db.products.find({"id": {"$in": ids}, "status": {"$ne": "Archived"}}, {"id": 1, "stock": 1, "reserved": 1, "_id": 0}):
+            stock = _int_num(p.get("stock"), 0); reserved = _int_num(p.get("reserved"), 0)
+            status = "Active" if max(0, stock - reserved) > 0 else "Out of Stock"
+            result = await db.products.update_one({"id": p["id"]}, {"$set": {"status": status, "updated_at": now_iso()}})
+            updated += result.modified_count
+        await audit(admin, "bulk_activate", "product", None, after={"ids": ids, "updated": updated}, request=request)
+        return {"ok": True, "updated": updated}
+    elif action == "deactivate":
+        result = await db.products.update_many({"id": {"$in": ids}}, {"$set": {"status": "Inactive", "updated_at": now_iso()}})
+        await audit(admin, "bulk_deactivate", "product", None, after={"ids": ids, "updated": result.modified_count}, request=request)
+        return {"ok": True, "updated": result.modified_count}
     elif action == "unpublish":
         upd = {"status": "Draft"}
     elif action == "archive":
@@ -771,8 +783,8 @@ async def upload_media(file: UploadFile = File(...), admin: dict = Depends(get_c
     max_bytes = 8 * 1024 * 1024 if resource_type == "image" else 50 * 1024 * 1024
     if len(data) > max_bytes:
         label = "Image" if resource_type == "image" else "Video"
-limit = "8MB" if resource_type == "image" else "50MB"
-raise HTTPException(400, f"{label} too large (max {limit}).")
+        limit = "8MB" if resource_type == "image" else "50MB"
+        raise HTTPException(400, f"{label} too large (max {limit}).")
 
     path = f"{storage.APP_NAME}/uploads/{uuid.uuid4().hex}{ext}"
     try:

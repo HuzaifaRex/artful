@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { Plus, Search, Copy, Archive, Edit, Trash2, Boxes, AlertTriangle, ArrowDownToLine, ArrowUpFromLine, PackageCheck, RotateCcw, Eye, Tag, Layers3, ShoppingBag } from "lucide-react";
+import { Plus, Search, Copy, Archive, Edit, Trash2, Boxes, AlertTriangle, ArrowDownToLine, ArrowUpFromLine, PackageCheck, RotateCcw, Eye, Tag, Layers3, ShoppingBag, Package, Power } from "lucide-react";
 import { adminApi, apiError } from "../lib/api";
 import { toast } from "sonner";
 import { inr } from "../lib/utils";
@@ -8,7 +8,7 @@ import { ImageUpload, MultiImageUpload, VideoUpload } from "./ImageUpload";
 import { DataTable, KpiCards } from "./DataTable";
 
 const BADGES = ["New", "Bestseller", "Limited", "Sale", "Featured"];
-const STATUSES = ["Draft", "Active", "Out of Stock", "Archived"];
+const STATUSES = ["Draft", "Active", "Inactive", "Out of Stock", "Archived"];
 const SECTIONS = [
   { key: "new-arrivals", label: "New Arrivals" },
   { key: "bestsellers", label: "Best Sellers" },
@@ -61,6 +61,27 @@ export function Products() {
       load();
     } catch (e) { toast.error(apiError(e)); }
   };
+  const bulkSetStatus = async (action) => {
+    if (!selected.size) return;
+    const label = action === "deactivate" ? "Deactivate" : "Activate";
+    if (!window.confirm(`${label} ${selected.size} selected product(s)?`)) return;
+    try {
+      const { data: result } = await adminApi.post("/products/bulk", { ids: [...selected], action });
+      toast.success(`${result.updated} product(s) ${label.toLowerCase()}d`);
+      setSelected(new Set());
+      load();
+    } catch (e) { toast.error(apiError(e)); }
+  };
+  const setProductStatus = async (e, product, action) => {
+    e.stopPropagation();
+    const label = action === "deactivate" ? "Deactivate" : "Activate";
+    if (!window.confirm(`${label} "${product.name}"?`)) return;
+    try {
+      await adminApi.post("/products/bulk", { ids: [product.id], action });
+      toast.success(`${product.name} ${label.toLowerCase()}d`);
+      load();
+    } catch (err) { toast.error(apiError(err)); }
+  };
   const exportCsv = async () => {
     try {
       const res = await adminApi.get("/export/products", { responseType: "blob" });
@@ -72,7 +93,11 @@ export function Products() {
   return (
     <div>
       <PageHead title="Products" subtitle={`${data.total} products`} action={<div className="flex items-center gap-2">
-        {selected.size > 0 && <button onClick={bulkDelete} className="border border-red-200 text-red-600 bg-white rounded-md px-4 py-2 text-sm flex items-center gap-2 hover:bg-red-50" data-testid="bulk-delete-products"><Trash2 size={15} /> Delete selected ({selected.size})</button>}
+        {selected.size > 0 && <div className="flex flex-wrap items-center gap-2">
+          <button onClick={() => bulkSetStatus("activate")} className="border border-emerald-200 text-emerald-700 bg-white rounded-md px-3 py-2 text-sm flex items-center gap-2 hover:bg-emerald-50" data-testid="bulk-activate-products"><Power size={15} /> Activate ({selected.size})</button>
+          <button onClick={() => bulkSetStatus("deactivate")} className="border border-amber-200 text-amber-700 bg-white rounded-md px-3 py-2 text-sm flex items-center gap-2 hover:bg-amber-50" data-testid="bulk-deactivate-products"><Archive size={15} /> Deactivate ({selected.size})</button>
+          <button onClick={bulkDelete} className="border border-red-200 text-red-600 bg-white rounded-md px-3 py-2 text-sm flex items-center gap-2 hover:bg-red-50" data-testid="bulk-delete-products"><Trash2 size={15} /> Delete ({selected.size})</button>
+        </div>}
         <button onClick={() => setEditing({})} className="bg-plum text-white rounded-md px-4 py-2 text-sm flex items-center gap-2" data-testid="add-product-btn"><Plus size={16} /> Add Product</button>
       </div>} />
       {summary && <KpiCards cards={[
@@ -97,9 +122,10 @@ export function Products() {
           { key: "stock", label: "Stock", render: (p) => p.stock },
           { key: "status", label: "Status", render: (p) => <StatusChip status={p.status} /> },
           { key: "actions", label: "Actions", render: (p) => <div className="flex gap-2 text-gray-400" onClick={(e) => e.stopPropagation()}>
-            <button onClick={() => setEditing(p)} className="hover:text-plum" data-testid={`edit-${p.slug}`}><Edit size={16} /></button>
-            <button onClick={(e) => duplicate(e, p)} className="hover:text-plum"><Copy size={16} /></button>
-            <button onClick={(e) => archive(e, p)} className="hover:text-red-600"><Archive size={16} /></button>
+            <button onClick={() => setEditing(p)} className="hover:text-plum" data-testid={`edit-${p.slug}`} title="Edit"><Edit size={16} /></button>
+            <button onClick={(e) => duplicate(e, p)} className="hover:text-plum" title="Duplicate"><Copy size={16} /></button>
+            {p.status === "Active" || p.status === "Out of Stock" ? <button onClick={(e) => setProductStatus(e, p, "deactivate")} className="hover:text-amber-600" title="Deactivate"><Archive size={16} /></button> : p.status !== "Archived" ? <button onClick={(e) => setProductStatus(e, p, "activate")} className="hover:text-emerald-600" title="Activate"><Power size={16} /></button> : null}
+            <button onClick={(e) => archive(e, p)} className="hover:text-red-600" title="Archive"><Trash2 size={16} /></button>
           </div> },
         ]}
         onRowClick={(p) => setDetail(p)}
