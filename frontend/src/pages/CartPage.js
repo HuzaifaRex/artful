@@ -61,6 +61,7 @@ export default function CartPage() {
                 </div>
                 {item.gift_wrap && <p className="text-xs text-plum mt-1">+ Gift wrap (₹199)</p>}
                 {item.personalization && <p className="text-xs text-ink-muted mt-1">Personalization: "{item.personalization}"</p>}
+                {item.bulk_order && item.qty >= Number(item.bulk_order.min_quantity || 0) && <p className="text-xs text-violet-700 mt-1">Bulk price applied · {inr(item.price)} / piece</p>}
                 <div className="flex items-center justify-between mt-4">
                   <div className="flex items-center border border-line">
                     <button onClick={() => updateQty(item.key, item.qty - 1)} className="p-2 text-plum"><Minus size={14} /></button>

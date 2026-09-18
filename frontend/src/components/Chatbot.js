@@ -69,17 +69,29 @@ export default function Chatbot() {
   return (
     <>
       {!open && (
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          className="fixed askin-ro bottom-5 right-5 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-plum text-cream shadow-lg transition-transform hover:-translate-y-0.5"
-          aria-label="Open ARTFUL assistant"
-          title="Ask ARTFUL"
-          data-testid="chatbot-open"
-        >
-          <MessageCircle size={22} />
-          Ask ARTFUL
-        </button>
+        <div className="fixed bottom-5 right-5 z-50 flex flex-col items-end gap-3">
+          <a
+            href="https://wa.me/918871288853"
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-2 rounded-full bg-[#25D366] px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-white shadow-lg transition-transform hover:-translate-y-0.5 hover:brightness-95"
+            aria-label="Chat with ARTFUL on WhatsApp"
+            data-testid="chat-whatsapp"
+          >
+            <MessageCircle size={16} /> Chat on WhatsApp
+          </a>
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            className="askin-ro flex h-14 items-center justify-center gap-2 rounded-full bg-plum px-5 text-cream shadow-lg transition-transform hover:-translate-y-0.5"
+            aria-label="Open ARTFUL assistant"
+            title="Ask ARTFUL"
+            data-testid="chatbot-open"
+          >
+            <MessageCircle size={22} />
+            <span className="text-xs font-semibold uppercase tracking-wider">Ask ARTFUL</span>
+          </button>
+        </div>
       )}
 
       {open && (

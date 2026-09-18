@@ -209,7 +209,7 @@ export default function ProductDetail() {
       {related.length > 0 && (
         <div className="container-artful py-16 border-t border-line">
           <h2 className="section-title text-center mb-12">You May Also Like</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-5 gap-y-10">
+          <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-x-5 gap-y-10">
             {related.map((rp, i) => <ProductCard key={rp.id} product={rp} index={i} />)}
           </div>
         </div>

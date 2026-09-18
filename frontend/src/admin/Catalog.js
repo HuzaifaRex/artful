@@ -1,11 +1,11 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { Plus, Search, Copy, Archive, Edit, Trash2, Boxes, AlertTriangle, ArrowDownToLine, ArrowUpFromLine, PackageCheck, RotateCcw } from "lucide-react";
+import { Plus, Search, Copy, Archive, Edit, Trash2, Boxes, AlertTriangle, ArrowDownToLine, ArrowUpFromLine, PackageCheck, RotateCcw, Eye, Tag, Layers3, ShoppingBag } from "lucide-react";
 import { adminApi, apiError } from "../lib/api";
 import { toast } from "sonner";
 import { inr } from "../lib/utils";
 import { StatusChip, Modal, Field, inputCls, PageHead, Empty } from "./ui";
 import { ImageUpload, MultiImageUpload, VideoUpload } from "./ImageUpload";
-import { DataTable } from "./DataTable";
+import { DataTable, KpiCards } from "./DataTable";
 
 const BADGES = ["New", "Bestseller", "Limited", "Sale", "Featured"];
 const STATUSES = ["Draft", "Active", "Out of Stock", "Archived"];
@@ -23,22 +23,25 @@ export function Products() {
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("");
   const [category, setCategory] = useState("");
+  const [sort, setSort] = useState("newest");
   const [page, setPage] = useState(1);
   const [cats, setCats] = useState([]);
+  const [summary, setSummary] = useState(null);
+  const [detail, setDetail] = useState(null);
   const [editing, setEditing] = useState(null);
   const [selected, setSelected] = useState(new Set());
 
   const load = useCallback(() => {
     setLoading(true);
-    adminApi.get(`/products?q=${encodeURIComponent(q)}&status=${status}&category=${category}&page=${page}&page_size=20`)
+    adminApi.get(`/products?q=${encodeURIComponent(q)}&status=${status}&category=${category}&sort=${sort}&page=${page}&page_size=20`)
       .then(({ data }) => setData(data)).catch(() => {}).finally(() => setLoading(false));
-  }, [q, status, category, page]);
+  }, [q, status, category, sort, page]);
   useEffect(() => { const t = setTimeout(load, 250); return () => clearTimeout(t); }, [load]);
-  useEffect(() => { adminApi.get("/categories").then(({ data }) => setCats(data.items)).catch(() => {}); }, []);
+  useEffect(() => { adminApi.get("/categories").then(({ data }) => setCats(data.items)).catch(() => {}); adminApi.get("/products/summary").then(({ data }) => setSummary(data)).catch(() => {}); }, []);
 
   const archive = async (e, p) => { e.stopPropagation(); if (!window.confirm(`Archive "${p.name}"?`)) return; await adminApi.delete(`/products/${p.id}`); toast.success("Archived"); load(); };
   const duplicate = async (e, p) => { e.stopPropagation(); await adminApi.post(`/products/${p.id}/duplicate`); toast.success("Duplicated"); load(); };
-  useEffect(() => { setSelected(new Set()); }, [q, status, category, page]);
+  useEffect(() => { setSelected(new Set()); }, [q, status, category, sort, page]);
   const toggleSelected = (id) => setSelected((prev) => {
     const next = new Set(prev);
     if (next.has(id)) next.delete(id); else next.add(id);
@@ -72,12 +75,19 @@ export function Products() {
         {selected.size > 0 && <button onClick={bulkDelete} className="border border-red-200 text-red-600 bg-white rounded-md px-4 py-2 text-sm flex items-center gap-2 hover:bg-red-50" data-testid="bulk-delete-products"><Trash2 size={15} /> Delete selected ({selected.size})</button>}
         <button onClick={() => setEditing({})} className="bg-plum text-white rounded-md px-4 py-2 text-sm flex items-center gap-2" data-testid="add-product-btn"><Plus size={16} /> Add Product</button>
       </div>} />
+      {summary && <KpiCards cards={[
+        { label: "Total Products", value: summary.total, icon: Package },
+        { label: "Active", value: summary.active, icon: ShoppingBag },
+        { label: "Low Stock", value: summary.low_stock, icon: AlertTriangle, sub: `${summary.out_of_stock} out of stock` },
+        { label: "Inventory Value", value: inr(summary.inventory_value), icon: Boxes, sub: `${summary.stock_units} units on hand` },
+      ]} />}
       <DataTable
         testid="products" loading={loading} q={q} setQ={(v) => { setQ(v); setPage(1); }} searchPlaceholder="Search products or SKU…"
         page={page} pages={data.pages} setPage={setPage} rows={data.items} onExport={exportCsv} empty="No products found"
         filters={[
           { key: "status", label: "All statuses", value: status, onChange: (v) => { setStatus(v); setPage(1); }, options: STATUSES },
           { key: "category", label: "All categories", value: category, onChange: (v) => { setCategory(v); setPage(1); }, options: cats.map((c) => ({ value: c.slug, label: c.name })) },
+          { key: "sort", label: "Sort: newest", value: sort, onChange: (v) => { setSort(v); setPage(1); }, options: [{ value: "newest", label: "Newest" }, { value: "name_asc", label: "Name A–Z" }, { value: "updated_desc", label: "Recently updated" }, { value: "price_asc", label: "Price low → high" }, { value: "price_desc", label: "Price high → low" }, { value: "stock_asc", label: "Stock low → high" }, { value: "stock_desc", label: "Stock high → low" }, { value: "sales_desc", label: "Top sellers" }] },
         ]}
         columns={[
           { key: "__select", label: <input type="checkbox" aria-label="Select all products on this page" checked={data.items.length > 0 && data.items.every((p) => selected.has(p.id))} onChange={toggleAll} className="accent-plum w-4 h-4" />, render: (p) => <input type="checkbox" aria-label={`Select ${p.name}`} checked={selected.has(p.id)} onChange={() => toggleSelected(p.id)} onClick={(e) => e.stopPropagation()} className="accent-plum w-4 h-4" /> },
@@ -92,7 +102,9 @@ export function Products() {
             <button onClick={(e) => archive(e, p)} className="hover:text-red-600"><Archive size={16} /></button>
           </div> },
         ]}
+        onRowClick={(p) => setDetail(p)}
       />
+      {detail && <ProductDetailModal productId={detail.id} onClose={() => setDetail(null)} />}
       {editing && <ProductForm product={editing} cats={cats} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />}
     </div>
   );
@@ -178,11 +190,35 @@ function ProductForm({ product, cats, onClose, onSaved }) {
         <div className="sm:col-span-2">
           <Field label="Badges"><div className="flex flex-wrap gap-2">{BADGES.map((b) => <button key={b} type="button" onClick={() => toggleBadge(b)} className={`px-3 py-1 text-xs rounded border ${f.badges.includes(b) ? "bg-plum text-white border-plum" : "border-gray-300 text-gray-600"}`}>{b}</button>)}</div></Field>
         </div>
-        <label className="sm:col-span-2 flex items-center gap-2 text-sm text-gray-600"><input type="checkbox" checked={f.personalization?.enabled} onChange={(e) => set("personalization", { ...f.personalization, enabled: e.target.checked })} className="accent-plum" /> Enable personalization</label>
+        <div className="sm:col-span-2 rounded-lg border border-gray-100 bg-gray-50 p-4">
+          <label className="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" checked={!!f.personalization?.enabled} onChange={(e) => set("personalization", { ...(f.personalization || {}), enabled: e.target.checked })} className="accent-plum" /> Enable personalization</label>
+          {f.personalization?.enabled && <div className="grid sm:grid-cols-2 gap-3 mt-3"><Field label="Personalisation label"><input value={f.personalization?.label || "Personalise this gift"} onChange={(e) => set("personalization", { ...f.personalization, label: e.target.value })} className={inputCls}/></Field><Field label="Character limit"><input type="number" min="1" max="200" value={f.personalization?.char_limit || 30} onChange={(e) => set("personalization", { ...f.personalization, char_limit: Math.min(200, Math.max(1, Number(e.target.value || 30))) })} className={inputCls}/></Field></div>}
+        </div>
       </div>
       <div className="flex justify-end gap-3 mt-6"><button onClick={onClose} className="px-4 py-2 text-sm text-gray-600">Cancel</button><button onClick={save} disabled={saving} className="bg-plum text-white rounded-md px-5 py-2 text-sm disabled:opacity-50" data-testid="pf-save">{saving ? "Saving…" : "Save Product"}</button></div>
     </Modal>
   );
+}
+
+function ProductDetailModal({ productId, onClose }) {
+  const [p, setP] = useState(null);
+  useEffect(() => { adminApi.get(`/products/${productId}`).then(({ data }) => setP(data)).catch(() => setP(false)); }, [productId]);
+  return <Modal open title={p ? `Product · ${p.name}` : "Product details"} onClose={onClose} wide>
+    {!p ? <p className="text-sm text-gray-400">Loading…</p> : <div className="space-y-6">
+      <div className="grid lg:grid-cols-[120px_1fr] gap-5">
+        <div className="w-[120px] h-[140px] rounded-2xl overflow-hidden bg-gray-100 border border-gray-200">{p.images?.[0] ? <img src={p.images[0]} alt="" className="w-full h-full object-cover"/> : null}</div>
+        <div><div className="flex flex-wrap items-center gap-2"><StatusChip status={p.status}/>{p.sku && <span className="text-xs font-mono text-gray-500">{p.sku}</span>}</div><h3 className="artful-product-name text-2xl text-gray-900 mt-2">{p.name}</h3><p className="text-sm text-gray-500 mt-1">{p.short_description || "—"}</p><div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">{[["Selling",inr(p.price)],["Purchase",inr(p.cost_price)],["MRP",inr(p.mrp ?? p.compare_at_price)],["Stock",p.stock]].map(([l,v])=><div key={l} className="rounded-xl border border-gray-100 bg-gray-50 p-3"><p className="text-[10px] uppercase tracking-wider text-gray-400">{l}</p><p className="font-semibold text-gray-900 mt-1">{v}</p></div>)}</div></div>
+      </div>
+      <div className="grid sm:grid-cols-3 gap-3">
+        {[['Available', Math.max(0, Number(p.stock||0)-Number(p.reserved||0))], ['Reserved', p.reserved||0], ['Low Stock Alert', p.low_stock_threshold ?? 5]].map(([l,v])=><div key={l} className="rounded-xl border border-gray-200 p-4"><p className="text-xs text-gray-500">{l}</p><p className="text-xl font-semibold text-gray-900 mt-1">{v}</p></div>)}
+      </div>
+      <div className="grid lg:grid-cols-2 gap-5">
+        <div className="rounded-xl border border-gray-200 p-4"><h4 className="font-semibold text-gray-900 flex items-center gap-2"><Layers3 size={15}/> Bulk Ordering</h4>{p.bulk_order?.enabled ? <><p className="text-xs text-emerald-700 mt-1">Enabled · minimum {p.bulk_order.min_quantity || 1} pcs</p><div className="mt-3 space-y-2">{(p.bulk_order.tiers||[]).map((t,i)=><div key={i} className="flex justify-between text-sm"><span>{t.min_quantity}+ pcs</span><b>{inr(t.price)} / pc</b></div>)}</div></> : <p className="text-sm text-gray-400 mt-2">Disabled</p>}</div>
+        <div className="rounded-xl border border-gray-200 p-4"><h4 className="font-semibold text-gray-900">Personalisation</h4><p className="text-sm text-gray-600 mt-2">{p.personalization?.enabled ? `Enabled · ${p.personalization.char_limit || 30} characters` : "Disabled"}</p>{p.tags?.length ? <div className="flex flex-wrap gap-2 mt-3">{p.tags.map(t=><span key={t} className="text-[11px] bg-gray-100 rounded-full px-2.5 py-1">{t}</span>)}</div> : null}</div>
+      </div>
+      <div className="rounded-xl border border-gray-200 p-4"><h4 className="font-semibold text-gray-900 flex items-center gap-2"><Eye size={15}/> Product description</h4><p className="text-sm text-gray-600 mt-2 whitespace-pre-wrap">{p.description || "No description"}</p></div>
+    </div>}
+  </Modal>;
 }
 
 /* ---------------- GENERIC SIMPLE MANAGER ---------------- */

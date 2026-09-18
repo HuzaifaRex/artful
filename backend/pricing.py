@@ -44,10 +44,14 @@ async def build_line_items(items):
             if variant:
                 base_price = variant.get("price", base_price)
                 available = variant.get("stock", available)
-        capped = min(qty, max(0, available))
-        if capped == 0:
-            errors.append({"product_id": prod["id"], "name": prod["name"], "error": "Out of stock."})
+        available = max(0, int(available or 0))
+        if available <= 0:
+            errors.append({"product_id": prod["id"], "name": prod["name"], "requested_qty": qty, "available": 0, "error": "Out of stock."})
             continue
+        if qty > available:
+            errors.append({"product_id": prod["id"], "name": prod["name"], "requested_qty": qty, "available": available, "error": f"Only {available} units are available."})
+            continue
+        capped = qty
         price = bulk_unit_price(prod, capped, base_price)
         unit_cost = (variant or {}).get("cost_price", prod.get("cost_price", 0)) if variant else prod.get("cost_price", 0)
         try:

@@ -57,6 +57,7 @@ export default function CartDrawer() {
                     </div>
                     {item.gift_wrap && <p className="text-[11px] text-plum mt-0.5">+ Gift wrap</p>}
                     {item.personalization && <p className="text-[11px] text-ink-muted mt-0.5 truncate">"{item.personalization}"</p>}
+                    {item.bulk_order && item.qty >= Number(item.bulk_order.min_quantity || 0) && <p className="text-[11px] text-violet-700 mt-0.5">Bulk rate applied · {inr(item.price)} / pc</p>}
                     <div className="flex items-center justify-between mt-2">
                       <div className="flex items-center border border-line">
                         <button onClick={() => updateQty(item.key, item.qty - 1)} className="p-1.5 text-plum" data-testid={`cart-dec-${item.slug}`}><Minus size={13} /></button>

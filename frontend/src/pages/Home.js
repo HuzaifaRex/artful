@@ -99,7 +99,7 @@ function ProductRail({ heading, subheading, collectionSlug }) {
         </div>
         <Link to={`/collections/${collectionSlug}`} className="btn-ghost !px-0 hidden sm:flex">View All <ArrowRight size={15} /></Link>
       </div>
-      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-x-5 gap-y-10">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-4 sm:gap-x-5 gap-y-6 sm:gap-y-10">
         {!items ? [0, 1, 2, 3].map((i) => <ProductSkeleton key={i} />)
           : items.slice(0, 4).map((p, i) => <ProductCard key={p.id} product={p} index={i} />)}
       </div>
@@ -129,18 +129,18 @@ function CategoriesSection({ s }) {
         {s.subheading && <p className="text-ink-secondary mt-2 max-w-xl mx-auto">{s.subheading}</p>}
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 lg:gap-6" data-testid="featured-categories-grid">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-4 lg:gap-6" data-testid="featured-categories-grid">
         {cats.slice(0, 8).map((c, i) => {
           const IconCmp = getIcon(c.icon);
           return (
             <Link
               key={c.slug}
               to={`/categories/${c.slug}`}
-              className="group overflow-hidden rounded-[2px] border border-line bg-white shadow-[0_6px_24px_rgba(55,28,40,0.06)] hover:shadow-[0_10px_30px_rgba(55,28,40,0.10)] transition-all duration-500 animate-fadeUp"
+              className="group overflow-hidden rounded-3xl border border-line bg-white shadow-[0_8px_28px_rgba(55,28,40,0.07)] hover:-translate-y-1 hover:shadow-[0_16px_40px_rgba(55,28,40,0.12)] transition-all duration-500 animate-fadeUp"
               style={{ animationDelay: `${(i % 4) * 60}ms` }}
               data-testid={`category-${c.slug}`}
             >
-              <div className="relative aspect-[4/4.65] overflow-hidden bg-surface">
+              <div className="relative aspect-[4/4.7] overflow-hidden bg-surface">
                 <img
                   src={c.image}
                   alt={c.name}
@@ -156,9 +156,9 @@ function CategoriesSection({ s }) {
                 </div>
               </div>
 
-              <div className="flex items-center justify-between gap-3 px-4 py-4 sm:px-5 sm:py-5">
+              <div className="flex items-center justify-between gap-2 px-3 py-3.5 sm:px-5 sm:py-5">
                 <div className="min-w-0">
-                  <h3 className="artful-category-name text-[1.12rem] sm:text-[1.35rem] text-plum-wine leading-tight truncate">{c.name}</h3>
+                  <h3 className="artful-category-name text-[0.92rem] sm:text-[1.25rem] text-plum-wine leading-tight truncate">{c.name}</h3>
                   <p className="mt-1 text-[11px] sm:text-xs uppercase tracking-[0.12em] text-ink-muted">{c.product_count} pieces</p>
                 </div>
                 <span className="shrink-0 text-ink-muted group-hover:text-plum transition-colors duration-300" aria-hidden="true">
@@ -233,7 +233,7 @@ function ValuesSection({ s }) {
           <h2 className="font-serif text-3xl sm:text-4xl lg:text-5xl font-light">{s.heading}</h2>
           {s.subheading && <p className="text-cream/70 mt-4">{s.subheading}</p>}
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-5 lg:gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5 lg:gap-6">
           {(s.items || []).map((v, i) => {
             const IconCmp = getIcon(v.icon);
             return (
@@ -259,7 +259,7 @@ function PromiseSection({ s }) {
         <h2 className="section-title">{s.heading}</h2>
         {s.subheading && <p className="text-ink-secondary mt-3">{s.subheading}</p>}
       </div>
-      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
         {(s.items || []).map((it, i) => {
           const IconCmp = getIcon(it.icon);
           return (

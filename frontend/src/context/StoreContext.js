@@ -56,20 +56,25 @@ export function StoreProvider({ children }) {
   }, []);
 
   const addToCart = useCallback((product, qty = 1, opts = {}) => {
+    const available = Math.max(0, Number(product?.stock || 0) - Number(product?.reserved || 0));
+    if (available <= 0) { toast.error("This product is out of stock"); return; }
     setCart((prev) => {
       const key = product.id + (opts.variant_id || "") + (opts.gift_wrap ? "gw" : "") + (opts.personalization || "");
       const idx = prev.findIndex((i) => i.key === key);
       if (idx >= 0) {
         const next = [...prev];
-        const nextQty = next[idx].qty + qty;
-        next[idx] = { ...next[idx], qty: nextQty, price: getBulkUnitPrice(next[idx], nextQty) };
+        const nextQty = Math.min(available, next[idx].qty + qty);
+        if (nextQty === next[idx].qty && qty > 0) toast.error(`Only ${available} units are available`);
+        next[idx] = { ...next[idx], qty: nextQty, available, price: getBulkUnitPrice(next[idx], nextQty) };
         return next;
       }
+      const nextQty = Math.min(available, Math.max(1, qty));
+      if (nextQty < qty) toast.error(`Only ${available} units are available`);
       return [...prev, {
         key, product_id: product.id, name: product.name, slug: product.slug,
-        image: (product.images || [])[0], price: getBulkUnitPrice(product, qty),
+        image: (product.images || [])[0], price: getBulkUnitPrice(product, nextQty),
         base_price: product.price, bulk_order: product.bulk_order || null,
-        compare_at_price: product.compare_at_price, qty,
+        compare_at_price: product.compare_at_price, qty: nextQty, available,
         variant_id: opts.variant_id || null, gift_wrap: !!opts.gift_wrap,
         personalization: opts.personalization || null,
       }];
@@ -81,7 +86,9 @@ export function StoreProvider({ children }) {
   const updateQty = useCallback((key, qty) => {
     setCart((prev) => prev.map((i) => {
       if (i.key !== key) return i;
-      const nextQty = Math.max(1, qty);
+      const available = Number(i.available ?? 0);
+      const nextQty = available > 0 ? Math.min(available, Math.max(1, qty)) : Math.max(1, qty);
+      if (available > 0 && nextQty < qty) toast.error(`Only ${available} units are available`);
       return { ...i, qty: nextQty, price: getBulkUnitPrice({ price: i.base_price ?? i.price, bulk_order: i.bulk_order }, nextQty) };
     }));
   }, []);

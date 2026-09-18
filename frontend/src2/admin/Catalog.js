@@ -7,7 +7,7 @@ import { StatusChip, Modal, Field, inputCls, PageHead, Empty } from "./ui";
 import { ImageUpload, MultiImageUpload, VideoUpload } from "./ImageUpload";
 import { DataTable } from "./DataTable";
 
-const BADGES = ["New", "Bestseller", "Limited", "Trending", "Handmade", "Sale", "Featured"];
+const BADGES = ["New", "Bestseller", "Limited", "Sale", "Featured"];
 const STATUSES = ["Draft", "Active", "Out of Stock", "Archived"];
 const SECTIONS = [
   { key: "new-arrivals", label: "New Arrivals" },
@@ -113,15 +113,13 @@ function ProductForm({ product, cats, onClose, onSaved }) {
   }, []);
   const [saving, setSaving] = useState(false);
   const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
-  const toggleBadge = (b) => set("badges", f.badges.includes(b) ? f.badges.filter((x) => x !== b) : f.badges.length >= 2 ? f.badges : [...f.badges, b]);
+  const toggleBadge = (b) => set("badges", f.badges.includes(b) ? f.badges.filter((x) => x !== b) : [...f.badges, b]);
 
   const save = async () => {
     if (!f.name || f.price === "") return toast.error("Name and price are required");
-    const shortWords = String(f.short_description || "").trim().split(/\s+/).filter(Boolean);
-    if (shortWords.length > 10) return toast.error("Short description must be maximum 10 words.");
     setSaving(true);
     const bulk = f.bulk_order?.enabled ? { enabled: true, min_quantity: Math.max(2, Number(f.bulk_order?.min_quantity || 2)), tiers: (f.bulk_order?.tiers || []).map((t) => ({ min_quantity: Math.max(2, Number(t.min_quantity || 0)), price: Math.max(1, Number(t.price || 0)) })).filter((t) => t.min_quantity > 0 && t.price > 0) } : { enabled: false, min_quantity: Number(f.bulk_order?.min_quantity || 10), tiers: [] };
-    const payload = { ...f, price: Number(f.price), cost_price: Number(f.cost_price || 0), mrp: f.mrp ? Number(f.mrp) : (f.compare_at_price ? Number(f.compare_at_price) : null), compare_at_price: f.mrp ? Number(f.mrp) : (f.compare_at_price ? Number(f.compare_at_price) : null), stock: Number(f.stock), low_stock_threshold: Number(f.low_stock_threshold), bulk_order: bulk, tags: (typeof f.tags === "string" ? f.tags.split(",").map((x) => x.trim()).filter(Boolean) : f.tags).slice(0, 2), images: typeof f.images === "string" ? f.images.split("\n").map((x) => x.trim()).filter(Boolean) : f.images, occasion: typeof f.occasion === "string" ? f.occasion.split(",").map((x) => x.trim()).filter(Boolean) : f.occasion, recipient: typeof f.recipient === "string" ? f.recipient.split(",").map((x) => x.trim()).filter(Boolean) : f.recipient };
+    const payload = { ...f, price: Number(f.price), cost_price: Number(f.cost_price || 0), mrp: f.mrp ? Number(f.mrp) : (f.compare_at_price ? Number(f.compare_at_price) : null), compare_at_price: f.mrp ? Number(f.mrp) : (f.compare_at_price ? Number(f.compare_at_price) : null), stock: Number(f.stock), low_stock_threshold: Number(f.low_stock_threshold), bulk_order: bulk, tags: typeof f.tags === "string" ? f.tags.split(",").map((x) => x.trim()).filter(Boolean) : f.tags, images: typeof f.images === "string" ? f.images.split("\n").map((x) => x.trim()).filter(Boolean) : f.images, occasion: typeof f.occasion === "string" ? f.occasion.split(",").map((x) => x.trim()).filter(Boolean) : f.occasion, recipient: typeof f.recipient === "string" ? f.recipient.split(",").map((x) => x.trim()).filter(Boolean) : f.recipient };
     try {
       if (isNew) await adminApi.post("/products", payload);
       else await adminApi.put(`/products/${product.id}`, payload);
@@ -145,7 +143,7 @@ function ProductForm({ product, cats, onClose, onSaved }) {
         <Field label="Status"><select value={f.status} onChange={(e) => set("status", e.target.value)} className={inputCls} data-testid="pf-status">{STATUSES.map((s) => <option key={s}>{s}</option>)}</select></Field>
         <Field label="Material"><input value={f.material || ""} onChange={(e) => set("material", e.target.value)} className={inputCls} /></Field>
         <Field label="Color"><input value={f.color || ""} onChange={(e) => set("color", e.target.value)} className={inputCls} /></Field>
-        <div className="sm:col-span-2"><Field label="Short description (max 10 words)"><input value={f.short_description || ""} onChange={(e) => set("short_description", e.target.value)} maxLength={120} className={inputCls} /><p className="mt-1 text-[11px] text-gray-400">{String(f.short_description || "").trim().split(/\s+/).filter(Boolean).length}/10 words</p></Field></div>
+        <div className="sm:col-span-2"><Field label="Short description"><input value={f.short_description || ""} onChange={(e) => set("short_description", e.target.value)} className={inputCls} /></Field></div>
         <div className="sm:col-span-2"><Field label="Description"><textarea rows={3} value={f.description || ""} onChange={(e) => set("description", e.target.value)} className={inputCls} /></Field></div>
         <div className="sm:col-span-2"><Field label="Product Images"><MultiImageUpload value={Array.isArray(f.images) ? f.images : []} onChange={(v) => set("images", v)} testid="product-images" /></Field></div>
         <div className="sm:col-span-2">
@@ -175,10 +173,10 @@ function ProductForm({ product, cats, onClose, onSaved }) {
             </div>
           )}
         </div>
-        <Field label="Tags (maximum 2, comma separated)"><input value={Array.isArray(f.tags) ? f.tags.join(", ") : f.tags} onChange={(e) => set("tags", e.target.value)} className={inputCls} /><p className="mt-1 text-[11px] text-gray-400">Only the first 2 tags will be saved.</p></Field>
+        <Field label="Tags (comma separated)"><input value={Array.isArray(f.tags) ? f.tags.join(", ") : f.tags} onChange={(e) => set("tags", e.target.value)} className={inputCls} /></Field>
         <Field label="Occasion (comma separated)"><input value={Array.isArray(f.occasion) ? f.occasion.join(", ") : f.occasion} onChange={(e) => set("occasion", e.target.value)} className={inputCls} /></Field>
         <div className="sm:col-span-2">
-          <Field label="Badges (maximum 2)"><div className="flex flex-wrap gap-2">{BADGES.map((b) => <button key={b} type="button" onClick={() => toggleBadge(b)} className={`px-3 py-1 text-xs rounded border ${f.badges.includes(b) ? "bg-plum text-white border-plum" : "border-gray-300 text-gray-600"}`}>{b}</button>)}</div></Field>
+          <Field label="Badges"><div className="flex flex-wrap gap-2">{BADGES.map((b) => <button key={b} type="button" onClick={() => toggleBadge(b)} className={`px-3 py-1 text-xs rounded border ${f.badges.includes(b) ? "bg-plum text-white border-plum" : "border-gray-300 text-gray-600"}`}>{b}</button>)}</div></Field>
         </div>
         <label className="sm:col-span-2 flex items-center gap-2 text-sm text-gray-600"><input type="checkbox" checked={f.personalization?.enabled} onChange={(e) => set("personalization", { ...f.personalization, enabled: e.target.checked })} className="accent-plum" /> Enable personalization</label>
       </div>

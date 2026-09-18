@@ -5,7 +5,7 @@ import { api, apiError } from "../lib/api";
 import { useStore } from "../context/StoreContext";
 import ProductCard from "../components/ProductCard";
 import { PageLoader } from "../components/Loader";
-import { inr, discountPct, INDIAN_STATES } from "../lib/utils";
+import { inr, discountPct, INDIAN_STATES, getBulkUnitPrice } from "../lib/utils";
 import { toast } from "sonner";
 
 function Accordion({ title, children, open }) {
@@ -35,7 +35,8 @@ export default function ProductDetail() {
   const [deliveryState, setDeliveryState] = useState("");
   const [deliveryResult, setDeliveryResult] = useState(null);
   const [canReview, setCanReview] = useState(null);
-  const [rvForm, setRvForm] = useState({ rating: 5, title: "", body: "" });
+  const [rvForm, setRvForm] = useState({ rating: 5, title: "", body: "", image_url: "" });
+  const [reviewUploading, setReviewUploading] = useState(false);
 
   useEffect(() => {
     setP(null); setActiveImg(0); setQty(1); setGiftWrap(false); setMessage(""); setDeliveryState(""); setDeliveryResult(null);
@@ -62,12 +63,26 @@ export default function ProductDetail() {
     return () => { active = false; };
   }, [deliveryState]);
 
+  const uploadReviewImage = async (file) => {
+    if (!file) return;
+    if (file.size > 8 * 1024 * 1024) return toast.error("Review image must be 8MB or smaller.");
+    const fd = new FormData();
+    fd.append("file", file);
+    setReviewUploading(true);
+    try {
+      const { data } = await api.post("/reviews/upload", fd, { headers: { "Content-Type": "multipart/form-data" } });
+      setRvForm((f) => ({ ...f, image_url: data.url }));
+      toast.success("Review image uploaded");
+    } catch (e) { toast.error(apiError(e, "Image upload failed")); }
+    finally { setReviewUploading(false); }
+  };
+
   const submitReview = async () => {
     try {
       const { data } = await api.post(`/products/${slug}/reviews`, rvForm);
       toast.success(data.message);
       setCanReview({ can_review: false, already_reviewed: true });
-      setRvForm({ rating: 5, title: "", body: "" });
+      setRvForm({ rating: 5, title: "", body: "", image_url: "" });
     } catch (e) { toast.error(apiError(e)); }
   };
 
@@ -116,6 +131,18 @@ export default function ProductDetail() {
             {p.compare_at_price > p.price && <span className="text-ink-muted line-through">{inr(p.compare_at_price)}</span>}
             <span className="text-xs text-ink-muted">(incl. of taxes)</span>
           </div>
+          {p.bulk_order?.enabled && Array.isArray(p.bulk_order?.tiers) && p.bulk_order.tiers.length > 0 && (
+            <div className="mt-4 rounded-2xl border border-line bg-surface/70 p-4" data-testid="bulk-pricing">
+              <div className="flex items-center justify-between gap-3 mb-2">
+                <div><p className="text-sm font-semibold text-plum">Bulk pricing available</p><p className="text-xs text-ink-muted">Save more as quantity increases.</p></div>
+                <span className="text-[10px] uppercase tracking-widest2 text-ink-muted">Min {p.bulk_order.min_quantity || 1} pcs</span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {p.bulk_order.tiers.map((tier, i) => <div key={i} className="rounded-xl bg-white border border-line px-3 py-2"><p className="text-xs text-ink-muted">{tier.min_quantity}+ pcs</p><p className="text-sm font-semibold text-plum">{inr(tier.price)} / pc</p></div>)}
+              </div>
+              {qty >= Number(p.bulk_order.min_quantity || 0) && <p className="text-xs text-ok mt-2">Current quantity rate: <b>{inr(getBulkUnitPrice(p, qty))}</b> per piece</p>}
+            </div>
+          )}
           <p className="mt-5 text-ink-secondary leading-relaxed">{p.short_description}</p>
 
           <div className="mt-4">
@@ -141,7 +168,7 @@ export default function ProductDetail() {
             <div className="flex items-center border border-line">
               <button onClick={() => setQty(Math.max(1, qty - 1))} className="p-3 text-plum" data-testid="qty-dec"><Minus size={15} /></button>
               <span className="px-5 text-sm" data-testid="qty-value">{qty}</span>
-              <button onClick={() => setQty(qty + 1)} className="p-3 text-plum" data-testid="qty-inc"><Plus size={15} /></button>
+              <button onClick={() => setQty(Math.min(available, qty + 1))} disabled={qty >= available} className="p-3 text-plum disabled:opacity-30" data-testid="qty-inc"><Plus size={15} /></button>
             </div>
             <button onClick={() => toggleWishlist(p.id)} className="p-3 border border-line text-plum hover:border-plum" data-testid="wishlist-toggle-button"><Heart size={18} className={saved ? "fill-accent text-accent" : ""} /></button>
           </div>
@@ -185,7 +212,11 @@ export default function ProductDetail() {
             </div>
             <input value={rvForm.title} onChange={(e) => setRvForm({ ...rvForm, title: e.target.value })} placeholder="Title (optional)" className="input-field mb-3" data-testid="rv-title" />
             <textarea value={rvForm.body} onChange={(e) => setRvForm({ ...rvForm, body: e.target.value })} rows={3} placeholder="Share your experience" className="input-field mb-3" data-testid="rv-body" />
-            <button onClick={submitReview} className="btn-primary" data-testid="rv-submit">Submit Review</button>
+            <div className="mb-4 rounded-2xl border border-line bg-white p-4">
+              <div className="flex items-center justify-between gap-3 mb-2"><div><p className="text-sm font-medium text-ink">Add a photo <span className="text-ink-muted">(optional)</span></p><p className="text-xs text-ink-muted">Your photo is shown publicly only after admin approval.</p></div><label className="cursor-pointer rounded-full border border-line px-3 py-2 text-xs text-plum hover:border-plum"><input type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="hidden" disabled={reviewUploading} onChange={(e) => uploadReviewImage(e.target.files?.[0])} />{reviewUploading ? "Uploading…" : (rvForm.image_url ? "Replace" : "Choose image")}</label></div>
+              {rvForm.image_url && <div className="relative w-24 h-24 overflow-hidden rounded-xl border border-line"><img src={rvForm.image_url} alt="Review preview" className="w-full h-full object-cover" /><button type="button" onClick={() => setRvForm((f) => ({ ...f, image_url: "" }))} className="absolute top-1 right-1 rounded-full bg-black/60 text-white w-6 h-6 text-xs">×</button></div>}
+            </div>
+            <button onClick={submitReview} disabled={reviewUploading || !rvForm.body.trim()} className="btn-primary disabled:opacity-50" data-testid="rv-submit">Submit Review</button>
           </div>
         )}
         {canReview?.already_reviewed && <p className="text-sm text-ok mb-6">Thanks — you've reviewed this product.</p>}
@@ -199,7 +230,8 @@ export default function ProductDetail() {
                 </div>
                 {r.title && <p className="font-medium text-ink mt-1.5">{r.title}</p>}
                 <p className="text-sm text-ink-secondary mt-1">{r.body}</p>
-                <p className="text-xs text-ink-muted mt-1">— {r.customer_name}</p>
+                {r.image_url && <img src={r.image_url} alt="Customer review" className="mt-3 w-40 h-40 object-cover rounded-2xl border border-line" />}
+                <p className="text-xs text-ink-muted mt-2">— {r.customer_name}</p>
               </div>
             ))}
           </div>
@@ -209,7 +241,7 @@ export default function ProductDetail() {
       {related.length > 0 && (
         <div className="container-artful py-16 border-t border-line">
           <h2 className="section-title text-center mb-12">You May Also Like</h2>
-          <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-x-5 gap-y-10">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-5 gap-y-10">
             {related.map((rp, i) => <ProductCard key={rp.id} product={rp} index={i} />)}
           </div>
         </div>

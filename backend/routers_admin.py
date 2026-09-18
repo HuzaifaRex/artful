@@ -462,12 +462,30 @@ async def admin_products(q: str = "", status: str = "", category: str = "",
         query["status"] = status
     if category:
         query["category_slug"] = category
-    sort_map = {"newest": [("created_at", -1)], "price_asc": [("price", 1)],
-                "price_desc": [("price", -1)], "stock": [("stock", 1)], "sales": [("sales_count", -1)]}
+    sort_map = {
+        "newest": [("created_at", -1)], "updated_desc": [("updated_at", -1)],
+        "name_asc": [("name", 1)], "price_asc": [("price", 1)], "price_desc": [("price", -1)],
+        "stock_asc": [("stock", 1)], "stock_desc": [("stock", -1)], "sales_desc": [("sales_count", -1)],
+    }
     total = await db.products.count_documents(query)
     cur = db.products.find(query, {"_id": 0}).sort(sort_map.get(sort, sort_map["newest"])).skip((page-1)*page_size).limit(page_size)
     return {"items": [clean(p) async for p in cur], "total": total, "page": page,
             "pages": max(1, (total + page_size - 1)//page_size)}
+
+
+@router.get("/products/summary")
+async def admin_products_summary(admin: dict = Depends(require_permission("catalog"))):
+    total = await db.products.count_documents({"status": {"$ne": "Archived"}})
+    active = await db.products.count_documents({"status": "Active"})
+    draft = await db.products.count_documents({"status": "Draft"})
+    out = await db.products.count_documents({"$or": [{"status": "Out of Stock"}, {"stock": {"$lte": 0}}], "status": {"$ne": "Archived"}})
+    low = 0; units = 0; value = 0
+    async for prod in db.products.find({"status": {"$ne": "Archived"}}, {"stock":1,"reserved":1,"low_stock_threshold":1,"cost_price":1,"_id":0}):
+        stock = _int_num(prod.get("stock"), 0); reserved = _int_num(prod.get("reserved"), 0); available = max(0, stock - reserved)
+        units += stock
+        value += stock * _num(prod.get("cost_price"), 0)
+        if available > 0 and available <= _int_num(prod.get("low_stock_threshold"), 5): low += 1
+    return {"total": total, "active": active, "draft": draft, "out_of_stock": out, "low_stock": low, "stock_units": units, "inventory_value": round(value, 2)}
 
 
 @router.post("/products")
@@ -529,6 +547,11 @@ async def update_product(pid: str, payload: dict, request: Request, admin: dict 
         fields["cost_price"] = _num(fields.get("cost_price"), 0)
     fields["updated_at"] = now_iso()
     old_stock = _int_num(p.get("stock"),0); new_stock = _int_num(fields.get("stock"), old_stock)
+    if "stock" in fields:
+        reserved = _int_num(p.get("reserved"), 0)
+        available = max(0, new_stock - reserved)
+        if available <= 0 and fields.get("status", p.get("status")) == "Active": fields["status"] = "Out of Stock"
+        elif available > 0 and fields.get("status", p.get("status")) == "Out of Stock": fields["status"] = "Active"
     await db.products.update_one({"id": pid}, {"$set": fields})
     if "stock" in fields and new_stock != old_stock:
         await db.inventory_transactions.insert_one({"id":str(uuid.uuid4()),"product_id":pid,"change":new_stock-old_stock,"reason":"Manual Adjustment","admin":admin["email"],"at":now_iso(),"source":"product_edit"})
@@ -771,19 +794,38 @@ async def upload_media(file: UploadFile = File(...), admin: dict = Depends(get_c
 
 # ---------------- ORDERS ----------------
 @router.get("/orders")
-async def admin_orders(status: str = "", q: str = "", page: int = 1, page_size: int = 20,
-                       admin: dict = Depends(require_permission("orders"))):
+async def admin_orders(status: str = "", q: str = "", payment: str = "", sort: str = "newest",
+                       page: int = 1, page_size: int = 20, admin: dict = Depends(require_permission("orders"))):
     query = {}
     if status:
         query["status"] = status
+    if payment:
+        query["payment.status"] = payment
     if q:
         query["$or"] = [{"order_number": {"$regex": q, "$options": "i"}},
                         {"customer.phone": {"$regex": q, "$options": "i"}},
-                        {"customer.name": {"$regex": q, "$options": "i"}}]
+                        {"customer.name": {"$regex": q, "$options": "i"}},
+                        {"customer.email": {"$regex": q, "$options": "i"}}]
+    sort_map = {"newest": [("created_at", -1)], "oldest": [("created_at", 1)], "total_desc": [("pricing.total", -1)],
+                "total_asc": [("pricing.total", 1)], "status": [("status", 1)], "updated_desc": [("updated_at", -1)]}
     total = await db.orders.count_documents(query)
-    cur = db.orders.find(query, {"_id": 0}).sort("created_at", -1).skip((page-1)*page_size).limit(page_size)
+    cur = db.orders.find(query, {"_id": 0}).sort(sort_map.get(sort, sort_map["newest"])).skip((page-1)*page_size).limit(page_size)
     return {"items": [clean(o) async for o in cur], "total": total, "page": page,
             "pages": max(1, (total + page_size - 1)//page_size)}
+
+
+@router.get("/orders/summary")
+async def admin_orders_summary(admin: dict = Depends(require_permission("orders"))):
+    total = await db.orders.count_documents({})
+    pending = await db.orders.count_documents({"status": {"$in": ["Pending", "Confirmed", "Processing", "Packed", "Shipped", "Out for Delivery"]}})
+    delivered = await db.orders.count_documents({"status": "Delivered"})
+    cancelled = await db.orders.count_documents({"status": "Cancelled"})
+    paid = 0
+    revenue = 0
+    async for o in db.orders.find({"payment.status": {"$in": ["paid", "cod_confirmed"]}}, {"pricing.total":1,"_id":0}):
+        paid += 1
+        revenue += _num((o.get("pricing") or {}).get("total"), 0)
+    return {"total": total, "pending": pending, "delivered": delivered, "cancelled": cancelled, "paid_orders": paid, "revenue": round(revenue, 2)}
 
 
 @router.get("/orders/{order_number}")

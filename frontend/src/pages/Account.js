@@ -5,7 +5,7 @@ import { api, apiError } from "../lib/api";
 import { useStore } from "../context/StoreContext";
 import ProductCard from "../components/ProductCard";
 import InvoiceDownloadButton from "../components/InvoiceDownloadButton";
-import { inr, formatDate, isValidPhone, isValidEmail, isValidPincode, sanitizePhone, INDIAN_STATES } from "../lib/utils";
+import { inr, formatDate, isValidPhone, isValidEmail, isValidPincode, sanitizePhone, INDIAN_STATES, getCitiesForState } from "../lib/utils";
 import { toast } from "sonner";
 
 const NAV = [
@@ -205,13 +205,18 @@ function Addresses() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6"><h2 className="font-serif text-2xl text-plum">Addresses</h2><button onClick={() => setShowForm(!showForm)} className="btn-ghost !px-0" data-testid="add-address-btn"><Plus size={15} /> Add New</button></div>
       {showForm && (
         <div className="border border-line p-4 sm:p-5 mb-6 grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {["name", "phone", "line1", "line2", "area", "city"].map((f) => (
+          {["name", "phone", "line1", "line2", "area"].map((f) => (
             <input key={f} value={form[f]} onChange={(e) => setForm({ ...form, [f]: f === "phone" ? sanitizePhone(e.target.value) : e.target.value })} inputMode={f === "phone" ? "numeric" : undefined} placeholder={f === "line1" ? "Address line 1" : f.charAt(0).toUpperCase() + f.slice(1)} className={`input-field min-w-0 ${["line1", "line2"].includes(f) ? "sm:col-span-2" : ""}`} data-testid={`newaddr-${f}`} />
           ))}
-          <select value={form.state} onChange={(e) => setForm({ ...form, state: e.target.value })} className="input-field" data-testid="newaddr-state">
+          <select value={form.state} onChange={(e) => { const state=e.target.value; setForm({ ...form, state, city: getCitiesForState(state).includes(form.city) ? form.city : "" }); }} className="input-field" data-testid="newaddr-state">
             <option value="">Select State</option>
-            {INDIAN_STATES.map((s) => <option key={s} value={s}>{s}</option>)}
+            {INDIAN_STATES.map((state) => <option key={state} value={state}>{state}</option>)}
           </select>
+          <select value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} className="input-field" data-testid="newaddr-city" disabled={!form.state}>
+            <option value="">{form.state ? "Select City" : "Select State First"}</option>
+            {getCitiesForState(form.state).map((city) => <option key={city} value={city}>{city}</option>)}
+          </select>
+          
           <input value={form.pincode} onChange={(e) => setForm({ ...form, pincode: e.target.value.replace(/\D/g, "").slice(0, 6) })} inputMode="numeric" placeholder="Pincode" className="input-field" data-testid="newaddr-pincode" />
           <label className="flex items-start sm:items-center gap-2 text-sm text-ink-secondary sm:col-span-2"><input type="checkbox" checked={form.is_default} onChange={(e) => setForm({ ...form, is_default: e.target.checked })} className="accent-plum" /> Set as default</label>
           <button onClick={save} className="btn-primary w-full sm:col-span-2" data-testid="save-address-btn">Save Address</button>
@@ -244,7 +249,7 @@ function Wishlist() {
     <div>
       <h2 className="font-serif text-2xl text-plum mb-6">Wishlist</h2>
       {items.length === 0 ? <p className="text-ink-secondary">Your wishlist is empty. Tap the heart on any product to save it.</p> : (
-        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-8 sm:gap-y-10">{items.map((p, i) => <ProductCard key={p.id} product={p} index={i} />)}</div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-8 sm:gap-y-10">{items.map((p, i) => <ProductCard key={p.id} product={p} index={i} />)}</div>
       )}
     </div>
   );
