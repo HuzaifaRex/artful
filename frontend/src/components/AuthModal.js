@@ -50,9 +50,9 @@ export default function AuthModal() {
       <div className="relative bg-cream w-full max-w-md p-8 sm:p-10 animate-fadeUp">
         <button onClick={close} className="absolute top-5 right-5 text-plum" data-testid="auth-close"><X size={22} /></button>
         <div className="text-center mb-8">
-          {/* <div className="">
-            <img src={logo} alt="Artful" className="mx-auto h-16 w-16" />
-          </div> */}
+          <div className="mb-2">
+            <img src="/logo-plum.webp" alt="ARTFUL" className='h-16 mx-auto block' />
+          </div>
           <p className="text-sm text-ink-secondary">Enter your correct WhatsApp number. We’ll send your OTP on WhatsApp.</p>
         </div>
 
