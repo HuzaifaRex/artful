@@ -4,7 +4,7 @@ import { useStore } from "../context/StoreContext";
 import { api, apiError } from "../lib/api";
 import { toast } from "sonner";
 import { sanitizePhone } from "../lib/utils";
-import logo from "../assets/logo-plum.webp";
+import logo from "../../public/logo-plum.webp";
 
 export default function AuthModal() {
   const { authOpen, setAuthOpen, loginSuccess } = useStore();
