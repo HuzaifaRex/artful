@@ -4,6 +4,7 @@ import { useStore } from "../context/StoreContext";
 import { api, apiError } from "../lib/api";
 import { toast } from "sonner";
 import { sanitizePhone } from "../lib/utils";
+import logo from "../assets/logo-plum.webp";
 
 export default function AuthModal() {
   const { authOpen, setAuthOpen, loginSuccess } = useStore();
@@ -49,8 +50,10 @@ export default function AuthModal() {
       <div className="relative bg-cream w-full max-w-md p-8 sm:p-10 animate-fadeUp">
         <button onClick={close} className="absolute top-5 right-5 text-plum" data-testid="auth-close"><X size={22} /></button>
         <div className="text-center mb-8">
-          <div className="font-serif text-4xl text-plum mb-2">Artful</div>
-          <p className="text-sm text-ink-secondary">Sign in with your mobile number — no password needed.</p>
+          <div className="">
+            <img src={logo} alt="Artful" className="mx-auto h-16 w-16" />
+          </div>
+          <p className="text-sm text-ink-secondary">Enter your correct WhatsApp number. We’ll send your OTP on WhatsApp.</p>
         </div>
 
         {step === "phone" && (

@@ -71,7 +71,7 @@ export default function Chatbot() {
       {!open && (
         <div className="fixed bottom-5 right-5 z-50 flex flex-col items-end gap-3">
           <a
-            href="https://wa.me/918871288853"
+            href="https://wa.me/918878688852"
             target="_blank"
             rel="noreferrer"
             className="inline-flex items-center gap-2 rounded-full bg-[#128C32] px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-white shadow-lg transition-transform hover:-translate-y-0.5 hover:brightness-95"
