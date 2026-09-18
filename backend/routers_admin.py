@@ -770,7 +770,9 @@ async def upload_media(file: UploadFile = File(...), admin: dict = Depends(get_c
     data = await file.read()
     max_bytes = 8 * 1024 * 1024 if resource_type == "image" else 50 * 1024 * 1024
     if len(data) > max_bytes:
-        raise HTTPException(400, f"{"Image" if resource_type == "image" else "Video"} too large (max {"8MB" if resource_type == "image" else "50MB"}).")
+        label = "Image" if resource_type == "image" else "Video"
+limit = "8MB" if resource_type == "image" else "50MB"
+raise HTTPException(400, f"{label} too large (max {limit}).")
 
     path = f"{storage.APP_NAME}/uploads/{uuid.uuid4().hex}{ext}"
     try:
