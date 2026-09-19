@@ -37,6 +37,10 @@ export default function OrderDetailModal({ orderNumber, onClose, onSaved, editab
     try { await adminApi.post(`/orders/${orderNumber}/note`, { note: note.trim() }); setNote(""); await load(); toast.success("Note added"); }
     catch (e) { toast.error(apiError(e)); }
   };
+  const updateArtworkStatus = async (itemIndex, artworkStatus) => {
+    try { await adminApi.put(`/orders/${orderNumber}/artwork-status`, { item_index: itemIndex, artwork_status: artworkStatus }); await load(); toast.success("Artwork status updated"); }
+    catch (e) { toast.error(apiError(e)); }
+  };
 
   return (
     <Modal open title={orderNumber ? `Order ${orderNumber}` : "Order"} onClose={onClose} wide>
@@ -53,6 +57,18 @@ export default function OrderDetailModal({ orderNumber, onClose, onSaved, editab
           </div>
 
           <div className="rounded-2xl border border-gray-200 overflow-hidden"><div className="px-4 py-3 bg-gray-50 border-b border-gray-200 flex items-center justify-between"><h4 className="text-sm font-semibold text-gray-900">Order items</h4><span className="text-xs text-gray-500">{(o.items||[]).reduce((n,i)=>n+Number(i.qty||0),0)} units</span></div><div className="divide-y divide-gray-100">{(o.items||[]).map((it,i)=><div key={i} className="p-4 flex gap-3 items-start"><img src={it.image} alt="" className="w-14 h-16 rounded-lg object-cover bg-gray-100 shrink-0"/><div className="flex-1 min-w-0"><p className="font-medium text-gray-900 artful-product-name">{it.name}</p><div className="mt-1 text-xs text-gray-500">SKU {it.sku || "—"} · Qty {it.qty} · Unit {inr(it.price)}</div><div className="flex flex-wrap gap-2 mt-2">{it.bulk_order?.applied && <span className="inline-flex items-center gap-1 rounded-full bg-violet-50 text-violet-700 px-2 py-1 text-[11px]"><Tag size={11}/> Bulk price</span>}{it.gift_wrap && <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 text-amber-700 px-2 py-1 text-[11px]"><Gift size={11}/> Gift wrap</span>}</div>{it.bulk_order?.applied && <p className="text-xs text-violet-700 mt-2">Base price {inr(it.base_price)} · Applied bulk rate {inr(it.price)} / pc</p>}{it.personalization && <p className="text-xs text-plum mt-2 break-words"><b>Personalisation:</b> “{it.personalization}”</p>}</div><div className="font-semibold text-gray-900">{inr(it.line_total ?? (it.price * it.qty))}</div></div>)}</div></div>
+
+          {(o.items || []).some((it) => (it.artwork || []).length > 0) && <div className="rounded-2xl border border-plum/20 bg-plum/5 p-4">
+            <h4 className="text-sm font-semibold text-plum flex items-center gap-2"><FileText size={14}/> Customer artwork</h4>
+            <p className="text-xs text-gray-500 mt-1">Print files uploaded by the customer for this order.</p>
+            <div className="mt-3 space-y-3">
+              {(o.items || []).map((it, ii) => (it.artwork || []).length > 0 && <div key={ii} className="rounded-xl border border-gray-200 bg-white p-3">
+                <p className="text-sm font-medium text-gray-900">{it.name}</p>
+                <div className="mt-2 space-y-2">{it.artwork.map((a, ai) => <div key={ai} className="flex items-center justify-between gap-3 rounded-lg bg-gray-50 px-3 py-2"><div className="min-w-0"><p className="text-xs font-medium truncate">{a.filename || `Artwork ${ai + 1}`}</p><p className="text-[11px] text-gray-400">{a.content_type || "file"} · {a.size ? `${Math.round(a.size / 1024)} KB` : ""}</p></div><a href={a.url} target="_blank" rel="noreferrer" className="shrink-0 rounded-lg bg-plum text-white px-3 py-1.5 text-xs">Open / Download</a></div>)}</div>
+                <div className="mt-3 flex items-center gap-2"><span className="text-[11px] text-gray-500">Artwork status</span><select value={it.artwork_status || "Artwork Received"} onChange={e => updateArtworkStatus(ii, e.target.value)} className={inputCls + " text-xs max-w-xs"}>{["Awaiting Artwork","Artwork Received","Artwork Under Review","Artwork Approved","Artwork Issue"].map(s => <option key={s}>{s}</option>)}</select></div>
+              </div>)}
+            </div>
+          </div>}
 
           {(o.items || []).some((it) => it.bulk_order?.applied) && <div className="rounded-2xl border border-violet-200 bg-violet-50/60 p-4">
             <h4 className="text-sm font-semibold text-violet-900 flex items-center gap-2"><Tag size={14}/> Bulk order details</h4>

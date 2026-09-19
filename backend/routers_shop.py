@@ -313,6 +313,8 @@ async def create_order(payload: dict, cust: dict = Depends(get_current_customer)
 
     # Reserve inventory only after all cart validation has passed.
     for line in totals["items"]:
+        if line.get("product_type") == "customizable":
+            continue
         await db.products.update_one(
             {"id": line["product_id"]},
             {"$inc": {"reserved": line["qty"]}},
@@ -339,6 +341,8 @@ async def create_order(payload: dict, cust: dict = Depends(get_current_customer)
     except Exception as exc:
         # Never leave inventory reserved when Razorpay order creation fails.
         for line in totals["items"]:
+            if line.get("product_type") == "customizable":
+                continue
             await db.products.update_one(
                 {"id": line["product_id"]},
                 {"$inc": {"reserved": -line["qty"]}},
@@ -378,6 +382,8 @@ async def create_order(payload: dict, cust: dict = Depends(get_current_customer)
         await db.orders.insert_one(order)
     except Exception:
         for line in totals["items"]:
+            if line.get("product_type") == "customizable":
+                continue
             await db.products.update_one(
                 {"id": line["product_id"]},
                 {"$inc": {"reserved": -line["qty"]}},
@@ -424,6 +430,7 @@ async def _finalize_paid_order(order, payment_id=None, method="razorpay"):
         return
     for line in order["items"]:
         await db.products.update_one({"id": line["product_id"]}, {"$inc": {"sales_count": line["qty"]}})
+
         await db.inventory_transactions.insert_one({
             "id": str(uuid.uuid4()), "product_id": line["product_id"], "change": 0,
             "reserved_change": 0, "reason": f"Order {order['order_number']} confirmed; stock remains reserved",
@@ -456,6 +463,8 @@ async def _mark_payment_failed(order, reason="Payment failed."):
     if guard.modified_count == 0:
         return False
     for line in order.get("items", []):
+        if line.get("product_type") == "customizable":
+            continue
         await db.products.update_one(
             {"id": line["product_id"]}, {"$inc": {"reserved": -line["qty"]}}
         )
@@ -525,6 +534,7 @@ async def _finalize_paid_order(order, payment_id=None, method="razorpay"):
         return
     for line in order["items"]:
         await db.products.update_one({"id": line["product_id"]}, {"$inc": {"sales_count": line["qty"]}})
+
         await db.inventory_transactions.insert_one({
             "id": str(uuid.uuid4()), "product_id": line["product_id"], "change": 0,
             "reserved_change": 0, "reason": f"Order {order['order_number']} confirmed; stock remains reserved",
@@ -557,6 +567,8 @@ async def _mark_payment_failed(order, reason="Payment failed."):
     if guard.modified_count == 0:
         return False
     for line in order.get("items", []):
+        if line.get("product_type") == "customizable":
+            continue
         await db.products.update_one(
             {"id": line["product_id"]}, {"$inc": {"reserved": -line["qty"]}}
         )
@@ -757,6 +769,34 @@ async def can_review(slug: str, cust: dict = Depends(get_current_customer)):
     purchased = await _has_purchased(cust["id"], p["id"])
     already = await db.reviews.count_documents({"product_id": p["id"], "customer_id": cust["id"]}) > 0
     return {"can_review": purchased and not already, "purchased": purchased, "already_reviewed": already}
+
+
+@router.post("/artwork/upload")
+async def upload_artwork(file: UploadFile = File(...), cust: dict = Depends(get_current_customer)):
+    """Upload customer print artwork. The returned asset is attached to the order item at checkout."""
+    import storage
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    allowed = {
+        ".pdf": ("application/pdf", "raw"),
+        ".jpg": ("image/jpeg", "image"),
+        ".jpeg": ("image/jpeg", "image"),
+        ".png": ("image/png", "image"),
+    }
+    if ext not in allowed:
+        raise HTTPException(400, "Please upload a PDF, JPG or PNG file.")
+    data = await file.read()
+    if len(data) > 20 * 1024 * 1024:
+        raise HTTPException(400, "Artwork file too large (max 20MB).")
+    content_type, resource_type = allowed[ext]
+    path = f"{storage.APP_NAME}/artwork/{cust['id']}/{uuid.uuid4().hex}{ext}"
+    try:
+        result = storage.upload_media(path, data, content_type, resource_type=resource_type)
+    except Exception as e:
+        raise HTTPException(502, f"Artwork upload failed: {e}")
+    return {
+        "url": result["url"], "path": result["path"], "public_id": result.get("public_id"),
+        "filename": file.filename or f"artwork{ext}", "size": len(data), "content_type": content_type
+    }
 
 
 @router.post("/reviews/upload")

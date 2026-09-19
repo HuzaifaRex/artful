@@ -31,6 +31,9 @@ export default function ProductDetail() {
   const [activeImg, setActiveImg] = useState(0);
   const [qty, setQty] = useState(1);
   const [selectedBulkTier, setSelectedBulkTier] = useState(null);
+  const [customSelections, setCustomSelections] = useState({});
+  const [selectedSize, setSelectedSize] = useState("");
+  const [customSize, setCustomSize] = useState({ width: "", height: "" });
   const [giftWrap, setGiftWrap] = useState(false);
   const [message, setMessage] = useState("");
   const [deliveryState, setDeliveryState] = useState("");
@@ -40,7 +43,7 @@ export default function ProductDetail() {
   const [reviewUploading, setReviewUploading] = useState(false);
 
   useEffect(() => {
-    setP(null); setActiveImg(0); setQty(1); setSelectedBulkTier(null); setGiftWrap(false); setMessage(""); setDeliveryState(""); setDeliveryResult(null);
+    setP(null); setActiveImg(0); setQty(1); setSelectedBulkTier(null); setCustomSelections({}); setSelectedSize(""); setCustomSize({ width: "", height: "" }); setGiftWrap(false); setMessage(""); setDeliveryState(""); setDeliveryResult(null);
     api.get(`/products/${slug}`).then(({ data }) => setP(data)).catch(() => setP(false));
     api.get(`/products/${slug}/related`).then(({ data }) => setRelated(data.items)).catch(() => {});
     api.get(`/products/${slug}/reviews`).then(({ data }) => setReviews(data.items)).catch(() => {});
@@ -90,8 +93,9 @@ export default function ProductDetail() {
   if (p === null) return <PageLoader />;
   if (p === false) return <div className="container-artful py-24 text-center"><p className="font-serif text-3xl text-plum">Product not found</p><Link to="/shop" className="btn-outline mt-6">Back to Shop</Link></div>;
 
-  const available = (p.stock || 0) - (p.reserved || 0);
-  const soldOut = p.status === "Out of Stock" || available <= 0;
+  const isCustomProduct = p.product_type === "customizable" || p.customization?.enabled;
+  const available = isCustomProduct ? 999999 : (p.stock || 0) - (p.reserved || 0);
+  const soldOut = p.status === "Out of Stock" || (!isCustomProduct && available <= 0);
   const disc = discountPct(p.price, p.compare_at_price);
   const saved = wishlist.includes(p.id);
 
@@ -101,7 +105,33 @@ export default function ProductDetail() {
     .sort((a, b) => a.min_quantity - b.min_quantity);
   const selectedTier = selectedBulkTier ? bulkTiers.find((tier) => tier.min_quantity === selectedBulkTier.min_quantity) : null;
   const bulkSelected = !!selectedTier;
-  const displayUnitPrice = selectedTier ? selectedTier.price : Number(p.price || 0);
+  const customization = p.product_type === "customizable" ? (p.customization || {}) : null;
+  const customOptions = customization?.enabled ? (customization.options || []) : [];
+  const customAddons = customOptions.reduce((sum, o) => {
+    const selected = customSelections[o.id];
+    const ids = Array.isArray(selected) ? selected : [selected];
+    return sum + ids.reduce((s, id) => s + Number((o.values || []).find(v => v.id === id)?.add_on || 0), 0);
+  }, 0);
+  const customBasePrice = Number(p.price || 0);
+  const customPricing = customization?.pricing || {};
+  const sizeConfig = customization?.size || {};
+  const selectedPresetSize = (sizeConfig.presets || []).find(s => s.id === selectedSize);
+  const hasCustomDimensions = sizeConfig.enabled && selectedSize === "__custom__";
+  const customSizeValid = !hasCustomDimensions || (Number(customSize.width) > 0 && Number(customSize.height) > 0);
+  const sizeAddon = (() => {
+    if (!hasCustomDimensions || !customSizeValid) return 0;
+    if (sizeConfig.pricing_mode === "per_area") {
+      const unit = sizeConfig.unit || "mm";
+      const factor = unit === "mm" ? 0.01 : unit === "in" ? 2.54 : 1;
+      const areaCm2 = Number(customSize.width) * factor * Number(customSize.height) * factor;
+      return Math.max(Number(sizeConfig.min_price || 0), Math.round(areaCm2 * Number(sizeConfig.price_per_area || 0)));
+    }
+    return Number(sizeConfig.min_price || 0);
+  })();
+  const customTier = (customPricing.quantity_tiers || []).filter(t => Number(t.min_quantity || 0) <= qty && Number(t.price || 0) > 0).sort((a,b) => Number(b.min_quantity)-Number(a.min_quantity))[0];
+  const displayUnitPrice = customization?.enabled
+    ? (customPricing.mode === "combination" ? Number((customPricing.rules || []).find(r => Number(r.min_quantity || 1) <= qty && (!r.max_quantity || qty <= Number(r.max_quantity)) && Object.entries(r.selections || {}).every(([k,v]) => !v || customSelections[k] === v))?.price || customBasePrice) : Number(customTier?.price || customBasePrice) + customAddons) + sizeAddon
+    : (selectedTier ? selectedTier.price : customBasePrice);
   const bulkProductTotal = selectedTier ? selectedTier.price * selectedTier.min_quantity : 0;
   const opts = () => ({
     gift_wrap: giftWrap,
@@ -109,9 +139,35 @@ export default function ProductDetail() {
     bulk_locked: bulkSelected,
     bulk_tier_quantity: selectedTier?.min_quantity || null,
     bulk_tier_price: selectedTier?.price || null,
+    customization: customization?.enabled ? customSelections : null,
+    custom_size: sizeConfig.enabled ? (selectedPresetSize ? { preset_id: selectedPresetSize.id, label: selectedPresetSize.label, width: Number(selectedPresetSize.width), height: Number(selectedPresetSize.height), unit: sizeConfig.unit || "mm" } : hasCustomDimensions ? { custom: true, width: Number(customSize.width), height: Number(customSize.height), unit: sizeConfig.unit || "mm" } : null) : null,
   });
-  const handleAdd = () => addToCart(p, qty, opts());
-  const handleBuy = () => { addToCart(p, selectedTier?.min_quantity || qty, opts()); navigate("/checkout"); };
+  const validateCustomization = () => {
+    if (!customization?.enabled) return true;
+    for (const o of customOptions) {
+      if (o.required !== false && !customSelections[o.id]) {
+        toast.error(`Please select ${o.name}.`);
+        return false;
+      }
+    }
+    if (sizeConfig.enabled) {
+      if (!selectedSize) { toast.error("Please select a size."); return false; }
+      if (hasCustomDimensions) {
+        const w = Number(customSize.width), h = Number(customSize.height);
+        if (!(w > 0 && h > 0)) { toast.error("Please enter a valid custom width and height."); return false; }
+        const u = sizeConfig.unit || "mm";
+        const minW = Number(sizeConfig.min_width || 0), maxW = Number(sizeConfig.max_width || Infinity), minH = Number(sizeConfig.min_height || 0), maxH = Number(sizeConfig.max_height || Infinity);
+        if (w < minW || w > maxW || h < minH || h > maxH) { toast.error(`Custom size must be within ${minW}–${maxW} × ${minH}–${maxH} ${u}.`); return false; }
+      }
+    }
+    if (customPricing.mode === "combination") {
+      const match = (customPricing.rules || []).find(r => Number(r.min_quantity || 1) <= qty && (!r.max_quantity || qty <= Number(r.max_quantity)) && Object.entries(r.selections || {}).every(([k,v]) => !v || customSelections[k] === v));
+      if (!match) { toast.error("This customization and quantity combination is not available."); return false; }
+    }
+    return true;
+  };
+  const handleAdd = () => { if (validateCustomization()) addToCart(p, qty, opts()); };
+  const handleBuy = () => { if (validateCustomization()) { addToCart(p, selectedTier?.min_quantity || qty, opts()); navigate("/checkout"); } };
   const selectBulkTier = (tier) => {
     if (tier.min_quantity > available) return toast.error(`Only ${available} units are available for this bulk pack.`);
     setSelectedBulkTier(tier);
@@ -173,6 +229,40 @@ export default function ProductDetail() {
                 })}
               </div>
               {selectedTier && <div className="mt-3 flex items-center justify-between rounded-xl bg-white border border-plum/20 px-4 py-3 text-sm"><span className="text-ink-secondary">Selected bulk total</span><b className="text-plum text-lg">{inr(bulkProductTotal)}</b></div>}
+            </div>
+          )}
+          {customization?.enabled && sizeConfig.enabled && (
+            <div className="mt-5 rounded-2xl border border-line bg-surface/70 p-4 space-y-3">
+              <div><p className="text-sm font-semibold text-plum">Size *</p><p className="text-xs text-ink-muted mt-1">Choose a standard size or enter your own dimensions.</p></div>
+              <select value={selectedSize} onChange={e=>{setSelectedSize(e.target.value); if(e.target.value !== "__custom__") setCustomSize({width:"",height:""});}} className="input-field w-full"><option value="">Select size</option>{(sizeConfig.presets||[]).map(sp=><option key={sp.id} value={sp.id}>{sp.label} · {sp.width} × {sp.height} {sizeConfig.unit||"mm"}</option>)}{sizeConfig.allow_custom!==false && <option value="__custom__">Custom size</option>}</select>
+              {hasCustomDimensions && <div className="grid grid-cols-2 gap-3"><div><label className="label-caption block mb-1">Width ({sizeConfig.unit||"mm"})</label><input type="number" min={sizeConfig.min_width||1} max={sizeConfig.max_width||1000} value={customSize.width} onChange={e=>setCustomSize(v=>({...v,width:e.target.value}))} className="input-field w-full" placeholder="Width"/></div><div><label className="label-caption block mb-1">Height ({sizeConfig.unit||"mm"})</label><input type="number" min={sizeConfig.min_height||1} max={sizeConfig.max_height||1000} value={customSize.height} onChange={e=>setCustomSize(v=>({...v,height:e.target.value}))} className="input-field w-full" placeholder="Height"/></div></div>}
+              {sizeAddon > 0 && <p className="text-xs text-plum">Custom-size charge: +{inr(sizeAddon)} per unit</p>}
+            </div>
+          )}
+          {customization?.enabled && customOptions.length > 0 && (
+            <div className="mt-5 rounded-2xl border border-line bg-surface/70 p-4 space-y-4" data-testid="customization-options">
+              <div><p className="text-sm font-semibold text-plum">Customize your product</p><p className="text-xs text-ink-muted mt-1">Choose the options you want. Your final price is calculated from your selections.</p></div>
+              {customOptions.map((o) => (
+                <div key={o.id}>
+                  <label className="label-caption block mb-2">{o.name}{o.required !== false ? " *" : ""}</label>
+                  {o.type === "radio" ? (
+                    <div className="grid sm:grid-cols-2 gap-2">
+                      {(o.values || []).map(v => {
+                        const checked = customSelections[o.id] === v.id;
+                        return <label key={v.id} className={`flex items-center justify-between gap-3 border rounded-xl px-3 py-2.5 cursor-pointer ${checked ? "border-plum bg-plum/5" : "border-line bg-white"}`}>
+                          <span className="flex items-center gap-2"><input type="radio" name={`custom-${o.id}`} checked={checked} onChange={() => setCustomSelections(s => ({...s, [o.id]: v.id}))} className="accent-plum"/><span className="text-sm">{v.label}</span></span>
+                          {Number(v.add_on || 0) !== 0 && <span className="text-xs text-plum">{Number(v.add_on) > 0 ? "+" : ""}{inr(Number(v.add_on))}</span>}
+                        </label>;
+                      })}
+                    </div>
+                  ) : (
+                    <select value={customSelections[o.id] || ""} onChange={e => setCustomSelections(s => ({...s, [o.id]: e.target.value}))} className="input-field w-full">
+                      <option value="">Select {o.name}</option>
+                      {(o.values || []).map(v => <option key={v.id} value={v.id}>{v.label}{Number(v.add_on || 0) ? ` · ${Number(v.add_on) > 0 ? "+" : ""}${inr(Number(v.add_on))}` : ""}</option>)}
+                    </select>
+                  )}
+                </div>
+              ))}
             </div>
           )}
           <p className="mt-5 text-ink-secondary leading-relaxed">{p.short_description}</p>

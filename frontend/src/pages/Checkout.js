@@ -18,7 +18,7 @@ function loadScript(src) {
 const EMPTY_ADDR = { name: "", phone: "", line1: "", line2: "", area: "", city: "", state: "", pincode: "", instructions: "" };
 
 export default function Checkout() {
-  const { cart, cartPayload, customer, setCustomer, loginSuccess, clearCart, updateQty, removeItem } = useStore();
+  const { cart, cartPayload, customer, setCustomer, loginSuccess, clearCart, updateQty, removeItem, updateArtwork } = useStore();
   const navigate = useNavigate();
   const [totals, setTotals] = useState(null);
   const [coupon, setCoupon] = useState("");
@@ -35,6 +35,7 @@ export default function Checkout() {
   const [addr, setAddr] = useState(EMPTY_ADDR);
   const [method, setMethod] = useState("razorpay");
   const [placing, setPlacing] = useState(false);
+  const [artworkUploading, setArtworkUploading] = useState({});
   const [deliveryEstimate, setDeliveryEstimate] = useState(null);
   const mobileVerified = customer?.phone_verified !== false;
 
@@ -141,6 +142,32 @@ export default function Checkout() {
       toast.error(apiError(e));
     }
     setAuthLoading(false);
+  };
+
+  const uploadArtwork = async (item, file) => {
+    if (!file) return;
+    const cfg = item.customization_config?.artwork || {};
+    const formats = cfg.formats?.length ? cfg.formats : ["pdf", "jpg", "png"];
+    const ext = (file.name.split(".").pop() || "").toLowerCase();
+    if (!formats.includes(ext)) return toast.error(`Please upload: ${formats.map(x => x.toUpperCase()).join(", ")}`);
+    const maxMb = Number(cfg.max_size_mb || 20);
+    if (file.size > maxMb * 1024 * 1024) return toast.error(`File must be ${maxMb}MB or smaller.`);
+    const current = item.artwork || [];
+    const maxFiles = Math.max(1, Number(cfg.max_files || 1));
+    if (current.length >= maxFiles) return toast.error(`Maximum ${maxFiles} artwork file${maxFiles > 1 ? "s" : ""} allowed.`);
+    const fd = new FormData();
+    fd.append("file", file);
+    setArtworkUploading(s => ({...s, [item.key]: true}));
+    try {
+      const { data } = await api.post("/artwork/upload", fd, { headers: { "Content-Type": "multipart/form-data" } });
+      updateArtwork(item.key, [...current, { url: data.url, filename: data.filename, size: data.size, content_type: data.content_type, path: data.path }]);
+      toast.success("Design uploaded");
+    } catch (e) { toast.error(apiError(e, "Design upload failed")); }
+    finally { setArtworkUploading(s => ({...s, [item.key]: false})); }
+  };
+
+  const removeArtwork = (item, index) => {
+    updateArtwork(item.key, (item.artwork || []).filter((_, i) => i !== index));
   };
 
   const applyCoupon = async () => {
@@ -338,6 +365,18 @@ export default function Checkout() {
                     </div>
                   </div>
                   <button onClick={() => removeItem(i.key)} className="text-ink-muted hover:text-err self-start" data-testid={`checkout-remove-${i.key}`} aria-label="Remove"><Trash2 size={15} /></button>
+                  {i.customization_config?.artwork?.enabled && (
+                    <div className="col-span-full mt-2 w-full rounded-xl border border-line bg-white p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div><p className="text-xs font-semibold text-ink">Your design {i.customization_config.artwork.required ? "*" : ""}</p><p className="text-[11px] text-ink-muted">{i.customization_config.artwork.instructions || `PDF, JPG, PNG · max ${i.customization_config.artwork.max_size_mb || 20}MB`}</p></div>
+                        <label className="cursor-pointer shrink-0 rounded-lg border border-plum px-3 py-2 text-xs text-plum hover:bg-plum-light">
+                          <input type="file" className="hidden" accept={(i.customization_config.artwork.formats || ["pdf","jpg","png"]).map(x => x === "pdf" ? "application/pdf" : x === "png" ? "image/png" : "image/jpeg").join(",")} disabled={!customer || artworkUploading[i.key]} onChange={e => uploadArtwork(i, e.target.files?.[0])} />
+                          {artworkUploading[i.key] ? "Uploading…" : "Upload Design"}
+                        </label>
+                      </div>
+                      {(i.artwork || []).map((a, ai) => <div key={ai} className="mt-2 flex items-center justify-between gap-2 rounded-lg bg-surface px-3 py-2 text-xs"><span className="truncate">{a.filename}</span><button type="button" onClick={() => removeArtwork(i, ai)} className="text-err">Remove</button></div>)}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

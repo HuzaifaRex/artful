@@ -138,41 +138,138 @@ export function Products() {
 
 function ProductForm({ product, cats, onClose, onSaved }) {
   const isNew = !product.id;
+  const defaultCustomization = {
+    enabled: false,
+    options: [],
+    pricing: { mode: "base_addons", quantity_tiers: [], rules: [] },
+    artwork: { enabled: false, required: false, formats: ["pdf", "jpg", "png"], max_size_mb: 20, max_files: 1, instructions: "" },
+    size: { enabled: false, unit: "mm", allow_custom: true, min_width: 20, max_width: 1000, min_height: 20, max_height: 1000, pricing_mode: "fixed", price_per_area: 0, min_price: 0, presets: [] },
+  };
   const [f, setF] = useState({
     name: "", price: "", cost_price: "", mrp: "", compare_at_price: "", stock: 0, low_stock_threshold: 5, sku: "",
     category_slug: cats[0]?.slug || "", short_description: "", description: "", material: "", color: "",
-    status: "Active", badges: [], tags: [], images: [], occasion: [], recipient: [],
+    status: "Draft", badges: [], tags: [], images: [], occasion: [], recipient: [],
     personalization: { enabled: false, char_limit: 30 },
     bulk_order: { enabled: false, min_quantity: 10, tiers: [] },
+    customization: defaultCustomization,
+    product_type: "standard",
     video: null, ...product,
   });
-  useEffect(() => {
-    setF((prev) => ({ ...prev, bulk_order: prev.bulk_order || { enabled: false, min_quantity: 10, tiers: [] } }));
-  }, []);
+  const [tab, setTab] = useState("basic");
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setF((prev) => ({
+      ...prev,
+      product_type: prev.product_type || (prev.customization?.enabled ? "customizable" : "standard"),
+      customization: {
+        ...defaultCustomization,
+        ...(prev.customization || {}),
+        pricing: { ...defaultCustomization.pricing, ...(prev.customization?.pricing || {}) },
+        artwork: { ...defaultCustomization.artwork, ...(prev.customization?.artwork || {}) },
+        size: { ...defaultCustomization.size, ...(prev.customization?.size || {}) },
+      },
+      bulk_order: prev.bulk_order || { enabled: false, min_quantity: 10, tiers: [] },
+    }));
+  }, []);
+
   const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
+  const custom = f.customization || defaultCustomization;
+  const setCustom = (k, v) => set("customization", { ...custom, [k]: v });
   const toggleBadge = (b) => set("badges", f.badges.includes(b) ? f.badges.filter((x) => x !== b) : [...f.badges, b]);
 
+  const addOption = () => {
+    const n = (custom.options?.length || 0) + 1;
+    setCustom("options", [...(custom.options || []), {
+      id: `option-${Date.now()}`, name: `Option ${n}`, type: "select", required: true,
+      values: [{ id: `value-${Date.now()}`, label: "Default", add_on: 0 }],
+    }]);
+  };
+  const updateOption = (idx, patch) => {
+    const options = [...(custom.options || [])]; options[idx] = { ...options[idx], ...patch }; setCustom("options", options);
+  };
+  const removeOption = (idx) => setCustom("options", (custom.options || []).filter((_, i) => i !== idx));
+  const addValue = (oi) => {
+    const options = [...(custom.options || [])]; const values = [...(options[oi].values || [])];
+    values.push({ id: `value-${Date.now()}-${values.length}`, label: `Option ${values.length + 1}`, add_on: 0 });
+    options[oi] = { ...options[oi], values }; setCustom("options", options);
+  };
+  const updateValue = (oi, vi, patch) => {
+    const options = [...(custom.options || [])]; const values = [...(options[oi].values || [])];
+    values[vi] = { ...values[vi], ...patch }; options[oi] = { ...options[oi], values }; setCustom("options", options);
+  };
+  const removeValue = (oi, vi) => {
+    const options = [...(custom.options || [])]; options[oi] = { ...options[oi], values: options[oi].values.filter((_, i) => i !== vi) }; setCustom("options", options);
+  };
+
+  const addTier = () => {
+    const tiers = [...(custom.pricing?.quantity_tiers || []), { min_quantity: 100, price: f.price || 0 }];
+    setCustom("pricing", { ...(custom.pricing || {}), quantity_tiers: tiers });
+  };
+  const updateTier = (idx, patch) => {
+    const tiers = [...(custom.pricing?.quantity_tiers || [])]; tiers[idx] = { ...tiers[idx], ...patch };
+    setCustom("pricing", { ...(custom.pricing || {}), quantity_tiers: tiers });
+  };
+  const removeTier = (idx) => setCustom("pricing", { ...(custom.pricing || {}), quantity_tiers: (custom.pricing?.quantity_tiers || []).filter((_, i) => i !== idx) });
+
+  const addRule = () => {
+    const rules = [...(custom.pricing?.rules || []), { min_quantity: 1, max_quantity: null, selections: {}, price: f.price || 0 }];
+    setCustom("pricing", { ...(custom.pricing || {}), rules });
+  };
+  const updateRule = (idx, patch) => {
+    const rules = [...(custom.pricing?.rules || [])]; rules[idx] = { ...rules[idx], ...patch };
+    setCustom("pricing", { ...(custom.pricing || {}), rules });
+  };
+  const removeRule = (idx) => setCustom("pricing", { ...(custom.pricing || {}), rules: (custom.pricing?.rules || []).filter((_, i) => i !== idx) });
+
   const save = async () => {
-    if (!f.name || f.price === "") return toast.error("Name and price are required");
+    if (!f.name || (f.product_type !== "customizable" && f.price === "")) return toast.error(f.product_type === "customizable" ? "Product name is required" : "Name and price are required");
     setSaving(true);
-    const bulk = f.bulk_order?.enabled ? { enabled: true, min_quantity: Math.max(2, Number(f.bulk_order?.min_quantity || 2)), tiers: (f.bulk_order?.tiers || []).map((t) => ({ min_quantity: Math.max(2, Number(t.min_quantity || 0)), price: Math.max(1, Number(t.price || 0)) })).filter((t) => t.min_quantity > 0 && t.price > 0) } : { enabled: false, min_quantity: Number(f.bulk_order?.min_quantity || 10), tiers: [] };
-    const payload = { ...f, price: Number(f.price), cost_price: Number(f.cost_price || 0), mrp: f.mrp ? Number(f.mrp) : (f.compare_at_price ? Number(f.compare_at_price) : null), compare_at_price: f.mrp ? Number(f.mrp) : (f.compare_at_price ? Number(f.compare_at_price) : null), stock: Number(f.stock), low_stock_threshold: Number(f.low_stock_threshold), bulk_order: bulk, tags: typeof f.tags === "string" ? f.tags.split(",").map((x) => x.trim()).filter(Boolean) : f.tags, images: typeof f.images === "string" ? f.images.split("\n").map((x) => x.trim()).filter(Boolean) : f.images, occasion: typeof f.occasion === "string" ? f.occasion.split(",").map((x) => x.trim()).filter(Boolean) : f.occasion, recipient: typeof f.recipient === "string" ? f.recipient.split(",").map((x) => x.trim()).filter(Boolean) : f.recipient };
+    const bulk = f.bulk_order?.enabled ? {
+      enabled: true, min_quantity: Math.max(2, Number(f.bulk_order?.min_quantity || 2)),
+      tiers: (f.bulk_order?.tiers || []).map((t) => ({ min_quantity: Math.max(2, Number(t.min_quantity || 0)), price: Math.max(1, Number(t.price || 0)) })).filter((t) => t.min_quantity > 0 && t.price > 0)
+    } : { enabled: false, min_quantity: Number(f.bulk_order?.min_quantity || 10), tiers: [] };
+    const payload = {
+      ...f,
+      product_type: f.product_type,
+      price: Number(f.price || ((f.customization?.pricing?.quantity_tiers || []).map(t => Number(t.price || 0)).filter(Boolean).sort((a,b) => a-b)[0] || (f.customization?.pricing?.rules || []).map(r => Number(r.price || 0)).filter(Boolean).sort((a,b) => a-b)[0] || 0)),
+      cost_price: Number(f.cost_price || 0),
+      mrp: f.mrp ? Number(f.mrp) : (f.compare_at_price ? Number(f.compare_at_price) : null),
+      compare_at_price: f.mrp ? Number(f.mrp) : (f.compare_at_price ? Number(f.compare_at_price) : null),
+      stock: Number(f.stock), low_stock_threshold: Number(f.low_stock_threshold),
+      bulk_order: bulk,
+      customization: f.product_type === "customizable" ? {
+        ...custom, enabled: true,
+        options: (custom.options || []).map(o => ({ ...o, values: (o.values || []).map(v => ({ ...v, add_on: Number(v.add_on || 0) })) })),
+        pricing: { ...(custom.pricing || {}), quantity_tiers: (custom.pricing?.quantity_tiers || []).map(t => ({ min_quantity: Number(t.min_quantity || 0), price: Number(t.price || 0) })).filter(t => t.min_quantity > 0 && t.price > 0) },
+        size: { ...(custom.size || {}), min_width: Number(custom.size?.min_width || 20), max_width: Number(custom.size?.max_width || 1000), min_height: Number(custom.size?.min_height || 20), max_height: Number(custom.size?.max_height || 1000), price_per_area: Number(custom.size?.price_per_area || 0), min_price: Number(custom.size?.min_price || 0), presets: (custom.size?.presets || []).map(s => ({ ...s, width: Number(s.width || 0), height: Number(s.height || 0) })).filter(s => s.width > 0 && s.height > 0) }
+      } : { ...defaultCustomization, enabled: false },
+      tags: typeof f.tags === "string" ? f.tags.split(",").map((x) => x.trim()).filter(Boolean) : f.tags,
+      images: typeof f.images === "string" ? f.images.split("\n").map((x) => x.trim()).filter(Boolean) : f.images,
+      occasion: typeof f.occasion === "string" ? f.occasion.split(",").map((x) => x.trim()).filter(Boolean) : f.occasion,
+      recipient: typeof f.recipient === "string" ? f.recipient.split(",").map((x) => x.trim()).filter(Boolean) : f.recipient
+    };
     try {
       if (isNew) await adminApi.post("/products", payload);
       else await adminApi.put(`/products/${product.id}`, payload);
-      toast.success(isNew ? "Product created" : "Product updated");
-      onSaved();
+      toast.success(isNew ? "Product created" : "Product updated"); onSaved();
     } catch (e) { toast.error(apiError(e)); }
     setSaving(false);
   };
 
+  const tabCls = (key) => `px-4 py-2.5 text-sm font-medium border-b-2 ${tab === key ? "border-plum text-plum" : "border-transparent text-gray-500 hover:text-gray-800"}`;
   return (
     <Modal open title={isNew ? "Add Product" : "Edit Product"} onClose={onClose} wide>
-      <div className="grid sm:grid-cols-2 gap-4">
-        <Field label="Name *"><input value={f.name} onChange={(e) => set("name", e.target.value)} className={inputCls} data-testid="pf-name" /></Field>
+      <div className="border-b border-gray-200 flex items-center gap-1 mb-5">
+        <button type="button" className={tabCls("basic")} onClick={() => setTab("basic")}>Basic Details</button>
+        {f.product_type === "customizable" && <><button type="button" className={tabCls("custom")} onClick={() => setTab("custom")}>Customization</button><button type="button" className={tabCls("pricing")} onClick={() => setTab("pricing")}>Pricing</button></>}
+      </div>
+
+      {tab === "basic" && <div className="grid sm:grid-cols-2 gap-4">
+        <Field label="Product Name *"><input value={f.name} onChange={(e) => set("name", e.target.value)} className={inputCls} data-testid="pf-name" /></Field>
         <Field label="SKU"><input value={f.sku} onChange={(e) => set("sku", e.target.value)} className={inputCls} /></Field>
-        <Field label="Selling Price (₹) *"><input type="number" value={f.price} onChange={(e) => set("price", e.target.value)} className={inputCls} data-testid="pf-price" /></Field>
+        <Field label="Product Type *"><select value={f.product_type} onChange={(e) => { set("product_type", e.target.value); setTab(e.target.value === "customizable" ? "custom" : "basic"); }} className={inputCls}><option value="standard">Standard Product</option><option value="customizable">Customizable Product</option></select></Field>
+        {f.product_type === "standard" && <Field label="Selling Price (₹) *"><input type="number" value={f.price} onChange={(e) => set("price", e.target.value)} className={inputCls} data-testid="pf-price" /></Field>}
         <Field label="Purchase Price / COGS (₹)"><input type="number" min="0" value={f.cost_price ?? ""} onChange={(e) => set("cost_price", e.target.value)} className={inputCls} /></Field>
         <Field label="MRP (₹)"><input type="number" min="0" value={f.mrp ?? ""} onChange={(e) => set("mrp", e.target.value)} className={inputCls} /></Field>
         <Field label="Stock Quantity"><input type="number" min="0" value={f.stock} onChange={(e) => set("stock", e.target.value)} className={inputCls} data-testid="pf-stock" /></Field>
@@ -184,44 +281,81 @@ function ProductForm({ product, cats, onClose, onSaved }) {
         <div className="sm:col-span-2"><Field label="Short description"><input value={f.short_description || ""} onChange={(e) => set("short_description", e.target.value)} className={inputCls} /></Field></div>
         <div className="sm:col-span-2"><Field label="Description"><textarea rows={3} value={f.description || ""} onChange={(e) => set("description", e.target.value)} className={inputCls} /></Field></div>
         <div className="sm:col-span-2"><Field label="Product Images"><MultiImageUpload value={Array.isArray(f.images) ? f.images : []} onChange={(v) => set("images", v)} testid="product-images" /></Field></div>
-        <div className="sm:col-span-2">
-          <Field label="Product Video (Optional)"><VideoUpload value={f.video || ""} onChange={(v) => set("video", v)} testid="product-video" /></Field>
-        </div>
+        <div className="sm:col-span-2"><Field label="Product Video (Optional)"><VideoUpload value={f.video || ""} onChange={(v) => set("video", v)} testid="product-video" /></Field></div>
         <div className="sm:col-span-2 border border-gray-100 rounded-lg p-4 bg-gray-50">
-          <div className="flex items-center justify-between gap-3 mb-3">
-            <div><p className="text-sm font-semibold text-gray-800">Bulk Ordering</p><p className="text-xs text-gray-400">Offer lower per-unit pricing for higher quantities.</p></div>
-            <label className="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" checked={!!f.bulk_order?.enabled} onChange={(e) => set("bulk_order", { ...(f.bulk_order || {}), enabled: e.target.checked })} className="accent-plum w-4 h-4" /> Enable bulk ordering</label>
-          </div>
-          {f.bulk_order?.enabled && (
-            <div className="space-y-3">
-              <Field label="Minimum bulk quantity"><input type="number" min="2" value={f.bulk_order?.min_quantity ?? 10} onChange={(e) => set("bulk_order", { ...(f.bulk_order || {}), min_quantity: Math.max(2, Number(e.target.value || 0)) })} className={inputCls} /></Field>
-              <div>
-                <div className="flex items-center justify-between mb-2"><p className="text-xs font-medium text-gray-600">Quantity pricing tiers</p><button type="button" onClick={() => set("bulk_order", { ...(f.bulk_order || {}), tiers: [...(f.bulk_order?.tiers || []), { min_quantity: f.bulk_order?.min_quantity || 10, price: f.price || "" }] })} className="text-xs text-plum underline">+ Add tier</button></div>
-                <div className="space-y-2">
-                  {(f.bulk_order?.tiers || []).map((tier, idx) => (
-                    <div key={idx} className="grid grid-cols-[1fr_1fr_auto] gap-2 items-end">
-                      <div><label className="text-[11px] text-gray-500">Minimum qty</label><input type="number" min={f.bulk_order?.min_quantity || 2} value={tier.min_quantity ?? ""} onChange={(e) => { const tiers = [...(f.bulk_order?.tiers || [])]; tiers[idx] = { ...tiers[idx], min_quantity: Number(e.target.value || 0) }; set("bulk_order", { ...(f.bulk_order || {}), tiers }); }} className={inputCls} /></div>
-                      <div><label className="text-[11px] text-gray-500">Unit price (₹)</label><input type="number" min="1" value={tier.price ?? ""} onChange={(e) => { const tiers = [...(f.bulk_order?.tiers || [])]; tiers[idx] = { ...tiers[idx], price: Number(e.target.value || 0) }; set("bulk_order", { ...(f.bulk_order || {}), tiers }); }} className={inputCls} /></div>
-                      <button type="button" onClick={() => set("bulk_order", { ...(f.bulk_order || {}), tiers: (f.bulk_order?.tiers || []).filter((_, i) => i !== idx) })} className="px-3 py-2 text-xs text-red-600 border border-red-200 rounded">Remove</button>
-                    </div>
-                  ))}
-                  {(f.bulk_order?.tiers || []).length === 0 && <p className="text-xs text-gray-400">Add at least one pricing tier. Example: 25 pcs → ₹900 each.</p>}
-                </div>
-              </div>
-            </div>
-          )}
+          <div className="flex items-center justify-between gap-3 mb-3"><div><p className="text-sm font-semibold text-gray-800">Bulk Ordering</p><p className="text-xs text-gray-400">Offer lower per-unit pricing for higher quantities.</p></div><label className="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" checked={!!f.bulk_order?.enabled} onChange={(e) => set("bulk_order", { ...(f.bulk_order || {}), enabled: e.target.checked })} className="accent-plum w-4 h-4" /> Enable bulk ordering</label></div>
+          {f.bulk_order?.enabled && <div className="space-y-3"><Field label="Minimum bulk quantity"><input type="number" min="2" value={f.bulk_order?.min_quantity ?? 10} onChange={(e) => set("bulk_order", { ...(f.bulk_order || {}), min_quantity: Math.max(2, Number(e.target.value || 0)) })} className={inputCls} /></Field><div><div className="flex items-center justify-between mb-2"><p className="text-xs font-medium text-gray-600">Quantity pricing tiers</p><button type="button" onClick={() => set("bulk_order", { ...(f.bulk_order || {}), tiers: [...(f.bulk_order?.tiers || []), { min_quantity: f.bulk_order?.min_quantity || 10, price: f.price || "" }] })} className="text-xs text-plum underline">+ Add tier</button></div><div className="space-y-2">{(f.bulk_order?.tiers || []).map((tier, idx) => <div key={idx} className="grid grid-cols-[1fr_1fr_auto] gap-2 items-end"><div><label className="text-[11px] text-gray-500">Minimum qty</label><input type="number" min={2} value={tier.min_quantity ?? ""} onChange={(e) => { const tiers=[...(f.bulk_order?.tiers||[])]; tiers[idx]={...tiers[idx],min_quantity:Number(e.target.value||0)}; set("bulk_order",{...(f.bulk_order||{}),tiers}); }} className={inputCls}/></div><div><label className="text-[11px] text-gray-500">Unit price</label><input type="number" min="1" value={tier.price ?? ""} onChange={(e) => { const tiers=[...(f.bulk_order?.tiers||[])]; tiers[idx]={...tiers[idx],price:Number(e.target.value||0)}; set("bulk_order",{...(f.bulk_order||{}),tiers}); }} className={inputCls}/></div><button type="button" onClick={()=>set("bulk_order",{...(f.bulk_order||{}),tiers:(f.bulk_order?.tiers||[]).filter((_,i)=>i!==idx)})} className="px-3 py-2 text-xs text-red-600 border border-red-200 rounded">Remove</button></div>)}</div></div></div>}
         </div>
         <Field label="Tags (comma separated)"><input value={Array.isArray(f.tags) ? f.tags.join(", ") : f.tags} onChange={(e) => set("tags", e.target.value)} className={inputCls} /></Field>
         <Field label="Occasion (comma separated)"><input value={Array.isArray(f.occasion) ? f.occasion.join(", ") : f.occasion} onChange={(e) => set("occasion", e.target.value)} className={inputCls} /></Field>
-        <div className="sm:col-span-2">
-          <Field label="Badges"><div className="flex flex-wrap gap-2">{BADGES.map((b) => <button key={b} type="button" onClick={() => toggleBadge(b)} className={`px-3 py-1 text-xs rounded border ${f.badges.includes(b) ? "bg-plum text-white border-plum" : "border-gray-300 text-gray-600"}`}>{b}</button>)}</div></Field>
+        <div className="sm:col-span-2"><Field label="Badges"><div className="flex flex-wrap gap-2">{BADGES.map((b) => <button key={b} type="button" onClick={() => toggleBadge(b)} className={`px-3 py-1 text-xs rounded border ${f.badges.includes(b) ? "bg-plum text-white border-plum" : "border-gray-300 text-gray-600"}`}>{b}</button>)}</div></Field></div>
+        <div className="sm:col-span-2 rounded-lg border border-gray-100 bg-gray-50 p-4"><label className="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" checked={!!f.personalization?.enabled} onChange={(e) => set("personalization", { ...(f.personalization || {}), enabled: e.target.checked })} className="accent-plum" /> Enable personalization</label>{f.personalization?.enabled && <div className="grid sm:grid-cols-2 gap-3 mt-3"><Field label="Personalisation label"><input value={f.personalization?.label || "Personalise this gift"} onChange={(e) => set("personalization", { ...f.personalization, label: e.target.value })} className={inputCls}/></Field><Field label="Character limit"><input type="number" min="1" max="200" value={f.personalization?.char_limit || 30} onChange={(e) => set("personalization", { ...f.personalization, char_limit: Math.min(200, Math.max(1, Number(e.target.value || 30))) })} className={inputCls}/></Field></div>}</div>
+      </div>}
+
+      {tab === "custom" && f.product_type === "customizable" && <div className="space-y-5">
+        <div className="rounded-xl border border-plum/20 bg-plum/5 p-4"><p className="font-semibold text-gray-900">Customer customization</p><p className="text-xs text-gray-500 mt-1">Build the options the customer will select before adding the product to cart.</p></div>
+        {(custom.options || []).map((o, oi) => <div key={o.id || oi} className="rounded-xl border border-gray-200 p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <input value={o.name || ""} onChange={e=>updateOption(oi,{name:e.target.value})} className={inputCls+" flex-1"} placeholder="Option name e.g. Material"/>
+            <select value={o.type || "select"} onChange={e=>updateOption(oi,{type:e.target.value})} className={inputCls+" w-36"}><option value="select">Dropdown</option><option value="radio">Radio</option></select>
+            <label className="text-xs flex items-center gap-1 whitespace-nowrap"><input type="checkbox" checked={o.required !== false} onChange={e=>updateOption(oi,{required:e.target.checked})} className="accent-plum"/> Required</label>
+            <button type="button" onClick={()=>removeOption(oi)} className="text-xs text-red-600">Remove</button>
+          </div>
+          <div className="space-y-2">{(o.values || []).map((v,vi)=><div key={v.id || vi} className="grid grid-cols-[1fr_130px_auto] gap-2 items-center">
+            <input value={v.label || ""} onChange={e=>updateValue(oi,vi,{label:e.target.value})} className={inputCls} placeholder="Value e.g. 350 GSM"/>
+            <input type="number" value={v.add_on ?? 0} onChange={e=>updateValue(oi,vi,{add_on:Number(e.target.value||0)})} className={inputCls} placeholder="Add-on ₹"/>
+            <button type="button" onClick={()=>removeValue(oi,vi)} className="text-xs text-red-600">Remove</button>
+          </div>)}</div>
+          <button type="button" onClick={()=>addValue(oi)} className="mt-3 text-xs text-plum font-medium">+ Add value</button>
+        </div>)}
+        <button type="button" onClick={addOption} className="w-full border border-dashed border-plum/40 text-plum rounded-xl py-3 text-sm font-medium">+ Add customization option</button>
+        <div className="rounded-xl border border-gray-200 p-4">
+          <div className="flex items-center justify-between"><div><p className="font-semibold text-gray-900">Product size</p><p className="text-xs text-gray-500 mt-1">Add standard sizes and optionally allow a customer-defined size.</p></div><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={!!custom.size?.enabled} onChange={e=>setCustom("size",{...(custom.size||{}),enabled:e.target.checked})} className="accent-plum"/> Enable size selection</label></div>
+          {custom.size?.enabled && <div className="mt-4 space-y-4">
+            <div className="grid sm:grid-cols-2 gap-4"><Field label="Unit"><select value={custom.size?.unit||"mm"} onChange={e=>setCustom("size",{...(custom.size||{}),unit:e.target.value})} className={inputCls}><option value="mm">Millimetres (mm)</option><option value="cm">Centimetres (cm)</option><option value="in">Inches (in)</option></select></Field><Field label="Custom size"><select value={custom.size?.allow_custom!==false?"yes":"no"} onChange={e=>setCustom("size",{...(custom.size||{}),allow_custom:e.target.value==="yes"})} className={inputCls}><option value="yes">Allow custom size</option><option value="no">Preset sizes only</option></select></Field></div>
+            <div><div className="flex items-center justify-between mb-2"><p className="text-xs font-medium text-gray-600">Preset sizes</p><button type="button" onClick={addSizePreset} className="text-xs text-plum font-medium">+ Add size</button></div><div className="space-y-2">{(custom.size?.presets||[]).map((sp,idx)=><div key={sp.id||idx} className="grid grid-cols-[1.4fr_1fr_1fr_auto] gap-2 items-center"><input value={sp.label||""} onChange={e=>updateSizePreset(idx,{label:e.target.value})} className={inputCls} placeholder="e.g. Standard Visiting Card"/><input type="number" min="1" value={sp.width??""} onChange={e=>updateSizePreset(idx,{width:Number(e.target.value||0)})} className={inputCls} placeholder="Width"/><input type="number" min="1" value={sp.height??""} onChange={e=>updateSizePreset(idx,{height:Number(e.target.value||0)})} className={inputCls} placeholder="Height"/><button type="button" onClick={()=>removeSizePreset(idx)} className="text-xs text-red-600">Remove</button></div>)}</div></div>
+            {custom.size?.allow_custom!==false && <div className="rounded-lg bg-gray-50 border border-gray-100 p-3"><p className="text-xs font-semibold text-gray-700 mb-2">Custom size limits</p><div className="grid grid-cols-2 sm:grid-cols-4 gap-2"><input type="number" min="1" value={custom.size?.min_width??20} onChange={e=>setCustom("size",{...(custom.size||{}),min_width:Number(e.target.value||1)})} className={inputCls} placeholder="Min W"/><input type="number" min="1" value={custom.size?.max_width??1000} onChange={e=>setCustom("size",{...(custom.size||{}),max_width:Number(e.target.value||1000)})} className={inputCls} placeholder="Max W"/><input type="number" min="1" value={custom.size?.min_height??20} onChange={e=>setCustom("size",{...(custom.size||{}),min_height:Number(e.target.value||1)})} className={inputCls} placeholder="Min H"/><input type="number" min="1" value={custom.size?.max_height??1000} onChange={e=>setCustom("size",{...(custom.size||{}),max_height:Number(e.target.value||1000)})} className={inputCls} placeholder="Max H"/></div></div>}
+            <div className="grid sm:grid-cols-3 gap-3"><Field label="Custom-size pricing"><select value={custom.size?.pricing_mode||"fixed"} onChange={e=>setCustom("size",{...(custom.size||{}),pricing_mode:e.target.value})} className={inputCls}><option value="fixed">Fixed surcharge</option><option value="per_area">Price per area</option></select></Field><Field label="Price per area"><input type="number" min="0" value={custom.size?.price_per_area??0} onChange={e=>setCustom("size",{...(custom.size||{}),price_per_area:Number(e.target.value||0)})} className={inputCls}/></Field><Field label="Minimum custom-size charge"><input type="number" min="0" value={custom.size?.min_price??0} onChange={e=>setCustom("size",{...(custom.size||{}),min_price:Number(e.target.value||0)})} className={inputCls}/></Field></div>
+          </div>}
         </div>
-        <div className="sm:col-span-2 rounded-lg border border-gray-100 bg-gray-50 p-4">
-          <label className="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" checked={!!f.personalization?.enabled} onChange={(e) => set("personalization", { ...(f.personalization || {}), enabled: e.target.checked })} className="accent-plum" /> Enable personalization</label>
-          {f.personalization?.enabled && <div className="grid sm:grid-cols-2 gap-3 mt-3"><Field label="Personalisation label"><input value={f.personalization?.label || "Personalise this gift"} onChange={(e) => set("personalization", { ...f.personalization, label: e.target.value })} className={inputCls}/></Field><Field label="Character limit"><input type="number" min="1" max="200" value={f.personalization?.char_limit || 30} onChange={(e) => set("personalization", { ...f.personalization, char_limit: Math.min(200, Math.max(1, Number(e.target.value || 30))) })} className={inputCls}/></Field></div>}
+        <div className="rounded-xl border border-gray-200 p-4">
+          <div className="flex items-center justify-between"><div><p className="font-semibold text-gray-900">Customer artwork upload</p><p className="text-xs text-gray-500 mt-1">The file is uploaded after customer verification and attached to the order.</p></div><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={!!custom.artwork?.enabled} onChange={e=>setCustom("artwork",{...(custom.artwork||{}),enabled:e.target.checked})} className="accent-plum"/> Allow design upload</label></div>
+          {custom.artwork?.enabled && <div className="mt-4 grid sm:grid-cols-2 gap-4">
+            <label className="text-sm flex items-center gap-2"><input type="checkbox" checked={!!custom.artwork?.required} onChange={e=>setCustom("artwork",{...(custom.artwork||{}),required:e.target.checked})} className="accent-plum"/> Require artwork before order</label>
+            <Field label="Maximum file size (MB)"><input type="number" min="1" max="50" value={custom.artwork?.max_size_mb || 20} onChange={e=>setCustom("artwork",{...(custom.artwork||{}),max_size_mb:Number(e.target.value||20)})} className={inputCls}/></Field>
+            <Field label="Maximum files"><input type="number" min="1" max="10" value={custom.artwork?.max_files || 1} onChange={e=>setCustom("artwork",{...(custom.artwork||{}),max_files:Number(e.target.value||1)})} className={inputCls}/></Field>
+            <div><p className="text-xs font-medium text-gray-600 mb-2">Accepted formats</p><div className="flex gap-3">{["pdf","jpg","png"].map(fmt=><label key={fmt} className="text-sm flex items-center gap-1"><input type="checkbox" checked={(custom.artwork?.formats||[]).includes(fmt)} onChange={e=>{const formats=e.target.checked?[...(custom.artwork?.formats||[]),fmt]:(custom.artwork?.formats||[]).filter(x=>x!==fmt);setCustom("artwork",{...(custom.artwork||{}),formats});}} className="accent-plum"/>{fmt.toUpperCase()}</label>)}</div></div>
+            <div className="sm:col-span-2"><Field label="Customer instruction"><textarea rows={2} value={custom.artwork?.instructions||""} onChange={e=>setCustom("artwork",{...(custom.artwork||{}),instructions:e.target.value})} className={inputCls} placeholder="Upload a print-ready design..."/></Field></div>
+          </div>}
         </div>
-      </div>
-      <div className="flex justify-end gap-3 mt-6"><button onClick={onClose} className="px-4 py-2 text-sm text-gray-600">Cancel</button><button onClick={save} disabled={saving} className="bg-plum text-white rounded-md px-5 py-2 text-sm disabled:opacity-50" data-testid="pf-save">{saving ? "Saving…" : "Save Product"}</button></div>
+      </div>}
+
+      {tab === "pricing" && f.product_type === "customizable" && <div className="space-y-5">
+        <div className="rounded-xl border border-gray-200 p-4">
+          <p className="font-semibold text-gray-900">Pricing method</p>
+          <select value={custom.pricing?.mode || "base_addons"} onChange={e=>setCustom("pricing",{...(custom.pricing||{}),mode:e.target.value})} className={inputCls+" mt-2 max-w-sm"}>
+            <option value="base_addons">Base price + option add-ons</option>
+            <option value="quantity">Quantity-based price</option>
+            <option value="combination">Exact combination price</option>
+          </select>
+          <p className="text-xs text-gray-500 mt-2">For customizable products, the server calculates the final price from these rules.</p>
+        </div>
+        {custom.pricing?.mode !== "combination" && <div className="rounded-xl border border-gray-200 p-4">
+          <Field label="Base price (₹)"><input type="number" min="0" value={f.price ?? 0} onChange={e=>set("price",e.target.value)} className={inputCls}/></Field>
+          <div className="mt-4 flex items-center justify-between"><div><p className="text-sm font-semibold">Quantity price tiers</p><p className="text-xs text-gray-500">Optional. The highest matching minimum quantity is used.</p></div><button type="button" onClick={addTier} className="text-xs text-plum">+ Add tier</button></div>
+          <div className="space-y-2 mt-3">{(custom.pricing?.quantity_tiers||[]).map((t,i)=><div key={i} className="grid grid-cols-[1fr_1fr_auto] gap-2 items-end"><Field label="Min quantity"><input type="number" min="1" value={t.min_quantity??""} onChange={e=>updateTier(i,{min_quantity:Number(e.target.value||0)})} className={inputCls}/></Field><Field label="Unit price"><input type="number" min="1" value={t.price??""} onChange={e=>updateTier(i,{price:Number(e.target.value||0)})} className={inputCls}/></Field><button type="button" onClick={()=>removeTier(i)} className="text-xs text-red-600 pb-2">Remove</button></div>)}</div>
+        </div>}
+        {custom.pricing?.mode === "combination" && <div className="rounded-xl border border-gray-200 p-4">
+          <div className="flex items-center justify-between"><div><p className="font-semibold">Combination rules</p><p className="text-xs text-gray-500">Set an exact price for a selected combination and quantity range.</p></div><button type="button" onClick={addRule} className="text-xs text-plum">+ Add rule</button></div>
+          <div className="space-y-3 mt-3">{(custom.pricing?.rules||[]).map((r,ri)=><div key={ri} className="rounded-lg bg-gray-50 border p-3">
+            <div className="grid sm:grid-cols-3 gap-2"><Field label="Min qty"><input type="number" value={r.min_quantity??1} onChange={e=>updateRule(ri,{min_quantity:Number(e.target.value||1)})} className={inputCls}/></Field><Field label="Max qty (optional)"><input type="number" value={r.max_quantity??""} onChange={e=>updateRule(ri,{max_quantity:e.target.value?Number(e.target.value):null})} className={inputCls}/></Field><Field label="Final unit price"><input type="number" min="1" value={r.price??""} onChange={e=>updateRule(ri,{price:Number(e.target.value||0)})} className={inputCls}/></Field></div>
+            <div className="grid sm:grid-cols-2 gap-2 mt-2">{(custom.options||[]).map(o=><div key={o.id}><label className="text-[11px] text-gray-500">{o.name}</label><select value={r.selections?.[o.id]||""} onChange={e=>updateRule(ri,{selections:{...(r.selections||{}),[o.id]:e.target.value}})} className={inputCls}><option value="">Any</option>{(o.values||[]).map(v=><option key={v.id} value={v.id}>{v.label}</option>)}</select></div>)}</div>
+            <button type="button" onClick={()=>removeRule(ri)} className="mt-2 text-xs text-red-600">Remove rule</button>
+          </div>)}</div>
+        </div>}
+      </div>}
+
+      <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-100"><button onClick={onClose} className="px-4 py-2 text-sm text-gray-600">Cancel</button><button onClick={save} disabled={saving} className="bg-plum text-white rounded-md px-5 py-2 text-sm disabled:opacity-50" data-testid="pf-save">{saving ? "Saving…" : "Save Product"}</button></div>
     </Modal>
   );
 }

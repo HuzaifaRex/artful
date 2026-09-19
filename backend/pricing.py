@@ -28,7 +28,7 @@ def bulk_unit_price(prod: dict, qty: int, base_price: int) -> int:
 
 
 async def build_line_items(items):
-    """items: [{product_id, variant_id?, qty, personalization?, gift_wrap?}] -> priced lines."""
+    """Build server-priced cart lines, including customizable-product selections."""
     lines, errors = [], []
     for it in items or []:
         qty = max(1, int(it.get("qty", 1)))
@@ -36,23 +36,122 @@ async def build_line_items(items):
         if not prod or prod.get("status") == "Archived":
             errors.append({"product_id": it.get("product_id"), "error": "Product no longer available."})
             continue
+
         available = prod.get("stock", 0) - prod.get("reserved", 0)
         variant = None
-        base_price = prod["price"]
+        base_price = int(prod.get("price") or 0)
         if it.get("variant_id"):
             variant = next((v for v in prod.get("variants", []) if v.get("id") == it["variant_id"]), None)
             if variant:
-                base_price = variant.get("price", base_price)
+                base_price = int(variant.get("price", base_price))
                 available = variant.get("stock", available)
         available = max(0, int(available or 0))
-        if available <= 0:
-            errors.append({"product_id": prod["id"], "name": prod["name"], "requested_qty": qty, "available": 0, "error": "Out of stock."})
-            continue
-        if qty > available:
-            errors.append({"product_id": prod["id"], "name": prod["name"], "requested_qty": qty, "available": available, "error": f"Only {available} units are available."})
-            continue
-        capped = qty
-        price = bulk_unit_price(prod, capped, base_price)
+        # Custom print products are produced to order; stock is treated as capacity only when > 0.
+        custom_cfg = prod.get("customization") or {}
+        is_custom = prod.get("product_type") == "customizable" or custom_cfg.get("enabled")
+
+        if not is_custom:
+            if available <= 0:
+                errors.append({"product_id": prod["id"], "name": prod["name"], "requested_qty": qty, "available": 0, "error": "Out of stock."})
+                continue
+            if qty > available:
+                errors.append({"product_id": prod["id"], "name": prod["name"], "requested_qty": qty, "available": available, "error": f"Only {available} units are available."})
+
+        selection = it.get("customization") or {}
+        option_details = []
+        option_addons = 0
+        if is_custom:
+            for opt in custom_cfg.get("options") or []:
+                selected = selection.get(opt.get("id"))
+                if opt.get("required") and not selected:
+                    errors.append({"product_id": prod["id"], "name": prod["name"], "error": f"Please select {opt.get('name', 'an option')}."})
+                    continue
+                if not selected:
+                    continue
+                selected_ids = selected if isinstance(selected, list) else [selected]
+                for sid in selected_ids:
+                    val = next((v for v in opt.get("values") or [] if v.get("id") == sid), None)
+                    if not val:
+                        errors.append({"product_id": prod["id"], "name": prod["name"], "error": f"Invalid selection for {opt.get('name', 'option')}."})
+                        continue
+                    addon = int(round(float(val.get("add_on") or 0)))
+                    option_addons += addon
+                    option_details.append({"option_id": opt.get("id"), "option": opt.get("name"), "value_id": val.get("id"), "value": val.get("label"), "add_on": addon})
+
+            # Size selection is first-class for print products. Standard presets have no surcharge;
+            # custom dimensions can use a fixed surcharge or price-per-cm².
+            size_cfg = custom_cfg.get("size") or {}
+            size_input = it.get("custom_size")
+            size_addon = 0
+            normalized_size = None
+            if size_cfg.get("enabled"):
+                if not size_input:
+                    errors.append({"product_id": prod["id"], "name": prod["name"], "error": "Please select a size."})
+                else:
+                    unit = size_cfg.get("unit", "mm")
+                    try:
+                        w = float(size_input.get("width")); h = float(size_input.get("height"))
+                    except (TypeError, ValueError):
+                        w = h = 0
+                    is_custom_size = bool(size_input.get("custom"))
+                    if is_custom_size:
+                        min_w, max_w = float(size_cfg.get("min_width", 20)), float(size_cfg.get("max_width", 1000))
+                        min_h, max_h = float(size_cfg.get("min_height", 20)), float(size_cfg.get("max_height", 1000))
+                        if w <= 0 or h <= 0 or w < min_w or w > max_w or h < min_h or h > max_h:
+                            errors.append({"product_id": prod["id"], "name": prod["name"], "error": f"Custom size must be within {min_w:g}–{max_w:g} × {min_h:g}–{max_h:g} {unit}."})
+                        elif size_cfg.get("pricing_mode") == "per_area":
+                            factor = 0.01 if unit == "mm" else (2.54 if unit == "in" else 1)
+                            area_cm2 = w * factor * h * factor
+                            size_addon = max(float(size_cfg.get("min_price", 0) or 0), area_cm2 * float(size_cfg.get("price_per_area", 0) or 0))
+                        else:
+                            size_addon = float(size_cfg.get("min_price", 0) or 0)
+                        normalized_size = {"custom": True, "width": w, "height": h, "unit": unit}
+                    else:
+                        preset = next((sp for sp in size_cfg.get("presets", []) if sp.get("id") == size_input.get("preset_id")), None)
+                        if not preset:
+                            errors.append({"product_id": prod["id"], "name": prod["name"], "error": "Invalid size selection."})
+                        else:
+                            normalized_size = {"preset_id": preset.get("id"), "label": preset.get("label"), "width": float(preset.get("width")), "height": float(preset.get("height")), "unit": unit}
+
+            pricing = custom_cfg.get("pricing") or {}
+            mode = pricing.get("mode", "base_addons")
+            unit_price = base_price
+            tiers = sorted(pricing.get("quantity_tiers") or [], key=lambda x: int(x.get("min_quantity", 0) or 0))
+            if mode in ("quantity", "base_addons"):
+                for tier in tiers:
+                    if int(tier.get("min_quantity", 0) or 0) <= qty and float(tier.get("price", 0) or 0) > 0:
+                        unit_price = int(round(float(tier["price"])))
+            if mode == "base_addons":
+                unit_price += option_addons
+            elif mode == "quantity":
+                unit_price += option_addons
+            elif mode == "combination":
+                unit_price = 0
+                for rule in pricing.get("rules") or []:
+                    rq = int(rule.get("min_quantity", 1) or 1)
+                    mx = rule.get("max_quantity")
+                    if qty < rq or (mx is not None and mx != "" and qty > int(mx)):
+                        continue
+                    selections = rule.get("selections") or {}
+                    if all(not expected or selection.get(oid) == expected for oid, expected in selections.items()):
+                        unit_price = int(round(float(rule.get("price") or 0)))
+                        break
+                if unit_price <= 0:
+                    errors.append({"product_id": prod["id"], "name": prod["name"], "error": "This customization and quantity combination is not available."})
+                    continue
+            unit_price += int(round(size_addon))
+
+            artwork = it.get("artwork") or []
+            artwork_cfg = custom_cfg.get("artwork") or {}
+            if artwork_cfg.get("enabled") and artwork_cfg.get("required") and not artwork:
+                errors.append({"product_id": prod["id"], "name": prod["name"], "error": "Please upload your design file before placing the order."})
+            max_files = max(1, int(artwork_cfg.get("max_files", 1) or 1))
+            if len(artwork) > max_files:
+                errors.append({"product_id": prod["id"], "name": prod["name"], "error": f"Maximum {max_files} artwork file(s) allowed."})
+            price = unit_price
+        else:
+            price = bulk_unit_price(prod, qty, base_price)
+
         unit_cost = (variant or {}).get("cost_price", prod.get("cost_price", 0)) if variant else prod.get("cost_price", 0)
         try:
             unit_cost = float(unit_cost or 0)
@@ -62,7 +161,7 @@ async def build_line_items(items):
         wrap_price = 199 if gift_wrap else 0
         bulk_config = prod.get("bulk_order") or {}
         applicable_bulk_tier = None
-        if bulk_config.get("enabled"):
+        if not is_custom and bulk_config.get("enabled"):
             selected_tier_qty = int(it.get("bulk_tier_quantity") or 0)
             for tier in bulk_config.get("tiers") or []:
                 try:
@@ -80,16 +179,21 @@ async def build_line_items(items):
                         tier_price = int(round(float(tier.get("price"))))
                     except (TypeError, ValueError):
                         continue
-                    if tier_qty <= capped and tier_qty >= int(bulk_config.get("min_quantity", 0) or 0) and tier_price == int(price):
+                    if tier_qty <= qty and tier_qty >= int(bulk_config.get("min_quantity", 0) or 0) and tier_price == int(price):
                         applicable_bulk_tier = {"min_quantity": tier_qty, "price": tier_price}
                         break
-        bulk_enabled_for_line = bool(bulk_config.get("enabled") and capped >= int(bulk_config.get("min_quantity", 0) or 0) and price != int(base_price))
-        bulk_savings = max(0, (int(base_price) - int(price)) * capped) if bulk_enabled_for_line else 0
+        bulk_enabled_for_line = bool(not is_custom and bulk_config.get("enabled") and qty >= int(bulk_config.get("min_quantity", 0) or 0) and price != int(base_price))
+        bulk_savings = max(0, (int(base_price) - int(price)) * qty) if bulk_enabled_for_line else 0
+
         lines.append({
             "product_id": prod["id"], "name": prod["name"], "slug": prod["slug"],
             "image": (prod.get("images") or [None])[0], "sku": prod.get("sku"),
             "variant_id": it.get("variant_id"), "variant_label": (variant or {}).get("label") if variant else None,
-            "price": price, "base_price": base_price, "cost_price": unit_cost, "qty": capped, "requested_qty": qty,
+            "product_type": "customizable" if is_custom else "standard",
+            "price": price, "base_price": base_price, "cost_price": unit_cost, "qty": qty, "requested_qty": qty,
+            "customization": {"selections": selection, "options": option_details, "option_addons": option_addons, "size": normalized_size, "size_addon": int(round(size_addon))} if is_custom else None,
+            "artwork": artwork if is_custom else [],
+            "artwork_status": ("Artwork Received" if artwork else "Awaiting Artwork") if is_custom else None,
             "bulk_order": {"enabled": bool(bulk_config.get("enabled")), "applied": bulk_enabled_for_line,
                            "min_quantity": int(bulk_config.get("min_quantity", 0) or 0), "tiers": bulk_config.get("tiers", []),
                            "selected_tier_quantity": applicable_bulk_tier["min_quantity"] if applicable_bulk_tier else None,
@@ -97,7 +201,7 @@ async def build_line_items(items):
                            "regular_unit_price": int(base_price), "savings": bulk_savings},
             "gift_wrap": gift_wrap, "wrap_price": wrap_price,
             "personalization": it.get("personalization") or None,
-            "line_total": price * capped + wrap_price,
+            "line_total": price * qty + wrap_price,
             "compare_at_price": prod.get("compare_at_price"),
         })
     return lines, errors

@@ -514,6 +514,8 @@ async def create_product(payload: dict, request: Request, admin: dict = Depends(
            "sections": payload.get("sections", []),
            "occasion": payload.get("occasion", []), "recipient": payload.get("recipient", []),
            "rating": 0, "review_count": 0, "variants": payload.get("variants", []),
+           "product_type": payload.get("product_type", "standard"),
+           "customization": payload.get("customization", {"enabled": False, "options": [], "pricing": {"mode": "base_addons", "quantity_tiers": [], "rules": []}, "artwork": {"enabled": False, "required": False, "formats": ["pdf", "jpg", "png"], "max_size_mb": 20, "max_files": 1, "instructions": ""}}),
            "bulk_order": payload.get("bulk_order", {"enabled": False, "min_quantity": 10, "tiers": []}),
            "personalization": payload.get("personalization", {"enabled": False}),
            "seo": payload.get("seo", {"title": f"{name} — ARTFUL", "description": payload.get("short_description", "")}),
@@ -864,6 +866,26 @@ async def whatsapp_test(payload: dict, admin: dict = Depends(require_permission(
     if not result.get("sent"):
         raise HTTPException(502, result.get("error") or result.get("message") or "WhatsApp send failed.")
     return result
+
+
+@router.put("/orders/{order_number}/artwork-status")
+async def update_artwork_status(order_number: str, payload: dict, request: Request,
+                                admin: dict = Depends(require_permission("orders"))):
+    o = await db.orders.find_one({"order_number": order_number})
+    if not o:
+        raise HTTPException(404, "Order not found.")
+    item_index = int(payload.get("item_index", -1))
+    new_status = payload.get("artwork_status")
+    valid = ["Awaiting Artwork", "Artwork Received", "Artwork Under Review", "Artwork Approved", "Artwork Issue"]
+    if item_index < 0 or item_index >= len(o.get("items", [])) or new_status not in valid:
+        raise HTTPException(400, "Invalid artwork status or order item.")
+    items = list(o.get("items", []))
+    if not items[item_index].get("artwork"):
+        raise HTTPException(400, "This order item has no uploaded artwork.")
+    items[item_index] = {**items[item_index], "artwork_status": new_status}
+    await db.orders.update_one({"order_number": order_number}, {"$set": {"items": items, "updated_at": now_iso()}})
+    await audit(admin, "artwork_status", "order", o["id"], after={"item_index": item_index, "artwork_status": new_status}, request=request)
+    return await db.orders.find_one({"order_number": order_number}, {"_id": 0})
 
 
 @router.put("/orders/{order_number}/status")

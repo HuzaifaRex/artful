@@ -56,10 +56,12 @@ export function StoreProvider({ children }) {
   }, []);
 
   const addToCart = useCallback((product, qty = 1, opts = {}) => {
-    const available = Math.max(0, Number(product?.stock || 0) - Number(product?.reserved || 0));
+    const isCustom = product?.product_type === "customizable" || product?.customization?.enabled;
+    const available = isCustom ? 999999 : Math.max(0, Number(product?.stock || 0) - Number(product?.reserved || 0));
     if (available <= 0) { toast.error("This product is out of stock"); return; }
     setCart((prev) => {
-      const key = product.id + (opts.variant_id || "") + (opts.gift_wrap ? "gw" : "") + (opts.personalization || "") + (opts.bulk_tier_quantity ? `bulk${opts.bulk_tier_quantity}` : "");
+      const customKey = (opts.customization || opts.custom_size) ? JSON.stringify({ customization: opts.customization || null, custom_size: opts.custom_size || null }) : "";
+      const key = product.id + (opts.variant_id || "") + (opts.gift_wrap ? "gw" : "") + (opts.personalization || "") + (opts.bulk_tier_quantity ? `bulk${opts.bulk_tier_quantity}` : "") + customKey;
       const idx = prev.findIndex((i) => i.key === key);
       if (idx >= 0) {
         const next = [...prev];
@@ -81,6 +83,10 @@ export function StoreProvider({ children }) {
         bulk_locked: !!opts.bulk_locked,
         bulk_tier_quantity: opts.bulk_tier_quantity || null,
         bulk_tier_price: opts.bulk_tier_price || null,
+        customization: opts.customization || null,
+        custom_size: opts.custom_size || null,
+        customization_config: product.customization || null,
+        artwork: opts.artwork || [],
       }];
     });
     setCartOpen(true);
@@ -107,6 +113,10 @@ export function StoreProvider({ children }) {
 
   const clearCart = useCallback(() => setCart([]), []);
 
+  const updateArtwork = useCallback((key, artwork) => {
+    setCart((prev) => prev.map((i) => i.key === key ? { ...i, artwork: artwork || [] } : i));
+  }, []);
+
   const cartCount = cart.reduce((s, i) => s + i.qty, 0);
 
   const toggleWishlist = useCallback(async (productId) => {
@@ -131,11 +141,14 @@ export function StoreProvider({ children }) {
     product_id: i.product_id, variant_id: i.variant_id, qty: i.qty,
     gift_wrap: i.gift_wrap, personalization: i.personalization,
     bulk_tier_quantity: i.bulk_tier_quantity || null,
+    customization: i.customization || null,
+    custom_size: i.custom_size || null,
+    artwork: i.artwork || [],
   }));
 
   return (
     <StoreContext.Provider value={{
-      cart, cartPayload, cartCount, addToCart, updateQty, removeItem, clearCart,
+      cart, cartPayload, cartCount, addToCart, updateQty, removeItem, clearCart, updateArtwork,
       customer, setCustomer, loginSuccess, logout, refreshCustomer,
       wishlist, toggleWishlist,
       cartOpen, setCartOpen, searchOpen, setSearchOpen, authOpen, setAuthOpen,
