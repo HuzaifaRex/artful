@@ -918,7 +918,7 @@ async def update_order_status(order_number: str, payload: dict, request: Request
         tracking_number = ((updated_order or {}).get("tracking") or {}).get("number") or "Not available"
         if new_status == "Confirmed":
             template = ig.WHATSAPP_TEMPLATE_ORDER_CONFIRMATION
-            params = [name, order_number]
+            params = await ig.build_order_confirmation_params(updated_order or o, name)
         elif new_status == "Cancelled":
             template = ig.WHATSAPP_TEMPLATE_ORDER_CANCELLED
             params = [name, order_number]

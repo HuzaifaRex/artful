@@ -82,9 +82,7 @@ async def _send_order_whatsapp(order, template_name, body_params, language_code=
     if not phone:
         return
     try:
-        result = await ig.send_whatsapp_template(phone, template_name, language_code, body_params)
-        if not result.get("sent"):
-            print(f"[whatsapp] order notification failed for {order.get('order_number')} template={template_name!r}: {result}")
+        await ig.send_whatsapp_template(phone, template_name, language_code or ig.WHATSAPP_TEMPLATE_LANGUAGE, body_params)
     except Exception as exc:
         print(f"[whatsapp] order notification failed for {order.get('order_number')}: {exc}")
 
@@ -435,7 +433,8 @@ async def _finalize_paid_order(order, payment_id=None, method="razorpay"):
     customer = await db.customers.find_one({"id": order["customer_id"]}, {"phone":1,"name":1,"_id":0})
     if customer and customer.get("phone"):
         order_for_message = dict(order); order_for_message["customer"] = {"phone":customer.get("phone"),"name":customer.get("name") or (order.get("customer") or {}).get("name") or "there"}
-        asyncio.create_task(_send_order_whatsapp(order_for_message, ig.WHATSAPP_TEMPLATE_ORDER_CONFIRMATION, [order_for_message["customer"]["name"], order["order_number"]]))
+        confirmation_params = await ig.build_order_confirmation_params(order_for_message, order_for_message["customer"]["name"])
+        asyncio.create_task(_send_order_whatsapp(order_for_message, ig.WHATSAPP_TEMPLATE_ORDER_CONFIRMATION, confirmation_params, ig.WHATSAPP_TEMPLATE_LANGUAGE))
 
 
 async def _mark_payment_failed(order, reason="Payment failed."):
@@ -529,7 +528,8 @@ async def _finalize_paid_order(order, payment_id=None, method="razorpay"):
     customer = await db.customers.find_one({"id": order["customer_id"]}, {"phone":1,"name":1,"_id":0})
     if customer and customer.get("phone"):
         order_for_message = dict(order); order_for_message["customer"] = {"phone":customer.get("phone"),"name":customer.get("name") or (order.get("customer") or {}).get("name") or "there"}
-        asyncio.create_task(_send_order_whatsapp(order_for_message, ig.WHATSAPP_TEMPLATE_ORDER_CONFIRMATION, [order_for_message["customer"]["name"], order["order_number"]]))
+        confirmation_params = await ig.build_order_confirmation_params(order_for_message, order_for_message["customer"]["name"])
+        asyncio.create_task(_send_order_whatsapp(order_for_message, ig.WHATSAPP_TEMPLATE_ORDER_CONFIRMATION, confirmation_params, ig.WHATSAPP_TEMPLATE_LANGUAGE))
 
 
 async def _mark_payment_failed(order, reason="Payment failed."):

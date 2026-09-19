@@ -29,10 +29,8 @@ WHATSAPP_TEMPLATE_ORDER_SHIPPED = os.environ.get("WHATSAPP_TEMPLATE_ORDER_SHIPPE
 WHATSAPP_TEMPLATE_OUT_FOR_DELIVERY = os.environ.get("WHATSAPP_TEMPLATE_OUT_FOR_DELIVERY") or "artful_out_for_delivery"
 WHATSAPP_TEMPLATE_ORDER_DELIVERED = os.environ.get("WHATSAPP_TEMPLATE_ORDER_DELIVERED") or "artful_order_delivered"
 WHATSAPP_TEMPLATE_ORDER_STATUS = os.environ.get("WHATSAPP_TEMPLATE_ORDER_STATUS") or "artful_order_status"
-# Utility/order templates: Meta template language must match the approved template exactly.
-# Keep OTP separate because the authentication template may use a different language code.
-WHATSAPP_TEMPLATE_LANGUAGE = os.environ.get("WHATSAPP_TEMPLATE_LANGUAGE") or "en_US"
 WHATSAPP_TEMPLATE_OTP = os.environ.get("WHATSAPP_TEMPLATE_OTP") or "artful_login_otp"
+WHATSAPP_TEMPLATE_LANGUAGE = os.environ.get("WHATSAPP_TEMPLATE_LANGUAGE") or "en_US"
 
 
 def twilio_enabled():
@@ -169,6 +167,46 @@ async def send_whatsapp_auth_otp(phone: str, code: str, language_code: str = "en
     except Exception as e:
         print(f"[whatsapp][otp] request failed: {e}")
         return {"sent": False, "configured": True, "error": str(e)}
+
+
+async def build_order_confirmation_params(order: dict, customer_name: str | None = None):
+    """Build the 4 body parameters expected by the approved order confirmation template.
+
+    Template body: customer name, order number, item summary, estimated delivery date.
+    """
+    customer = order.get("customer") or {}
+    name = customer_name or customer.get("name") or "there"
+    order_number = str(order.get("order_number") or "")
+    items = order.get("items") or []
+
+    if len(items) == 1:
+        line = items[0] or {}
+        qty = int(line.get("qty") or 1)
+        item_name = str(line.get("name") or "your order")
+        item_summary = f"{qty} × {item_name}"
+    else:
+        total_qty = sum(int((line or {}).get("qty") or 0) for line in items)
+        item_summary = f"{total_qty} items" if total_qty else "your items"
+
+    settings = await db.settings.find_one({"id": "store"}, {"_id": 0}) or {}
+    logic = settings.get("delivery_logic") or {}
+    default = logic.get("default") or {}
+    delivery_days = int(default.get("delivery_max_days", default.get("delivery_days", 5)) or 5)
+    state = str((order.get("address") or {}).get("state") or "").strip().casefold()
+    for rule in logic.get("state_rules") or []:
+        if str(rule.get("state") or "").strip().casefold() == state:
+            delivery_days = int(rule.get("delivery_max_days", rule.get("delivery_days", delivery_days)) or delivery_days)
+            break
+    delivery_days = max(0, delivery_days)
+
+    date_value = datetime.now(timezone.utc).date()
+    remaining = delivery_days
+    while remaining > 0:
+        date_value += timedelta(days=1)
+        if date_value.weekday() < 5:
+            remaining -= 1
+    formatted_date = f"{date_value.strftime('%b')} {date_value.day}, {date_value.year}"
+    return [name, order_number, item_summary, formatted_date]
 
 
 # ---------------- OTP ----------------
