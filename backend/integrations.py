@@ -31,6 +31,8 @@ WHATSAPP_TEMPLATE_ORDER_DELIVERED = os.environ.get("WHATSAPP_TEMPLATE_ORDER_DELI
 WHATSAPP_TEMPLATE_ORDER_STATUS = os.environ.get("WHATSAPP_TEMPLATE_ORDER_STATUS") or "artful_order_status"
 WHATSAPP_TEMPLATE_OTP = os.environ.get("WHATSAPP_TEMPLATE_OTP") or "artful_login_otp"
 WHATSAPP_TEMPLATE_LANGUAGE = os.environ.get("WHATSAPP_TEMPLATE_LANGUAGE") or "en_US"
+WHATSAPP_TEMPLATE_NEW_ORDER_ADMIN = os.environ.get("WHATSAPP_TEMPLATE_NEW_ORDER_ADMIN") or "artful_new_order_admin"
+WHATSAPP_OWNER_PHONE = os.environ.get("WHATSAPP_OWNER_PHONE") or ""
 
 
 def twilio_enabled():
@@ -106,6 +108,61 @@ async def build_order_confirmation_params(order: dict):
     estimated_delivery = estimate_date.strftime("%b %-d, %Y") if os.name != "nt" else estimate_date.strftime("%b %#d, %Y")
 
     return [name, "purchase", f"#{order_number}" if order_number and not order_number.startswith("#") else order_number, item_summary, estimated_delivery]
+
+
+async def build_admin_new_order_params(order: dict):
+    """Build the five body params for artful_new_order_admin."""
+    customer = order.get("customer") or {}
+    order_number = str(order.get("order_number") or "").strip()
+    name = str(customer.get("name") or "Customer").strip()
+    amount = order.get("pricing", {}).get("total", 0)
+    try:
+        amount_text = f"{float(amount):,.2f}".rstrip("0").rstrip(".")
+    except (TypeError, ValueError):
+        amount_text = str(amount or "0")
+    payment = str(
+        order.get("payment_method")
+        or (order.get("payment") or {}).get("method")
+        or (order.get("payment") or {}).get("provider")
+        or "Unknown"
+    ).strip()
+    payment_labels = {
+        "razorpay": "Razorpay",
+        "cod": "Cash on Delivery",
+    }
+    payment = payment_labels.get(payment.casefold(), payment)
+    parts = []
+    for item in order.get("items") or []:
+        try:
+            qty = int(item.get("qty", 1) or 1)
+        except (TypeError, ValueError):
+            qty = 1
+        item_name = str(item.get("name") or "item").strip()
+        parts.append(f"{qty} x {item_name}")
+    items = ", ".join(parts) if parts else "Order items"
+    if len(items) > 180:
+        items = items[:177] + "..."
+    return [order_number, name, amount_text, payment, items]
+
+
+async def send_admin_new_order_notification(order: dict):
+    """Send the approved new-order utility template to the owner's WhatsApp number."""
+    if not WHATSAPP_OWNER_PHONE:
+        return {"sent": False, "configured": whatsapp_enabled(), "message": "WHATSAPP_OWNER_PHONE is not configured."}
+    if not whatsapp_enabled():
+        return {"sent": False, "configured": False, "message": "WhatsApp Cloud API is not configured."}
+    params = await build_admin_new_order_params(order)
+    result = await send_whatsapp_template(
+        WHATSAPP_OWNER_PHONE,
+        WHATSAPP_TEMPLATE_NEW_ORDER_ADMIN,
+        WHATSAPP_TEMPLATE_LANGUAGE,
+        params,
+    )
+    if not result.get("sent"):
+        print(f"[whatsapp][owner] new order notification failed for {order.get('order_number')}: {result}")
+    else:
+        print(f"[whatsapp][owner] new order notification sent for {order.get('order_number')}")
+    return result
 
 
 async def send_whatsapp_template(phone: str, template_name: str = None, language_code: str = None, body_params=None, extra_components=None):

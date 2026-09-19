@@ -441,6 +441,10 @@ async def _finalize_paid_order(order, payment_id=None, method="razorpay"):
         if not result or not result.get("sent"):
             print(f"[whatsapp] order confirmation failed for {order['order_number']}: {result}")
 
+    owner_result = await ig.send_admin_new_order_notification(order)
+    if not owner_result.get("sent"):
+        print(f"[whatsapp][owner] new order notification failed for {order['order_number']}: {owner_result}")
+
 
 async def _mark_payment_failed(order, reason="Payment failed."):
     """Mark an unpaid order failed and release its reservation once."""
@@ -537,6 +541,10 @@ async def _finalize_paid_order(order, payment_id=None, method="razorpay"):
         result = await _send_order_whatsapp(order_for_message, ig.WHATSAPP_TEMPLATE_ORDER_CONFIRMATION, confirmation_params, ig.WHATSAPP_TEMPLATE_LANGUAGE)
         if not result or not result.get("sent"):
             print(f"[whatsapp] order confirmation failed for {order['order_number']}: {result}")
+
+    owner_result = await ig.send_admin_new_order_notification(order)
+    if not owner_result.get("sent"):
+        print(f"[whatsapp][owner] new order notification failed for {order['order_number']}: {owner_result}")
 
 
 async def _mark_payment_failed(order, reason="Payment failed."):
