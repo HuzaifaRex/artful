@@ -886,7 +886,7 @@ async def update_order_status(order_number: str, payload: dict, request: Request
             prod=await db.products.find_one({"id":l["product_id"]},{"stock":1,"reserved":1,"status":1,"_id":0})
             if prod and prod.get("status") == "Active" and int(prod.get("stock",0) or 0)-int(prod.get("reserved",0) or 0) <= 0:
                 await db.products.update_one({"id":l["product_id"]},{"$set":{"status":"Out of Stock"}})
-            await db.inventory_transactions.insert_one({"id":str(uuid.uuid4()),"product_id":l["product_id"],"change":-qty,"reason":f"Order {o['order_number']} delivered","admin":admin["email"],"at":now_iso(),"source":"order_delivered","order_number":o["order_number"]})
+            await db.inventory_transactions.insert_one({"id":str(uuid.uuid4()),"product_id":l["product_id"],"change":-qty,"reason":f"Order {o["order_number"]} delivered","admin":admin["email"],"at":now_iso(),"source":"order_delivered","order_number":o["order_number"]})
     elif new_status == "Cancelled" and old_status not in ("Cancelled","Returned","Refunded"):
         for l in o.get("items", []):
             qty = _int_num(l.get("qty"),0)
@@ -894,7 +894,7 @@ async def update_order_status(order_number: str, payload: dict, request: Request
             prod=await db.products.find_one({"id":l["product_id"]},{"stock":1,"reserved":1,"status":1,"_id":0})
             if prod and prod.get("status") == "Out of Stock" and int(prod.get("stock",0) or 0)-int(prod.get("reserved",0) or 0) > 0:
                 await db.products.update_one({"id":l["product_id"]},{"$set":{"status":"Active"}})
-            await db.inventory_transactions.insert_one({"id":str(uuid.uuid4()),"product_id":l["product_id"],"change":0,"reason":f"Order {o['order_number']} cancelled; reservation released","admin":admin["email"],"at":now_iso(),"source":"order_cancel","order_number":o["order_number"]})
+            await db.inventory_transactions.insert_one({"id":str(uuid.uuid4()),"product_id":l["product_id"],"change":0,"reason":f"Order {o["order_number"]} cancelled; reservation released","admin":admin["email"],"at":now_iso(),"source":"order_cancel","order_number":o["order_number"]})
     elif new_status == "Returned" and old_status not in ("Returned","Refunded"):
         if old_status != "Delivered":
             raise HTTPException(400, "Only delivered orders can be marked as returned.")
@@ -906,7 +906,7 @@ async def update_order_status(order_number: str, payload: dict, request: Request
                 prod=await db.products.find_one({"id":l["product_id"]},{"stock":1,"reserved":1,"status":1,"_id":0})
                 if prod and prod.get("status") == "Out of Stock" and int(prod.get("stock",0) or 0)-int(prod.get("reserved",0) or 0) > 0:
                     await db.products.update_one({"id":l["product_id"]},{"$set":{"status":"Active"}})
-                await db.inventory_transactions.insert_one({"id":str(uuid.uuid4()),"product_id":l["product_id"],"change":qty,"reason":f"Return {o['order_number']} - Resellable","admin":admin["email"],"at":now_iso(),"source":"return_resellable","order_number":o["order_number"]})
+                await db.inventory_transactions.insert_one({"id":str(uuid.uuid4()),"product_id":l["product_id"],"change":qty,"reason":f"Return {o["order_number"]} - Resellable","admin":admin["email"],"at":now_iso(),"source":"return_resellable","order_number":o["order_number"]})
     await db.orders.update_one({"order_number": order_number},
         {"$set": {"status": new_status, "updated_at": now_iso()},
          "$push": {"status_history": {"status": new_status, "at": now_iso(), "note": payload.get("note", "")}}})
@@ -918,7 +918,7 @@ async def update_order_status(order_number: str, payload: dict, request: Request
         tracking_number = ((updated_order or {}).get("tracking") or {}).get("number") or "Not available"
         if new_status == "Confirmed":
             template = ig.WHATSAPP_TEMPLATE_ORDER_CONFIRMATION
-            params = await ig.build_order_confirmation_params(updated_order or o, name)
+            params = await ig.build_order_confirmation_params(updated_order or o)
         elif new_status == "Cancelled":
             template = ig.WHATSAPP_TEMPLATE_ORDER_CANCELLED
             params = [name, order_number]

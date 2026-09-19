@@ -55,6 +55,59 @@ def _normalize_whatsapp_phone(phone: str):
     return p
 
 
+async def build_order_confirmation_params(order: dict):
+    """Build the five body params required by artful_order_confirmation.
+
+    {{1}} customer name
+    {{2}} literal purchase
+    {{3}} order number
+    {{4}} item summary
+    {{5}} estimated delivery date
+    """
+    customer = order.get("customer") or {}
+    name = customer.get("name") or "there"
+    order_number = str(order.get("order_number") or "").strip()
+
+    items = order.get("items") or []
+    parts = []
+    for item in items:
+        try:
+            qty = int(item.get("qty", 1) or 1)
+        except (TypeError, ValueError):
+            qty = 1
+        item_name = str(item.get("name") or "item").strip()
+        parts.append(f"{qty} × {item_name}" if qty != 1 else item_name)
+    item_summary = ", ".join(parts) if parts else "your items"
+    if len(item_summary) > 180:
+        item_summary = item_summary[:177] + "..."
+
+    # Keep the customer-facing estimate deterministic from the saved delivery rules.
+    state = str((order.get("address") or {}).get("state") or "").strip()
+    settings = await db.settings.find_one({"id": "store"}, {"_id": 0}) or {}
+    logic = settings.get("delivery_logic") or {}
+    default = logic.get("default") or {}
+    legacy_dispatch = int(default.get("dispatch_days", 2) or 0)
+    dispatch_max = max(0, int(default.get("dispatch_max_days", legacy_dispatch) or 0))
+    delivery_max = max(0, int(default.get("delivery_max_days", 5) or 0))
+    normalized = state.casefold()
+    for rule in logic.get("state_rules") or []:
+        if str(rule.get("state") or "").strip().casefold() == normalized:
+            dispatch_max = max(0, int(rule.get("dispatch_max_days", rule.get("dispatch_days", dispatch_max)) or 0))
+            delivery_max = max(0, int(rule.get("delivery_max_days", delivery_max) or 0))
+            break
+
+    from datetime import timedelta
+    created_raw = order.get("created_at")
+    try:
+        base = datetime.fromisoformat(str(created_raw).replace("Z", "+00:00")).date()
+    except Exception:
+        base = datetime.now(timezone.utc).date()
+    estimate_date = base + timedelta(days=dispatch_max + delivery_max)
+    estimated_delivery = estimate_date.strftime("%b %-d, %Y") if os.name != "nt" else estimate_date.strftime("%b %#d, %Y")
+
+    return [name, "purchase", f"#{order_number}" if order_number and not order_number.startswith("#") else order_number, item_summary, estimated_delivery]
+
+
 async def send_whatsapp_template(phone: str, template_name: str = None, language_code: str = None, body_params=None, extra_components=None):
     """Send an approved WhatsApp template through Meta Cloud API.
 
@@ -167,46 +220,6 @@ async def send_whatsapp_auth_otp(phone: str, code: str, language_code: str = "en
     except Exception as e:
         print(f"[whatsapp][otp] request failed: {e}")
         return {"sent": False, "configured": True, "error": str(e)}
-
-
-async def build_order_confirmation_params(order: dict, customer_name: str | None = None):
-    """Build the 4 body parameters expected by the approved order confirmation template.
-
-    Template body: customer name, order number, item summary, estimated delivery date.
-    """
-    customer = order.get("customer") or {}
-    name = customer_name or customer.get("name") or "there"
-    order_number = str(order.get("order_number") or "")
-    items = order.get("items") or []
-
-    if len(items) == 1:
-        line = items[0] or {}
-        qty = int(line.get("qty") or 1)
-        item_name = str(line.get("name") or "your order")
-        item_summary = f"{qty} × {item_name}"
-    else:
-        total_qty = sum(int((line or {}).get("qty") or 0) for line in items)
-        item_summary = f"{total_qty} items" if total_qty else "your items"
-
-    settings = await db.settings.find_one({"id": "store"}, {"_id": 0}) or {}
-    logic = settings.get("delivery_logic") or {}
-    default = logic.get("default") or {}
-    delivery_days = int(default.get("delivery_max_days", default.get("delivery_days", 5)) or 5)
-    state = str((order.get("address") or {}).get("state") or "").strip().casefold()
-    for rule in logic.get("state_rules") or []:
-        if str(rule.get("state") or "").strip().casefold() == state:
-            delivery_days = int(rule.get("delivery_max_days", rule.get("delivery_days", delivery_days)) or delivery_days)
-            break
-    delivery_days = max(0, delivery_days)
-
-    date_value = datetime.now(timezone.utc).date()
-    remaining = delivery_days
-    while remaining > 0:
-        date_value += timedelta(days=1)
-        if date_value.weekday() < 5:
-            remaining -= 1
-    formatted_date = f"{date_value.strftime('%b')} {date_value.day}, {date_value.year}"
-    return [name, order_number, item_summary, formatted_date]
 
 
 # ---------------- OTP ----------------
