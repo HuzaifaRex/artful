@@ -189,6 +189,29 @@ function ProductForm({ product, cats, onClose, onSaved }) {
     const options = [...(custom.options || [])]; options[idx] = { ...options[idx], ...patch }; setCustom("options", options);
   };
   const removeOption = (idx) => setCustom("options", (custom.options || []).filter((_, i) => i !== idx));
+
+  const addSizePreset = () => {
+    const presets = [...(custom.size?.presets || [])];
+    presets.push({
+      id: `size-${Date.now()}-${presets.length}`,
+      label: `Size ${presets.length + 1}`,
+      width: 89,
+      height: 51,
+    });
+    setCustom("size", { ...(custom.size || {}), presets });
+  };
+  const updateSizePreset = (idx, patch) => {
+    const presets = [...(custom.size?.presets || [])];
+    if (!presets[idx]) return;
+    presets[idx] = { ...presets[idx], ...patch };
+    setCustom("size", { ...(custom.size || {}), presets });
+  };
+  const removeSizePreset = (idx) => {
+    setCustom("size", {
+      ...(custom.size || {}),
+      presets: (custom.size?.presets || []).filter((_, i) => i !== idx),
+    });
+  };
   const addValue = (oi) => {
     const options = [...(custom.options || [])]; const values = [...(options[oi].values || [])];
     values.push({ id: `value-${Date.now()}-${values.length}`, label: `Option ${values.length + 1}`, add_on: 0 });
@@ -295,16 +318,16 @@ function ProductForm({ product, cats, onClose, onSaved }) {
       {tab === "custom" && f.product_type === "customizable" && <div className="space-y-5">
         <div className="rounded-xl border border-plum/20 bg-plum/5 p-4"><p className="font-semibold text-gray-900">Customer customization</p><p className="text-xs text-gray-500 mt-1">Build the options the customer will select before adding the product to cart.</p></div>
         {(custom.options || []).map((o, oi) => <div key={o.id || oi} className="rounded-xl border border-gray-200 p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <input value={o.name || ""} onChange={e=>updateOption(oi,{name:e.target.value})} className={inputCls+" flex-1"} placeholder="Option name e.g. Material"/>
-            <select value={o.type || "select"} onChange={e=>updateOption(oi,{type:e.target.value})} className={inputCls+" w-36"}><option value="select">Dropdown</option><option value="radio">Radio</option></select>
-            <label className="text-xs flex items-center gap-1 whitespace-nowrap"><input type="checkbox" checked={o.required !== false} onChange={e=>updateOption(oi,{required:e.target.checked})} className="accent-plum"/> Required</label>
-            <button type="button" onClick={()=>removeOption(oi)} className="text-xs text-red-600">Remove</button>
+          <div className="grid sm:grid-cols-[minmax(0,1fr)_130px_auto_auto] gap-3 items-end mb-3">
+            <div><label className="block text-xs font-medium text-gray-600 mb-1">Option name</label><input value={o.name || ""} onChange={e=>updateOption(oi,{name:e.target.value})} className={inputCls} placeholder="e.g. Material, GSM, Printing"/></div>
+            <div><label className="block text-xs font-medium text-gray-600 mb-1">Input type</label><select value={o.type || "select"} onChange={e=>updateOption(oi,{type:e.target.value})} className={inputCls+" !w-[130px]"}><option value="select">Dropdown</option><option value="radio">Radio</option></select></div>
+            <label className="flex items-center gap-2 text-xs text-gray-600 h-10 whitespace-nowrap"><input type="checkbox" checked={o.required !== false} onChange={e=>updateOption(oi,{required:e.target.checked})} className="accent-plum w-4 h-4"/> Required</label>
+            <button type="button" onClick={()=>removeOption(oi)} className="h-10 px-2 text-xs text-red-600">Remove</button>
           </div>
-          <div className="space-y-2">{(o.values || []).map((v,vi)=><div key={v.id || vi} className="grid grid-cols-[1fr_130px_auto] gap-2 items-center">
-            <input value={v.label || ""} onChange={e=>updateValue(oi,vi,{label:e.target.value})} className={inputCls} placeholder="Value e.g. 350 GSM"/>
-            <input type="number" value={v.add_on ?? 0} onChange={e=>updateValue(oi,vi,{add_on:Number(e.target.value||0)})} className={inputCls} placeholder="Add-on ₹"/>
-            <button type="button" onClick={()=>removeValue(oi,vi)} className="text-xs text-red-600">Remove</button>
+          <div className="space-y-2">{(o.values || []).map((v,vi)=><div key={v.id || vi} className="grid sm:grid-cols-[minmax(0,1fr)_130px_auto] gap-2 items-end">
+            <div><label className="block text-[11px] font-medium text-gray-500 mb-1">Option value</label><input value={v.label || ""} onChange={e=>updateValue(oi,vi,{label:e.target.value})} className={inputCls} placeholder="e.g. 350 GSM"/></div>
+            <div><label className="block text-[11px] font-medium text-gray-500 mb-1">Add-on price (₹)</label><input type="number" min="0" value={v.add_on ?? 0} onChange={e=>updateValue(oi,vi,{add_on:Number(e.target.value||0)})} className={inputCls+" !w-[130px]"}/></div>
+            <button type="button" onClick={()=>removeValue(oi,vi)} className="h-10 px-2 text-xs text-red-600">Remove</button>
           </div>)}</div>
           <button type="button" onClick={()=>addValue(oi)} className="mt-3 text-xs text-plum font-medium">+ Add value</button>
         </div>)}
@@ -313,8 +336,8 @@ function ProductForm({ product, cats, onClose, onSaved }) {
           <div className="flex items-center justify-between"><div><p className="font-semibold text-gray-900">Product size</p><p className="text-xs text-gray-500 mt-1">Add standard sizes and optionally allow a customer-defined size.</p></div><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={!!custom.size?.enabled} onChange={e=>setCustom("size",{...(custom.size||{}),enabled:e.target.checked})} className="accent-plum"/> Enable size selection</label></div>
           {custom.size?.enabled && <div className="mt-4 space-y-4">
             <div className="grid sm:grid-cols-2 gap-4"><Field label="Unit"><select value={custom.size?.unit||"mm"} onChange={e=>setCustom("size",{...(custom.size||{}),unit:e.target.value})} className={inputCls}><option value="mm">Millimetres (mm)</option><option value="cm">Centimetres (cm)</option><option value="in">Inches (in)</option></select></Field><Field label="Custom size"><select value={custom.size?.allow_custom!==false?"yes":"no"} onChange={e=>setCustom("size",{...(custom.size||{}),allow_custom:e.target.value==="yes"})} className={inputCls}><option value="yes">Allow custom size</option><option value="no">Preset sizes only</option></select></Field></div>
-            <div><div className="flex items-center justify-between mb-2"><p className="text-xs font-medium text-gray-600">Preset sizes</p><button type="button" onClick={addSizePreset} className="text-xs text-plum font-medium">+ Add size</button></div><div className="space-y-2">{(custom.size?.presets||[]).map((sp,idx)=><div key={sp.id||idx} className="grid grid-cols-[1.4fr_1fr_1fr_auto] gap-2 items-center"><input value={sp.label||""} onChange={e=>updateSizePreset(idx,{label:e.target.value})} className={inputCls} placeholder="e.g. Standard Visiting Card"/><input type="number" min="1" value={sp.width??""} onChange={e=>updateSizePreset(idx,{width:Number(e.target.value||0)})} className={inputCls} placeholder="Width"/><input type="number" min="1" value={sp.height??""} onChange={e=>updateSizePreset(idx,{height:Number(e.target.value||0)})} className={inputCls} placeholder="Height"/><button type="button" onClick={()=>removeSizePreset(idx)} className="text-xs text-red-600">Remove</button></div>)}</div></div>
-            {custom.size?.allow_custom!==false && <div className="rounded-lg bg-gray-50 border border-gray-100 p-3"><p className="text-xs font-semibold text-gray-700 mb-2">Custom size limits</p><div className="grid grid-cols-2 sm:grid-cols-4 gap-2"><input type="number" min="1" value={custom.size?.min_width??20} onChange={e=>setCustom("size",{...(custom.size||{}),min_width:Number(e.target.value||1)})} className={inputCls} placeholder="Min W"/><input type="number" min="1" value={custom.size?.max_width??1000} onChange={e=>setCustom("size",{...(custom.size||{}),max_width:Number(e.target.value||1000)})} className={inputCls} placeholder="Max W"/><input type="number" min="1" value={custom.size?.min_height??20} onChange={e=>setCustom("size",{...(custom.size||{}),min_height:Number(e.target.value||1)})} className={inputCls} placeholder="Min H"/><input type="number" min="1" value={custom.size?.max_height??1000} onChange={e=>setCustom("size",{...(custom.size||{}),max_height:Number(e.target.value||1000)})} className={inputCls} placeholder="Max H"/></div></div>}
+            <div><div className="flex items-center justify-between mb-2"><p className="text-xs font-medium text-gray-600">Preset sizes</p><button type="button" onClick={addSizePreset} className="text-xs text-plum font-medium">+ Add size</button></div><div className="space-y-2">{(custom.size?.presets||[]).map((sp,idx)=><div key={sp.id||idx} className="grid sm:grid-cols-[minmax(0,1.4fr)_1fr_1fr_auto] gap-2 items-end"><div><label className="block text-[11px] font-medium text-gray-500 mb-1">Size name</label><input value={sp.label||""} onChange={e=>updateSizePreset(idx,{label:e.target.value})} className={inputCls} placeholder="e.g. Standard Visiting Card"/></div><div><label className="block text-[11px] font-medium text-gray-500 mb-1">Width</label><input type="number" min="1" value={sp.width??""} onChange={e=>updateSizePreset(idx,{width:Number(e.target.value||0)})} className={inputCls}/></div><div><label className="block text-[11px] font-medium text-gray-500 mb-1">Height</label><input type="number" min="1" value={sp.height??""} onChange={e=>updateSizePreset(idx,{height:Number(e.target.value||0)})} className={inputCls}/></div><button type="button" onClick={()=>removeSizePreset(idx)} className="h-10 px-2 text-xs text-red-600">Remove</button></div>)}</div></div>
+            {custom.size?.allow_custom!==false && <div className="rounded-lg bg-gray-50 border border-gray-100 p-3"><p className="text-xs font-semibold text-gray-700 mb-2">Custom size limits</p><div className="grid grid-cols-2 sm:grid-cols-4 gap-2"><div><label className="block text-[11px] font-medium text-gray-500 mb-1">Minimum width</label><input type="number" min="1" value={custom.size?.min_width??20} onChange={e=>setCustom("size",{...(custom.size||{}),min_width:Number(e.target.value||1)})} className={inputCls}/></div><div><label className="block text-[11px] font-medium text-gray-500 mb-1">Maximum width</label><input type="number" min="1" value={custom.size?.max_width??1000} onChange={e=>setCustom("size",{...(custom.size||{}),max_width:Number(e.target.value||1000)})} className={inputCls}/></div><div><label className="block text-[11px] font-medium text-gray-500 mb-1">Minimum height</label><input type="number" min="1" value={custom.size?.min_height??20} onChange={e=>setCustom("size",{...(custom.size||{}),min_height:Number(e.target.value||1)})} className={inputCls}/></div><div><label className="block text-[11px] font-medium text-gray-500 mb-1">Maximum height</label><input type="number" min="1" value={custom.size?.max_height??1000} onChange={e=>setCustom("size",{...(custom.size||{}),max_height:Number(e.target.value||1000)})} className={inputCls}/></div></div></div>}
             <div className="grid sm:grid-cols-3 gap-3"><Field label="Custom-size pricing"><select value={custom.size?.pricing_mode||"fixed"} onChange={e=>setCustom("size",{...(custom.size||{}),pricing_mode:e.target.value})} className={inputCls}><option value="fixed">Fixed surcharge</option><option value="per_area">Price per area</option></select></Field><Field label="Price per area"><input type="number" min="0" value={custom.size?.price_per_area??0} onChange={e=>setCustom("size",{...(custom.size||{}),price_per_area:Number(e.target.value||0)})} className={inputCls}/></Field><Field label="Minimum custom-size charge"><input type="number" min="0" value={custom.size?.min_price??0} onChange={e=>setCustom("size",{...(custom.size||{}),min_price:Number(e.target.value||0)})} className={inputCls}/></Field></div>
           </div>}
         </div>
@@ -332,24 +355,27 @@ function ProductForm({ product, cats, onClose, onSaved }) {
 
       {tab === "pricing" && f.product_type === "customizable" && <div className="space-y-5">
         <div className="rounded-xl border border-gray-200 p-4">
-          <p className="font-semibold text-gray-900">Pricing method</p>
-          <select value={custom.pricing?.mode || "base_addons"} onChange={e=>setCustom("pricing",{...(custom.pricing||{}),mode:e.target.value})} className={inputCls+" mt-2 max-w-sm"}>
+          <label className="block text-sm font-semibold text-gray-900">Pricing method</label>
+          <select value={custom.pricing?.mode || "base_addons"} onChange={e=>setCustom("pricing",{...(custom.pricing||{}),mode:e.target.value})} className={inputCls+" mt-2 !w-[130px]"}>
             <option value="base_addons">Base price + option add-ons</option>
             <option value="quantity">Quantity-based price</option>
             <option value="combination">Exact combination price</option>
           </select>
-          <p className="text-xs text-gray-500 mt-2">For customizable products, the server calculates the final price from these rules.</p>
+          <p className="text-xs text-gray-500 mt-2">For customizable products, the server calculates the final price from the selected pricing method.</p>
         </div>
         {custom.pricing?.mode !== "combination" && <div className="rounded-xl border border-gray-200 p-4">
           <Field label="Base price (₹)"><input type="number" min="0" value={f.price ?? 0} onChange={e=>set("price",e.target.value)} className={inputCls}/></Field>
-          <div className="mt-4 flex items-center justify-between"><div><p className="text-sm font-semibold">Quantity price tiers</p><p className="text-xs text-gray-500">Optional. The highest matching minimum quantity is used.</p></div><button type="button" onClick={addTier} className="text-xs text-plum">+ Add tier</button></div>
+          
+          {custom.pricing?.mode === "quantity" && <><div className="mt-4 flex items-center justify-between"><div><p className="text-sm font-semibold">Quantity price tiers</p><p className="text-xs text-gray-500">Set the unit price for each quantity level. The highest matching minimum quantity is used.</p></div><button type="button" onClick={addTier} className="text-xs text-plum">+ Add tier</button></div>
           <div className="space-y-2 mt-3">{(custom.pricing?.quantity_tiers||[]).map((t,i)=><div key={i} className="grid grid-cols-[1fr_1fr_auto] gap-2 items-end"><Field label="Min quantity"><input type="number" min="1" value={t.min_quantity??""} onChange={e=>updateTier(i,{min_quantity:Number(e.target.value||0)})} className={inputCls}/></Field><Field label="Unit price"><input type="number" min="1" value={t.price??""} onChange={e=>updateTier(i,{price:Number(e.target.value||0)})} className={inputCls}/></Field><button type="button" onClick={()=>removeTier(i)} className="text-xs text-red-600 pb-2">Remove</button></div>)}</div>
-        </div>}
+        </>}</div>}
+
+        
         {custom.pricing?.mode === "combination" && <div className="rounded-xl border border-gray-200 p-4">
           <div className="flex items-center justify-between"><div><p className="font-semibold">Combination rules</p><p className="text-xs text-gray-500">Set an exact price for a selected combination and quantity range.</p></div><button type="button" onClick={addRule} className="text-xs text-plum">+ Add rule</button></div>
           <div className="space-y-3 mt-3">{(custom.pricing?.rules||[]).map((r,ri)=><div key={ri} className="rounded-lg bg-gray-50 border p-3">
             <div className="grid sm:grid-cols-3 gap-2"><Field label="Min qty"><input type="number" value={r.min_quantity??1} onChange={e=>updateRule(ri,{min_quantity:Number(e.target.value||1)})} className={inputCls}/></Field><Field label="Max qty (optional)"><input type="number" value={r.max_quantity??""} onChange={e=>updateRule(ri,{max_quantity:e.target.value?Number(e.target.value):null})} className={inputCls}/></Field><Field label="Final unit price"><input type="number" min="1" value={r.price??""} onChange={e=>updateRule(ri,{price:Number(e.target.value||0)})} className={inputCls}/></Field></div>
-            <div className="grid sm:grid-cols-2 gap-2 mt-2">{(custom.options||[]).map(o=><div key={o.id}><label className="text-[11px] text-gray-500">{o.name}</label><select value={r.selections?.[o.id]||""} onChange={e=>updateRule(ri,{selections:{...(r.selections||{}),[o.id]:e.target.value}})} className={inputCls}><option value="">Any</option>{(o.values||[]).map(v=><option key={v.id} value={v.id}>{v.label}</option>)}</select></div>)}</div>
+            <div className="grid sm:grid-cols-2 gap-2 mt-2">{(custom.options||[]).map(o=><div key={o.id}><label className="block text-[11px] font-medium text-gray-500 mb-1">{o.name}</label><select value={r.selections?.[o.id]||""} onChange={e=>updateRule(ri,{selections:{...(r.selections||{}),[o.id]:e.target.value}})} className={inputCls}><option value="">Any</option>{(o.values||[]).map(v=><option key={v.id} value={v.id}>{v.label}</option>)}</select></div>)}</div>
             <button type="button" onClick={()=>removeRule(ri)} className="mt-2 text-xs text-red-600">Remove rule</button>
           </div>)}</div>
         </div>}

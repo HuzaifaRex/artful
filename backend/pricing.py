@@ -116,14 +116,18 @@ async def build_line_items(items):
             pricing = custom_cfg.get("pricing") or {}
             mode = pricing.get("mode", "base_addons")
             unit_price = base_price
-            tiers = sorted(pricing.get("quantity_tiers") or [], key=lambda x: int(x.get("min_quantity", 0) or 0))
-            if mode in ("quantity", "base_addons"):
+
+            # Each pricing mode has one clear responsibility:
+            # - base_addons: base product price + selected option add-ons.
+            # - quantity: quantity tiers determine the base unit price, then option add-ons apply.
+            # - combination: the matching rule supplies the complete unit price; option add-ons are not added again.
+            if mode == "base_addons":
+                unit_price = base_price + option_addons
+            elif mode == "quantity":
+                tiers = sorted(pricing.get("quantity_tiers") or [], key=lambda x: int(x.get("min_quantity", 0) or 0))
                 for tier in tiers:
                     if int(tier.get("min_quantity", 0) or 0) <= qty and float(tier.get("price", 0) or 0) > 0:
                         unit_price = int(round(float(tier["price"])))
-            if mode == "base_addons":
-                unit_price += option_addons
-            elif mode == "quantity":
                 unit_price += option_addons
             elif mode == "combination":
                 unit_price = 0
@@ -134,11 +138,16 @@ async def build_line_items(items):
                         continue
                     selections = rule.get("selections") or {}
                     if all(not expected or selection.get(oid) == expected for oid, expected in selections.items()):
-                        unit_price = int(round(float(rule.get("price") or 0)))
-                        break
+                        candidate = int(round(float(rule.get("price") or 0)))
+                        if candidate > 0:
+                            unit_price = candidate
+                            break
                 if unit_price <= 0:
                     errors.append({"product_id": prod["id"], "name": prod["name"], "error": "This customization and quantity combination is not available."})
                     continue
+            else:
+                errors.append({"product_id": prod["id"], "name": prod["name"], "error": "Invalid pricing method configured for this product."})
+                continue
             unit_price += int(round(size_addon))
 
             artwork = it.get("artwork") or []
