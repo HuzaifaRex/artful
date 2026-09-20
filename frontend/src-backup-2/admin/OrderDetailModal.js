@@ -8,30 +8,6 @@ import { Clock3, PackageCheck, Truck, CreditCard, Tag, Gift, FileText, MessageSq
 
 const STATUSES = ["Pending", "Confirmed", "Processing", "Packed", "Shipped", "Out for Delivery", "Delivered", "Cancelled", "Returned", "Refunded", "Failed"];
 
-function CustomOrderBreakdown({ item }) {
-  if (item.product_type !== "customizable" || !item.customization) return null;
-  const c = item.customization;
-  const hasCharges = Number(c.option_addons || 0) > 0 || Number(c.size_addon || 0) > 0;
-  return (
-    <div className="mt-3 rounded-xl border border-plum/15 bg-plum/5 p-3">
-      <div className="flex items-center justify-between gap-3"><p className="text-xs font-semibold text-plum">Customization selected by customer</p><span className="text-[10px] uppercase tracking-wider text-plum/70">Saved with order</span></div>
-      <div className="mt-2 grid sm:grid-cols-2 gap-x-5 gap-y-1.5 text-xs">
-        <div><span className="text-gray-500">Quantity</span><p className="font-medium text-gray-900 mt-0.5">{c.quantity || item.qty} pcs</p></div>
-        {c.quantity_tier && <div><span className="text-gray-500">Quantity tier</span><p className="font-medium text-gray-900 mt-0.5">{c.quantity_tier.quantity} pcs · {inr(c.quantity_tier.price)}</p></div>}
-        {(c.options || []).map((o, idx) => <div key={idx}><span className="text-gray-500">{o.option || "Option"}</span><p className="font-medium text-gray-900 mt-0.5 break-words">{o.value || "—"}</p></div>)}
-        {c.size && <div><span className="text-gray-500">Size</span><p className="font-medium text-gray-900 mt-0.5">{c.size.custom ? `${c.size.width} × ${c.size.height} ${c.size.unit || "mm"}` : `${c.size.label || "Selected"}${c.size.width && c.size.height ? ` · ${c.size.width} × ${c.size.height} ${c.size.unit || "mm"}` : ""}`}</p></div>}
-      </div>
-      <div className="mt-3 pt-3 border-t border-plum/10 flex flex-wrap gap-4 text-[11px] text-gray-600">
-        {c.unit_definition?.pcs_per_unit && <span>1 {c.unit_definition.label || "Unit"} = {c.unit_definition.pcs_per_unit} pcs</span>}
-        {hasCharges && <span>Option/size charges: {inr(Number(c.option_addons || 0) + Number(c.size_addon || 0))}</span>}
-        {c.custom_total != null && <span>Configured total: {inr(c.custom_total)}</span>}
-        <span>Final unit price: {inr(item.price)}</span>
-      </div>
-      {(item.artwork || []).length > 0 && <div className="mt-3 pt-3 border-t border-plum/10"><p className="text-[11px] font-semibold text-gray-700">Customer design files</p><div className="mt-1 space-y-1">{item.artwork.map((a, ai) => <a key={ai} href={a.url} target="_blank" rel="noreferrer" className="block text-xs text-plum underline truncate">{a.filename || `Artwork ${ai + 1}`}</a>)}</div></div>}
-    </div>
-  );
-}
-
 export default function OrderDetailModal({ orderNumber, onClose, onSaved, editable = false }) {
   const [o, setO] = useState(null);
   const [status, setStatus] = useState("");
@@ -80,7 +56,7 @@ export default function OrderDetailModal({ orderNumber, onClose, onSaved, editab
             <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4"><h4 className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 flex items-center gap-2"><Truck size={13}/> Shipping</h4>{(() => { const a=o.address||{}; return <p className="text-sm text-gray-600 leading-relaxed mt-2">{a.name && <><b className="text-gray-900">{a.name}</b><br/></>}{a.line1}{a.line2 ? `, ${a.line2}` : ""}{a.area ? `, ${a.area}` : ""}<br/>{a.city}, {a.state} — {a.pincode}{a.phone ? <><br/>Phone: {a.phone}</> : null}</p>; })()}</div>
           </div>
 
-          <div className="rounded-2xl border border-gray-200 overflow-hidden"><div className="px-4 py-3 bg-gray-50 border-b border-gray-200 flex items-center justify-between"><h4 className="text-sm font-semibold text-gray-900">Order items</h4><span className="text-xs text-gray-500">{(o.items||[]).reduce((n,i)=>n+Number(i.qty||0),0)} units</span></div><div className="divide-y divide-gray-100">{(o.items||[]).map((it,i)=><div key={i} className="p-4"><div className="flex gap-3 items-start"><img src={it.image} alt="" className="w-14 h-16 rounded-lg object-contain bg-gray-100 shrink-0"/><div className="flex-1 min-w-0"><p className="font-medium text-gray-900 artful-product-name break-words">{it.name}</p><div className="mt-1 text-xs text-gray-500">SKU {it.sku || "—"} · Qty {it.qty} · Unit {inr(it.price)}</div><div className="flex flex-wrap gap-2 mt-2">{it.product_type === "customizable" && <span className="inline-flex items-center rounded-full bg-plum/10 text-plum px-2 py-1 text-[11px]">Custom print</span>}{it.bulk_order?.applied && <span className="inline-flex items-center gap-1 rounded-full bg-violet-50 text-violet-700 px-2 py-1 text-[11px]"><Tag size={11}/> Bulk price</span>}{it.gift_wrap && <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 text-amber-700 px-2 py-1 text-[11px]"><Gift size={11}/> Gift wrap</span>}</div>{it.bulk_order?.applied && <p className="text-xs text-violet-700 mt-2">Base price {inr(it.base_price)} · Applied bulk rate {inr(it.price)} / pc</p>}{it.personalization && <p className="text-xs text-plum mt-2 break-words"><b>Personalisation:</b> “{it.personalization}”</p>}</div><div className="font-semibold text-gray-900 shrink-0">{inr(it.line_total ?? (it.price * it.qty))}</div></div><CustomOrderBreakdown item={it}/></div>)}</div></div>
+          <div className="rounded-2xl border border-gray-200 overflow-hidden"><div className="px-4 py-3 bg-gray-50 border-b border-gray-200 flex items-center justify-between"><h4 className="text-sm font-semibold text-gray-900">Order items</h4><span className="text-xs text-gray-500">{(o.items||[]).reduce((n,i)=>n+Number(i.qty||0),0)} units</span></div><div className="divide-y divide-gray-100">{(o.items||[]).map((it,i)=><div key={i} className="p-4 flex gap-3 items-start"><img src={it.image} alt="" className="w-14 h-16 rounded-lg object-cover bg-gray-100 shrink-0"/><div className="flex-1 min-w-0"><p className="font-medium text-gray-900 artful-product-name">{it.name}</p><div className="mt-1 text-xs text-gray-500">SKU {it.sku || "—"} · Qty {it.qty} · Unit {inr(it.price)}</div><div className="flex flex-wrap gap-2 mt-2">{it.bulk_order?.applied && <span className="inline-flex items-center gap-1 rounded-full bg-violet-50 text-violet-700 px-2 py-1 text-[11px]"><Tag size={11}/> Bulk price</span>}{it.gift_wrap && <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 text-amber-700 px-2 py-1 text-[11px]"><Gift size={11}/> Gift wrap</span>}</div>{it.bulk_order?.applied && <p className="text-xs text-violet-700 mt-2">Base price {inr(it.base_price)} · Applied bulk rate {inr(it.price)} / pc</p>}{it.personalization && <p className="text-xs text-plum mt-2 break-words"><b>Personalisation:</b> “{it.personalization}”</p>}</div><div className="font-semibold text-gray-900">{inr(it.line_total ?? (it.price * it.qty))}</div></div>)}</div></div>
 
           {(o.items || []).some((it) => (it.artwork || []).length > 0) && <div className="rounded-2xl border border-plum/20 bg-plum/5 p-4">
             <h4 className="text-sm font-semibold text-plum flex items-center gap-2"><FileText size={14}/> Customer artwork</h4>

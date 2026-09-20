@@ -1,5 +1,6 @@
 """Invoice PDF generation and secure invoice download routes for ARTFUL."""
 from io import BytesIO
+import html
 from pathlib import Path
 from datetime import datetime
 
@@ -267,12 +268,37 @@ def build_invoice_pdf(order, settings):
     ]]
 
     for item in order.get("items") or []:
-        name = _clean_text(item.get("name") or "Product")
+        name = html.escape(_clean_text(item.get("name") or "Product"))
         extras = []
         if item.get("variant_label"):
-            extras.append(f"Variant: {item['variant_label']}")
+            extras.append(f"Variant: {html.escape(str(item['variant_label']))}")
+        custom = item.get("customization") or {}
+        if item.get("product_type") == "customizable" and custom:
+            extras.append(f"Quantity: {html.escape(str(custom.get('quantity') or item.get('qty') or 0))} pcs")
+            if custom.get("quantity_tier"):
+                extras.append(f"Qty tier: {html.escape(str(custom['quantity_tier'].get('quantity') or ''))} pcs @ {_money(custom['quantity_tier'].get('price'))}")
+            for opt in custom.get("options") or []:
+                label = html.escape(str(opt.get("option") or "Option"))
+                value = html.escape(str(opt.get("value") or "—"))
+                extras.append(f"{label}: {value}")
+            size = custom.get("size")
+            if size:
+                if size.get("custom"):
+                    size_text = f"{size.get('width')} × {size.get('height')} {size.get('unit') or 'mm'}"
+                else:
+                    size_text = f"{size.get('label') or 'Selected'}"
+                    if size.get("width") and size.get("height"):
+                        size_text += f" · {size.get('width')} × {size.get('height')} {size.get('unit') or 'mm'}"
+                extras.append(f"Size: {html.escape(size_text)}")
+            if custom.get("unit_definition", {}).get("pcs_per_unit"):
+                extras.append(f"Unit: 1 {html.escape(str(custom.get('unit_definition', {}).get('label') or 'Unit'))} = {html.escape(str(custom['unit_definition']['pcs_per_unit']))} pcs")
+            if custom.get("option_addons") or custom.get("size_addon"):
+                extras.append(f"Customization charges: {_money((custom.get('option_addons') or 0) + (custom.get('size_addon') or 0))}")
+            if (item.get("artwork") or []):
+                filenames = ", ".join(html.escape(str(a.get("filename") or "Artwork")) for a in item.get("artwork") or [])
+                extras.append(f"Design files: {filenames}")
         if item.get("personalization"):
-            extras.append(f"Personalisation: {item['personalization']}")
+            extras.append(f"Personalisation: {html.escape(str(item['personalization']))}")
         if item.get("gift_wrap"):
             extras.append("Gift wrapping included")
         description = _paragraph(

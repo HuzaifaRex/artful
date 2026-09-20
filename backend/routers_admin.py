@@ -168,8 +168,9 @@ async def dashboard(from_date: str = "", to_date: str = "", granularity: str = "
     new_customers = await db.customers.count_documents({"created_at": {"$gte": start.isoformat(), "$lte": end.isoformat()}})
     repeat_customers = await db.customers.count_documents({"order_count": {"$gt": 1}})
     active_products = await db.products.count_documents({"status": "Active"})
-    out_of_stock = await db.products.count_documents({"$or": [{"status": "Out of Stock"}, {"stock": {"$lte": 0}}]})
-    low_stock = [clean(p) async for p in db.products.find({"$expr": {"$lte": ["$stock", "$low_stock_threshold"]}, "status": {"$ne": "Archived"}}, {"_id": 0}).sort("stock", 1).limit(10)]
+    inventory_filter = {"product_type": {"$ne": "customizable"}}
+    out_of_stock = await db.products.count_documents({**inventory_filter, "$or": [{"status": "Out of Stock"}, {"stock": {"$lte": 0}}]})
+    low_stock = [clean(p) async for p in db.products.find({**inventory_filter, "$expr": {"$lte": ["$stock", "$low_stock_threshold"]}, "status": {"$ne": "Archived"}}, {"_id": 0}).sort("stock", 1).limit(10)]
 
     status_counts = {}
     for st in ["Pending", "Confirmed", "Processing", "Packed", "Shipped", "Out for Delivery", "Delivered", "Cancelled", "Returned", "Refunded", "Failed"]:
@@ -183,7 +184,7 @@ async def dashboard(from_date: str = "", to_date: str = "", granularity: str = "
     stock_value = 0
     stock_units = 0
     reserved_units = 0
-    async for p in db.products.find({"status": {"$ne": "Archived"}}, {"stock": 1, "reserved": 1, "price": 1, "_id": 0}):
+    async for p in db.products.find({"status": {"$ne": "Archived"}, "product_type": {"$ne": "customizable"}}, {"stock": 1, "reserved": 1, "price": 1, "_id": 0}):
         stock = int(p.get("stock", 0) or 0)
         reserved = int(p.get("reserved", 0) or 0)
         stock_units += stock
@@ -229,7 +230,7 @@ async def _category_names():
 
 @router.get("/inventory/summary")
 async def inventory_summary(admin: dict = Depends(require_permission("catalog"))):
-    base = {"status": {"$ne": "Archived"}}
+    base = {"status": {"$ne": "Archived"}, "product_type": {"$ne": "customizable"}}
     cats = await _category_names()
     total_products = in_stock = low_stock = out_of_stock = 0
     total_units = reserved_units = total_stock_value = 0
@@ -256,7 +257,7 @@ async def inventory_summary(admin: dict = Depends(require_permission("catalog"))
 async def inventory_list(q: str = "", category: str = "", status: str = "", page: int = 1, page_size: int = 25,
                         sort: str = "available_desc", admin: dict = Depends(require_permission("catalog"))):
     cats = await _category_names()
-    prods = [p async for p in db.products.find({"status": {"$ne": "Archived"}}, {"_id": 0})]
+    prods = [p async for p in db.products.find({"status": {"$ne": "Archived"}, "product_type": {"$ne": "customizable"}}, {"_id": 0})]
     ql = q.strip().lower()
     rows = []
     for p in prods:
@@ -296,6 +297,8 @@ async def inventory_list(q: str = "", category: str = "", status: str = "", page
 async def inventory_detail(pid: str, admin: dict = Depends(require_permission("catalog"))):
     p = await db.products.find_one({"id": pid}, {"_id": 0})
     if not p: raise HTTPException(404, "Product not found.")
+    if p.get("product_type") == "customizable":
+        raise HTTPException(400, "Customizable print products are made to order and do not use inventory.")
     cats = await _category_names()
     stock = max(0, _int_num(p.get("stock"))); reserved = max(0, _int_num(p.get("reserved"))); available = max(0, stock-reserved)
     p = clean(p); p.update({"stock":stock,"reserved":reserved,"available":available,"cost_price":round(_num(p.get("cost_price")),2),"price":round(_num(p.get("price")),2),"mrp":round(_num(p.get("mrp"),_num(p.get("compare_at_price"))),2),"category_name":cats.get(p.get("category_slug"),p.get("category_slug") or "Uncategorized")})
@@ -319,6 +322,8 @@ async def inventory_adjust(payload: dict, request: Request, admin: dict = Depend
     if not pid: raise HTTPException(400, "product_id is required.")
     p = await db.products.find_one({"id": pid}, {"_id": 0})
     if not p: raise HTTPException(404, "Product not found.")
+    if p.get("product_type") == "customizable":
+        raise HTTPException(400, "Customizable print products are made to order and do not use inventory.")
     qty = abs(_int_num(payload.get("quantity"), 0)); action = (payload.get("action") or "add").lower(); reason = (payload.get("reason") or "Manual Adjustment").strip()[:100]
     if qty <= 0: raise HTTPException(400, "Quantity must be greater than zero.")
     old_stock = max(0, _int_num(p.get("stock"))); reserved = max(0, _int_num(p.get("reserved")))
@@ -341,6 +346,8 @@ async def inventory_bulk_adjust(payload: dict, request: Request, admin: dict = D
     if not ids or qty<=0: raise HTTPException(400,"Select products and enter a quantity.")
     delta=qty if action=="add" else -qty; updated=0
     async for p in db.products.find({"id":{"$in":ids}},{"_id":0}):
+        if p.get("product_type") == "customizable":
+            continue
         stock=max(0,_int_num(p.get("stock"))); reserved=max(0,_int_num(p.get("reserved"))); new_stock=stock+delta
         if new_stock<reserved: continue
         await db.products.update_one({"id":p["id"]},{"$set":{"stock":new_stock,"updated_at":now_iso()}})
@@ -354,6 +361,9 @@ async def inventory_bulk_adjust(payload: dict, request: Request, admin: dict = D
 async def inventory_threshold(payload: dict, request: Request, admin: dict = Depends(require_permission("catalog"))):
     pid=str(payload.get("product_id") or ""); threshold=max(0,_int_num(payload.get("threshold"),5))
     if not pid: raise HTTPException(400,"product_id is required.")
+    p = await db.products.find_one({"id": pid}, {"product_type": 1, "_id": 0})
+    if p and p.get("product_type") == "customizable":
+        raise HTTPException(400, "Customizable print products do not use low-stock thresholds.")
     await db.products.update_one({"id":pid},{"$set":{"low_stock_threshold":threshold,"updated_at":now_iso()}})
     await audit(admin,"inventory_threshold","product",pid,after={"low_stock_threshold":threshold},request=request)
     return {"ok":True,"threshold":threshold}
@@ -496,32 +506,34 @@ async def create_product(payload: dict, request: Request, admin: dict = Depends(
     slug = payload.get("slug") or slugify(name)
     if await db.products.find_one({"slug": slug}):
         slug = f"{slug}-{uuid.uuid4().hex[:4]}"
+    product_type = payload.get("product_type", "standard")
+    is_customizable = product_type == "customizable"
     doc = {"id": str(uuid.uuid4()), "name": name, "slug": slug,
            "short_description": payload.get("short_description", ""),
            "description": payload.get("description", ""),
            "images": payload.get("images", []), "video": payload.get("video"),
-           "price": int(payload["price"]), "compare_at_price": payload.get("compare_at_price"),
-           "mrp": payload.get("mrp", payload.get("compare_at_price")),
-           "cost_price": payload.get("cost_price", 0), "sku": payload.get("sku") or slug.upper().replace("-", "")[:14],
+           "price": int(payload["price"]), "compare_at_price": None if is_customizable else payload.get("compare_at_price"),
+           "mrp": None if is_customizable else payload.get("mrp", payload.get("compare_at_price")),
+           "cost_price": 0 if is_customizable else payload.get("cost_price", 0), "sku": payload.get("sku") or slug.upper().replace("-", "")[:14],
            "barcode": payload.get("barcode"), "category_slug": payload.get("category_slug"),
            "collection_slugs": payload.get("collection_slugs", []), "tags": payload.get("tags", []),
            "material": payload.get("material"), "color": payload.get("color"),
            "dimensions": payload.get("dimensions"), "weight": payload.get("weight"),
            "care": payload.get("care"), "shipping_info": payload.get("shipping_info"),
-           "stock": int(payload.get("stock", 0)), "reserved": 0,
-           "low_stock_threshold": int(payload.get("low_stock_threshold", 5)),
-           "status": payload.get("status", "Draft"), "badges": payload.get("badges", []),
+           "stock": 0 if is_customizable else int(payload.get("stock", 0)), "reserved": 0,
+           "low_stock_threshold": 0 if is_customizable else int(payload.get("low_stock_threshold", 5)),
+           "status": ("Draft" if is_customizable and payload.get("status") == "Out of Stock" else payload.get("status", "Draft")), "badges": payload.get("badges", []),
            "sections": payload.get("sections", []),
            "occasion": payload.get("occasion", []), "recipient": payload.get("recipient", []),
            "rating": 0, "review_count": 0, "variants": payload.get("variants", []),
-           "product_type": payload.get("product_type", "standard"),
+           "product_type": product_type,
            "customization": payload.get("customization", {"enabled": False, "options": [], "pricing": {"mode": "base_addons", "quantity_tiers": [], "rules": []}, "artwork": {"enabled": False, "required": False, "formats": ["pdf", "jpg", "png"], "max_size_mb": 20, "max_files": 1, "instructions": ""}}),
            "bulk_order": payload.get("bulk_order", {"enabled": False, "min_quantity": 10, "tiers": []}),
            "personalization": payload.get("personalization", {"enabled": False}),
            "seo": payload.get("seo", {"title": f"{name} — ARTFUL", "description": payload.get("short_description", "")}),
            "views": 0, "sales_count": 0, "created_at": now_iso(), "updated_at": now_iso()}
     await db.products.insert_one(doc)
-    if int(doc.get("stock", 0) or 0) > 0:
+    if not is_customizable and int(doc.get("stock", 0) or 0) > 0:
         await db.inventory_transactions.insert_one({"id":str(uuid.uuid4()),"product_id":doc["id"],"change":int(doc["stock"]),"reason":"Initial Stock","admin":admin["email"],"at":now_iso(),"source":"product_create"})
     await audit(admin, "create", "product", doc["id"], after={"name": name, "price": doc["price"]}, request=request)
     return clean(doc)
@@ -547,15 +559,25 @@ async def update_product(pid: str, payload: dict, request: Request, admin: dict 
         fields["mrp"] = fields.get("compare_at_price")
     if "cost_price" in fields:
         fields["cost_price"] = _num(fields.get("cost_price"), 0)
+    is_customizable = fields.get("product_type", p.get("product_type")) == "customizable"
+    if is_customizable:
+        fields["cost_price"] = 0
+        fields["mrp"] = None
+        fields["compare_at_price"] = None
+        fields["stock"] = 0
+        fields["reserved"] = 0
+        fields["low_stock_threshold"] = 0
+        if fields.get("status") == "Out of Stock":
+            fields["status"] = "Draft"
     fields["updated_at"] = now_iso()
     old_stock = _int_num(p.get("stock"),0); new_stock = _int_num(fields.get("stock"), old_stock)
-    if "stock" in fields:
+    if "stock" in fields and not is_customizable:
         reserved = _int_num(p.get("reserved"), 0)
         available = max(0, new_stock - reserved)
         if available <= 0 and fields.get("status", p.get("status")) == "Active": fields["status"] = "Out of Stock"
         elif available > 0 and fields.get("status", p.get("status")) == "Out of Stock": fields["status"] = "Active"
     await db.products.update_one({"id": pid}, {"$set": fields})
-    if "stock" in fields and new_stock != old_stock:
+    if "stock" in fields and new_stock != old_stock and not is_customizable:
         await db.inventory_transactions.insert_one({"id":str(uuid.uuid4()),"product_id":pid,"change":new_stock-old_stock,"reason":"Manual Adjustment","admin":admin["email"],"at":now_iso(),"source":"product_edit"})
     await audit(admin, "update", "product", pid,
                 before={"price": p.get("price"), "stock": p.get("stock"), "status": p.get("status")},
@@ -589,6 +611,8 @@ async def adjust_inventory(pid: str, payload: dict, request: Request, admin: dic
     p = await db.products.find_one({"id": pid})
     if not p:
         raise HTTPException(404, "Product not found.")
+    if p.get("product_type") == "customizable":
+        raise HTTPException(400, "Customizable print products are made to order and do not use inventory.")
     change = int(payload.get("change", 0))
     reason = payload.get("reason", "Manual adjustment")
     new_stock = max(0, p.get("stock", 0) + change)
@@ -903,6 +927,8 @@ async def update_order_status(order_number: str, payload: dict, request: Request
     old_status = o.get("status")
     if new_status == "Delivered" and old_status != "Delivered":
         for l in o.get("items", []):
+            if l.get("product_type") == "customizable":
+                continue
             qty = _int_num(l.get("qty"),0)
             await db.products.update_one({"id":l["product_id"]},{"$inc":{"reserved":-qty,"stock":-qty}})
             prod=await db.products.find_one({"id":l["product_id"]},{"stock":1,"reserved":1,"status":1,"_id":0})
@@ -911,6 +937,8 @@ async def update_order_status(order_number: str, payload: dict, request: Request
             await db.inventory_transactions.insert_one({"id":str(uuid.uuid4()),"product_id":l["product_id"],"change":-qty,"reason":f"Order {o["order_number"]} delivered","admin":admin["email"],"at":now_iso(),"source":"order_delivered","order_number":o["order_number"]})
     elif new_status == "Cancelled" and old_status not in ("Cancelled","Returned","Refunded"):
         for l in o.get("items", []):
+            if l.get("product_type") == "customizable":
+                continue
             qty = _int_num(l.get("qty"),0)
             await db.products.update_one({"id":l["product_id"]},{"$inc":{"reserved":-qty}})
             prod=await db.products.find_one({"id":l["product_id"]},{"stock":1,"reserved":1,"status":1,"_id":0})
@@ -923,6 +951,8 @@ async def update_order_status(order_number: str, payload: dict, request: Request
         resellable = bool(payload.get("resellable", True))
         if resellable:
             for l in o.get("items", []):
+                if l.get("product_type") == "customizable":
+                    continue
                 qty = _int_num(l.get("qty"),0)
                 await db.products.update_one({"id":l["product_id"]},{"$inc":{"stock":qty}})
                 prod=await db.products.find_one({"id":l["product_id"]},{"stock":1,"reserved":1,"status":1,"_id":0})

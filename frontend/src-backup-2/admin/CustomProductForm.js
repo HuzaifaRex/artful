@@ -7,7 +7,7 @@ import { Modal, Field, inputCls } from "./ui";
 import { MultiImageUpload, VideoUpload } from "./ImageUpload";
 
 const BADGES = ["New", "Bestseller", "Limited", "Sale", "Featured"];
-const STATUSES = ["Draft", "Active", "Inactive", "Archived"];
+const STATUSES = ["Draft", "Active", "Inactive", "Out of Stock", "Archived"];
 
 const makeId = (prefix) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
@@ -64,10 +64,10 @@ function normalizeCustomization(input) {
 const baseFields = (cats, product, customization) => ({
   name: "",
   sku: "",
-  cost_price: 0,
-  mrp: null,
+  cost_price: "",
+  mrp: "",
   stock: 0,
-  low_stock_threshold: 0,
+  low_stock_threshold: 5,
   category_slug: cats[0]?.slug || "",
   short_description: "",
   description: "",
@@ -233,11 +233,11 @@ export default function CustomProductForm({ product = {}, cats = [], onClose, on
         name: f.name.trim(),
         product_type: "customizable",
         price: basePrice,
-        cost_price: 0,
-        mrp: null,
-        compare_at_price: null,
-        stock: 0,
-        low_stock_threshold: 0,
+        cost_price: Number(f.cost_price || 0),
+        mrp: f.mrp ? Number(f.mrp) : null,
+        compare_at_price: f.mrp ? Number(f.mrp) : null,
+        stock: Number(f.stock || 0),
+        low_stock_threshold: Number(f.low_stock_threshold || 5),
         customization: normalized,
         tags: typeof f.tags === "string" ? f.tags.split(",").map(x => x.trim()).filter(Boolean) : f.tags,
         occasion: typeof f.occasion === "string" ? f.occasion.split(",").map(x => x.trim()).filter(Boolean) : f.occasion,
@@ -265,6 +265,10 @@ export default function CustomProductForm({ product = {}, cats = [], onClose, on
               <Field label="SKU"><input value={f.sku || ""} onChange={e => set("sku", e.target.value)} className={inputCls} /></Field>
               <Field label="Category"><select value={f.category_slug} onChange={e => set("category_slug", e.target.value)} className={inputCls}>{cats.map(c => <option key={c.slug} value={c.slug}>{c.name}</option>)}</select></Field>
               <Field label="Status"><select value={f.status} onChange={e => set("status", e.target.value)} className={inputCls}>{STATUSES.map(s => <option key={s}>{s}</option>)}</select></Field>
+              <Field label="Purchase Price / COGS (₹)"><input type="number" min="0" value={f.cost_price ?? ""} onChange={e => set("cost_price", e.target.value)} className={inputCls} /></Field>
+              <Field label="MRP (₹)"><input type="number" min="0" value={f.mrp ?? ""} onChange={e => set("mrp", e.target.value)} className={inputCls} /></Field>
+              <Field label="Stock Capacity"><input type="number" min="0" value={f.stock ?? 0} onChange={e => set("stock", e.target.value)} className={inputCls} /></Field>
+              <Field label="Low stock threshold"><input type="number" min="0" value={f.low_stock_threshold ?? 5} onChange={e => set("low_stock_threshold", e.target.value)} className={inputCls} /></Field>
               <div className="sm:col-span-2"><Field label="Short Description"><input value={f.short_description || ""} onChange={e => set("short_description", e.target.value)} className={inputCls} /></Field></div>
               <div className="sm:col-span-2"><Field label="Product Description"><textarea rows={4} value={f.description || ""} onChange={e => set("description", e.target.value)} className={inputCls} /></Field></div>
               <div className="sm:col-span-2"><Field label="Product Images"><MultiImageUpload value={Array.isArray(f.images) ? f.images : []} onChange={v => set("images", v)} testid="custom-product-images" /></Field></div>

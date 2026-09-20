@@ -117,35 +117,6 @@ function Orders() {
 }
 
 const STEPS = ["Order Placed", "Confirmed", "Processing", "Packed", "Shipped", "Out for Delivery", "Delivered"];
-
-function OrderItemCustomization({ item }) {
-  if (item.product_type !== "customizable" || !item.customization) return null;
-  const c = item.customization;
-  const rows = [];
-  (c.options || []).forEach((o) => {
-    if (o.value) rows.push([o.option || "Option", o.value]);
-  });
-  if (c.size) {
-    const s = c.size;
-    rows.push(["Size", s.custom ? `${s.width} × ${s.height} ${s.unit || "mm"}` : `${s.label || "Selected"}${s.width && s.height ? ` · ${s.width} × ${s.height} ${s.unit || "mm"}` : ""}`]);
-  }
-  return (
-    <div className="mt-3 rounded-xl border border-plum/15 bg-plum/5 p-3">
-      <p className="text-xs font-semibold text-plum">Customization details</p>
-      <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5">
-        {rows.map(([label, value], idx) => <p key={idx} className="text-xs text-ink-secondary"><span className="text-ink-muted">{label}:</span> {value}</p>)}
-      </div>
-      <div className="mt-3 pt-3 border-t border-plum/10 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-ink-muted">
-        <span>Quantity: {c.quantity || item.qty}</span>
-        {c.unit_definition?.pcs_per_unit && <span>1 {c.unit_definition.label || "Unit"} = {c.unit_definition.pcs_per_unit} pcs</span>}
-        {c.quantity_tier?.price != null && <span>Quantity tier: {inr(c.quantity_tier.price)}</span>}
-      </div>
-      {c.option_addons > 0 || c.size_addon > 0 ? <p className="text-[11px] text-ink-muted mt-2">Customization charges included: {inr((c.option_addons || 0) + (c.size_addon || 0))}</p> : null}
-      {(item.artwork || []).length > 0 && <div className="mt-3"><div className="flex items-center justify-between gap-3"><p className="text-[11px] font-semibold text-ink">Design files</p>{item.artwork_status && <span className="text-[10px] rounded-full bg-white border border-line px-2 py-0.5 text-ink-muted">{item.artwork_status}</span>}</div><div className="mt-1 space-y-1">{item.artwork.map((a, ai) => <a key={ai} href={a.url} target="_blank" rel="noreferrer" className="block text-xs text-plum underline truncate">{a.filename || `Artwork ${ai + 1}`}</a>)}</div></div>}
-      {item.personalization && <p className="text-xs text-ink-secondary mt-3"><span className="text-ink-muted">Personalisation:</span> {item.personalization}</p>}
-    </div>
-  );
-}
 function OrderDetail() {
   const { num } = useParams();
   const [o, setO] = useState(null);
@@ -195,10 +166,7 @@ function OrderDetail() {
 
       <div className="space-y-4 mb-6">
         {o.items.map((i, idx) => (
-          <div key={idx} className="rounded-xl border border-line p-3 sm:p-4 min-w-0">
-            <div className="grid grid-cols-[56px,minmax(0,1fr),auto] gap-3 items-start"><img src={i.image} alt="" className="w-14 h-16 sm:w-16 sm:h-20 object-contain bg-surface rounded-md shrink-0" /><div className="min-w-0"><p className="font-serif text-ink break-words">{i.name}</p><p className="text-xs text-ink-muted mt-1">Qty {i.qty}{i.product_type === "customizable" ? " · Custom print" : ""}</p></div><span className="text-plum text-sm sm:text-base whitespace-nowrap">{inr(i.line_total ?? (i.price * i.qty))}</span></div>
-            <OrderItemCustomization item={i} />
-          </div>
+          <div key={idx} className="grid grid-cols-[56px,minmax(0,1fr),auto] sm:flex gap-3 sm:gap-4 items-start min-w-0"><img src={i.image} alt="" className="w-14 h-16 sm:w-16 sm:h-20 object-cover bg-surface shrink-0" /><div className="min-w-0 flex-1"><p className="font-serif text-ink break-words">{i.name}</p><p className="text-xs text-ink-muted">Qty {i.qty}</p></div><span className="text-plum text-sm sm:text-base whitespace-nowrap">{inr(i.price * i.qty)}</span></div>
         ))}
       </div>
       <div className="border-t border-line pt-4 space-y-1.5 text-sm">

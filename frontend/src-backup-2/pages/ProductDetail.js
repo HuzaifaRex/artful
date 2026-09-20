@@ -125,11 +125,6 @@ export default function ProductDetail() {
   const soldOut = p.status === "Out of Stock" || (!isCustomProduct && available <= 0);
   const disc = discountPct(p.price, p.compare_at_price);
   const saved = wishlist.includes(p.id);
-  const galleryMedia = [
-    ...(p.images || []).map((src) => ({ type: "image", src })),
-    ...(p.video ? [{ type: "video", src: p.video }] : []),
-  ];
-  const activeMedia = galleryMedia[activeImg] || galleryMedia[0] || null;
 
   const bulkTiers = (p.bulk_order?.enabled ? (p.bulk_order?.tiers || []) : [])
     .map((tier) => ({ min_quantity: Number(tier.min_quantity || 0), price: Number(tier.price || 0) }))
@@ -200,7 +195,7 @@ export default function ProductDetail() {
     customization: customization?.enabled ? customSelections : null,
     custom_size: sizeConfig.enabled ? (selectedPresetSize ? { preset_id: selectedPresetSize.id, label: selectedPresetSize.label, width: Number(selectedPresetSize.width), height: Number(selectedPresetSize.height), unit: sizeConfig.unit || "mm" } : hasCustomDimensions ? { custom: true, width: Number(customSize.width), height: Number(customSize.height), unit: sizeConfig.unit || "mm" } : null) : null,
     artwork: artwork,
-    custom_total: customization?.enabled ? customOrderTotal : null,
+    custom_total: customization?.enabled && isOrderTotalPricing ? customOrderTotal : null,
     custom_unit_price: customization?.enabled ? (isOrderTotalPricing && qty > 0 ? customOrderTotal / qty : customOrderTotal) : null,
   });
   const validateCustomization = () => {
@@ -269,38 +264,24 @@ export default function ProductDetail() {
       </div>
       <div className="container-artful pb-16 grid lg:grid-cols-2 gap-10 lg:gap-16">
         {/* Gallery */}
-        <div className="flex flex-col-reverse sm:flex-row gap-4 min-w-0">
-          <div className="flex sm:flex-col gap-3 overflow-x-auto sm:overflow-y-auto sm:max-h-[620px] pr-1">
-            {galleryMedia.map((media, i) => (
-              <button key={`${media.type}-${i}`} onClick={() => setActiveImg(i)} className={`w-16 h-20 sm:w-18 sm:h-24 rounded-md shrink-0 overflow-hidden border bg-surface ${activeImg === i ? "border-plum ring-1 ring-plum/30" : "border-line"}`} data-testid={`thumb-${i}`}>
-                {media.type === "video" ? (
-                  <div className="relative w-full h-full bg-black">
-                    <video src={media.src} muted playsInline preload="metadata" className="w-full h-full object-cover" />
-                    <span className="absolute inset-x-0 bottom-0 bg-black/65 text-white text-[9px] py-1">VIDEO</span>
-                  </div>
-                ) : (
-                  <img src={media.src} alt="" className="w-full h-full object-cover" />
-                )}
+        <div className="flex flex-col-reverse sm:flex-row gap-4">
+          <div className="flex sm:flex-col gap-3 overflow-x-auto sm:overflow-visible">
+            {(p.images || []).map((img, i) => (
+              <button key={i} onClick={() => setActiveImg(i)} className={`w-16 h-20 shrink-0 overflow-hidden border ${activeImg === i ? "border-plum" : "border-line"}`} data-testid={`thumb-${i}`}>
+                <img src={img} alt="" className="w-full h-full object-cover" />
               </button>
             ))}
           </div>
-          <div className="flex-1 min-w-0 relative overflow-hidden bg-surface rounded-xl h-[420px] sm:h-[520px] lg:h-[620px]">
-            {activeMedia?.type === "video" ? (
-              <video src={activeMedia.src} controls playsInline className="w-full h-full object-contain bg-black" data-testid="pdp-main-video" />
-            ) : activeMedia?.src ? (
-              <img src={activeMedia.src} alt={p.name} className="w-full h-full object-contain bg-white" data-testid="pdp-main-image" />
-            ) : (
-              <div className="w-full h-full grid place-items-center text-sm text-ink-muted">No product media</div>
-            )}
+          <div className="flex-1 relative overflow-hidden bg-surface aspect-[4/5] hover-zoom">
+            <img src={(p.images || [])[activeImg]} alt={p.name} className="w-full h-full object-cover" data-testid="pdp-main-image" />
             {disc && <span className="absolute top-4 left-4 bg-accent text-white text-xs px-3 py-1.5 uppercase tracking-widest2">-{disc}%</span>}
           </div>
         </div>
 
         {/* Info */}
-        <div className="lg:py-4 min-w-0">
+        <div className="lg:py-4">
           <div className="flex flex-wrap gap-2 mb-3">{(p.badges || []).map((b) => <span key={b} className="text-[10px] uppercase tracking-widest2 px-2.5 py-1 bg-plum-light text-plum">{b}</span>)}</div>
           <h1 className="artful-product-name text-3xl lg:text-4xl text-ink leading-tight" data-testid="pdp-title">{p.name}</h1>
-          {p.short_description && <p className="text-sm sm:text-base text-ink-secondary leading-relaxed mt-2 max-w-2xl" data-testid="pdp-short-description">{p.short_description}</p>}
           {p.review_count > 0 && (
             <div className="flex items-center gap-1 mt-3">{[...Array(5)].map((_, i) => <Star key={i} size={15} className={i < Math.round(p.rating) ? "fill-gold text-gold" : "text-line"} />)}<span className="text-xs text-ink-muted ml-2">{p.rating} ({p.review_count})</span></div>
           )}

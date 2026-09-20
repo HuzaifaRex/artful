@@ -68,7 +68,7 @@ export default function CartPage() {
                     <span className="px-4 text-sm">{item.qty}</span>
                     <button onClick={() => updateQty(item.key, item.qty + 1)} className="p-2 text-plum"><Plus size={14} /></button>
                   </div>}
-                  <span className="text-plum font-medium">{inr(item.custom_total ?? (item.price * item.qty))}</span>
+                  <span className="text-plum font-medium">{inr(item.price * item.qty)}</span>
                 </div>
               </div>
             </div>

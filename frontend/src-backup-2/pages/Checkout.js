@@ -17,21 +17,6 @@ function loadScript(src) {
 
 const EMPTY_ADDR = { name: "", phone: "", line1: "", line2: "", area: "", city: "", state: "", pincode: "", instructions: "" };
 
-function getCustomizationSummary(item) {
-  const cfg = item.customization_config || {};
-  const selected = item.customization || {};
-  const details = [];
-  (cfg.options || []).forEach((opt) => {
-    const ids = Array.isArray(selected[opt.id]) ? selected[opt.id] : [selected[opt.id]];
-    const labels = ids.filter(Boolean).map((id) => (opt.values || []).find((v) => v.id === id)?.label).filter(Boolean);
-    if (labels.length) details.push({ label: opt.name || "Option", value: labels.join(", ") });
-  });
-  const size = item.custom_size;
-  if (size?.custom && size.width && size.height) details.push({ label: "Size", value: `${size.width} × ${size.height} ${size.unit || "mm"}` });
-  else if (size?.label) details.push({ label: "Size", value: `${size.label}${size.width && size.height ? ` · ${size.width} × ${size.height} ${size.unit || "mm"}` : ""}` });
-  return details;
-}
-
 export default function Checkout() {
   const { cart, cartPayload, customer, setCustomer, loginSuccess, clearCart, updateQty, removeItem, updateArtwork } = useStore();
   const navigate = useNavigate();
@@ -362,45 +347,38 @@ export default function Checkout() {
           <div className="bg-surface p-6 sticky top-28">
             <h3 className="font-serif text-2xl text-plum mb-5">Your Order</h3>
             <div className="space-y-4 max-h-72 overflow-y-auto mb-5 pr-1">
-              {cart.map((i) => {
-                const isCustom = i.product_type === "customizable" || i.customization_config?.enabled;
-                const customDetails = isCustom ? getCustomizationSummary(i) : [];
-                return (
-                  <div key={i.key} className={`rounded-xl border bg-white p-3 ${isCustom ? "border-plum/20" : "border-line"}`} data-testid={`checkout-item-${i.key}`}>
-                    <div className="grid grid-cols-[56px,minmax(0,1fr),auto] gap-3 items-start">
-                      <img src={i.image} alt="" className="w-14 h-16 object-contain bg-cream rounded-md shrink-0" />
-                      <div className="min-w-0">
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0"><p className="text-ink leading-tight line-clamp-2 font-medium">{i.name}</p>{isCustom && <span className="inline-flex mt-1 rounded-full bg-plum-light text-plum px-2 py-0.5 text-[10px] font-semibold">Custom Print</span>}</div>
-                          <button onClick={() => removeItem(i.key)} className="text-ink-muted hover:text-err shrink-0" data-testid={`checkout-remove-${i.key}`} aria-label="Remove"><Trash2 size={15} /></button>
-                        </div>
-                        {i.bulk_order?.applied && <p className="text-[11px] text-violet-700 mt-1">Bulk rate applied · {inr(i.price)} / pc</p>}
-                        {customDetails.length > 0 && <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-1">{customDetails.map((d, idx) => <p key={idx} className="text-[11px] text-ink-secondary truncate"><span className="text-ink-muted">{d.label}:</span> {d.value}</p>)}</div>}
-                        <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-                          {i.bulk_locked ? <span className="rounded-full bg-violet-50 text-violet-700 px-2.5 py-1 text-[11px] font-medium">Bulk pack · {i.qty} pcs</span> : <div className="inline-flex items-center border border-line rounded-full">
-                            <button onClick={() => i.qty > 1 ? updateQty(i.key, i.qty - 1) : removeItem(i.key)} className="w-7 h-7 flex items-center justify-center text-plum hover:bg-surface rounded-l-full" data-testid={`checkout-qty-dec-${i.key}`} aria-label="Decrease">{i.qty > 1 ? <Minus size={13} /> : <Trash2 size={13} />}</button>
-                            <span className="w-8 text-center text-plum font-medium" data-testid={`checkout-qty-${i.key}`}>{i.qty}</span>
-                            <button onClick={() => updateQty(i.key, i.qty + 1)} className="w-7 h-7 flex items-center justify-center text-plum hover:bg-surface rounded-r-full" data-testid={`checkout-qty-inc-${i.key}`} aria-label="Increase"><Plus size={13} /></button>
-                          </div>}
-                          <span className="text-plum font-medium whitespace-nowrap">{inr(i.custom_total ?? (i.price * i.qty))}</span>
-                        </div>
-                      </div>
+              {cart.map((i) => (
+                <div key={i.key} className="flex gap-3 text-sm" data-testid={`checkout-item-${i.key}`}>
+                  <img src={i.image} alt="" className="w-14 h-16 object-cover bg-cream shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-ink leading-tight line-clamp-2">{i.name}</p>
+                    {i.bulk_order?.applied && <p className="text-[11px] text-violet-700 mt-1">Bulk rate applied · {inr(i.price)} / pc</p>}
+                    <div className="flex items-center justify-between mt-2">
+                      {i.bulk_locked ? <span className="rounded-full bg-violet-50 text-violet-700 px-2.5 py-1 text-[11px] font-medium">Bulk pack · {i.qty} pcs</span> : <div className="inline-flex items-center border border-line rounded-full">
+                        <button onClick={() => i.qty > 1 ? updateQty(i.key, i.qty - 1) : removeItem(i.key)} className="w-7 h-7 flex items-center justify-center text-plum hover:bg-surface rounded-l-full" data-testid={`checkout-qty-dec-${i.key}`} aria-label="Decrease">
+                          {i.qty > 1 ? <Minus size={13} /> : <Trash2 size={13} />}
+                        </button>
+                        <span className="w-8 text-center text-plum font-medium" data-testid={`checkout-qty-${i.key}`}>{i.qty}</span>
+                        <button onClick={() => updateQty(i.key, i.qty + 1)} className="w-7 h-7 flex items-center justify-center text-plum hover:bg-surface rounded-r-full" data-testid={`checkout-qty-inc-${i.key}`} aria-label="Increase"><Plus size={13} /></button>
+                      </div>}
+                      <span className="text-plum font-medium">{inr(i.price * i.qty)}</span>
                     </div>
-                    {i.customization_config?.artwork?.enabled && (
-                      <div className="mt-3 rounded-xl border border-dashed border-line bg-surface/60 p-3">
-                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                          <div className="min-w-0"><p className="text-xs font-semibold text-ink">Your design {i.customization_config.artwork.required ? "*" : ""}</p><p className="text-[11px] text-ink-muted mt-0.5 break-words">{i.customization_config.artwork.instructions || `PDF, JPG, PNG · max ${i.customization_config.artwork.max_size_mb || 20}MB`}</p></div>
-                          <label className="cursor-pointer shrink-0 rounded-lg border border-plum px-3 py-2 text-xs font-medium text-plum hover:bg-plum-light text-center">
-                            <input type="file" className="hidden" accept={(i.customization_config.artwork.formats || ["pdf","jpg","png"]).map(x => x === "pdf" ? "application/pdf" : x === "png" ? "image/png" : "image/jpeg").join(",")} disabled={!customer || artworkUploading[i.key]} onChange={e => uploadArtwork(i, e.target.files?.[0])} />
-                            {artworkUploading[i.key] ? "Uploading…" : ((i.artwork || []).length ? "Add another file" : "Upload Design")}
-                          </label>
-                        </div>
-                        {(i.artwork || []).length > 0 && <div className="mt-2 grid gap-2">{i.artwork.map((a, ai) => <div key={ai} className="flex items-center justify-between gap-2 rounded-lg bg-white border border-line px-3 py-2 text-xs"><span className="truncate min-w-0">{a.filename}</span><button type="button" onClick={() => removeArtwork(i, ai)} className="text-err shrink-0">Remove</button></div>)}</div>}
-                      </div>
-                    )}
                   </div>
-                );
-              })}
+                  <button onClick={() => removeItem(i.key)} className="text-ink-muted hover:text-err self-start" data-testid={`checkout-remove-${i.key}`} aria-label="Remove"><Trash2 size={15} /></button>
+                  {i.customization_config?.artwork?.enabled && (
+                    <div className="col-span-full mt-2 w-full rounded-xl border border-line bg-white p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div><p className="text-xs font-semibold text-ink">Your design {i.customization_config.artwork.required ? "*" : ""}</p><p className="text-[11px] text-ink-muted">{i.customization_config.artwork.instructions || `PDF, JPG, PNG · max ${i.customization_config.artwork.max_size_mb || 20}MB`}</p></div>
+                        <label className="cursor-pointer shrink-0 rounded-lg border border-plum px-3 py-2 text-xs text-plum hover:bg-plum-light">
+                          <input type="file" className="hidden" accept={(i.customization_config.artwork.formats || ["pdf","jpg","png"]).map(x => x === "pdf" ? "application/pdf" : x === "png" ? "image/png" : "image/jpeg").join(",")} disabled={!customer || artworkUploading[i.key]} onChange={e => uploadArtwork(i, e.target.files?.[0])} />
+                          {artworkUploading[i.key] ? "Uploading…" : "Upload Design"}
+                        </label>
+                      </div>
+                      {(i.artwork || []).map((a, ai) => <div key={ai} className="mt-2 flex items-center justify-between gap-2 rounded-lg bg-surface px-3 py-2 text-xs"><span className="truncate">{a.filename}</span><button type="button" onClick={() => removeArtwork(i, ai)} className="text-err">Remove</button></div>)}
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
             <div className="flex gap-2 mb-4">
               <input value={coupon} onChange={(e) => setCoupon(e.target.value.toUpperCase())} placeholder="Coupon" className="input-field flex-1" data-testid="checkout-coupon-input" />

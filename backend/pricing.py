@@ -61,6 +61,7 @@ async def build_line_items(items):
         option_details = []
         option_addons = 0
         if is_custom:
+            selected_quantity_tier = None
             for opt in custom_cfg.get("options") or []:
                 selected = selection.get(opt.get("id"))
                 if opt.get("required") and not selected:
@@ -152,6 +153,7 @@ async def build_line_items(items):
                         selected_tier = (tq, tp)
                 if selected_tier:
                     tq, tp = selected_tier
+                    selected_quantity_tier = {"quantity": tq, "price": int(round(tp))}
                     if qty == tq:
                         custom_order_total = tp
                     elif pricing.get("allow_custom_quantity", True):
@@ -175,6 +177,7 @@ async def build_line_items(items):
                 for tier in tiers:
                     if int(tier.get("min_quantity", 0) or 0) <= qty and float(tier.get("price", 0) or 0) > 0:
                         unit_price = int(round(float(tier["price"])))
+                        selected_quantity_tier = {"quantity": int(tier.get("min_quantity", 0) or 0), "price": unit_price}
                 unit_price += option_addons + int(round(size_addon))
             elif mode == "combination":
                 unit_price = 0
@@ -254,13 +257,31 @@ async def build_line_items(items):
         bulk_enabled_for_line = bool(not is_custom and bulk_config.get("enabled") and qty >= int(bulk_config.get("min_quantity", 0) or 0) and price != int(base_price))
         bulk_savings = max(0, (int(base_price) - int(price)) * qty) if bulk_enabled_for_line else 0
 
+        custom_detail = None
+        if is_custom:
+            pcs_per_unit = max(1, int((custom_cfg.get("unit_definition") or {}).get("pcs_per_unit", 10) or 10))
+            quantity_base_total = (int(custom_order_total) - int(round(option_addons)) - int(round(size_addon))) if custom_order_total is not None else int(round(unit_price - option_addons - size_addon)) * qty
+            custom_detail = {
+                "selections": selection,
+                "options": option_details,
+                "option_addons": int(round(option_addons)),
+                "size": normalized_size,
+                "size_addon": int(round(size_addon)),
+                "quantity": qty,
+                "unit_definition": {"pcs_per_unit": pcs_per_unit, "label": (custom_cfg.get("unit_definition") or {}).get("label", "Unit")},
+                "pricing_model": pricing_model,
+                "quantity_tier": selected_quantity_tier,
+                "quantity_base_total": max(0, int(round(quantity_base_total))),
+                "custom_total": int(custom_order_total) if custom_order_total is not None else None,
+                "unit_price": int(price),
+            }
         lines.append({
             "product_id": prod["id"], "name": prod["name"], "slug": prod["slug"],
             "image": (prod.get("images") or [None])[0], "sku": prod.get("sku"),
             "variant_id": it.get("variant_id"), "variant_label": (variant or {}).get("label") if variant else None,
             "product_type": "customizable" if is_custom else "standard",
             "price": price, "base_price": base_price, "custom_total": int(custom_order_total) if custom_order_total is not None else None, "cost_price": unit_cost, "qty": qty, "requested_qty": qty,
-            "customization": {"selections": selection, "options": option_details, "option_addons": option_addons, "size": normalized_size, "size_addon": int(round(size_addon))} if is_custom else None,
+            "customization": custom_detail,
             "artwork": artwork if is_custom else [],
             "artwork_status": ("Artwork Received" if artwork else "Awaiting Artwork") if is_custom else None,
             "bulk_order": {"enabled": bool(bulk_config.get("enabled")), "applied": bulk_enabled_for_line,

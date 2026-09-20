@@ -77,9 +77,7 @@ export function StoreProvider({ children }) {
       const customUnitPrice = isCustom && Number(opts.custom_unit_price) > 0 ? Number(opts.custom_unit_price) : null;
       return [...prev, {
         key, product_id: product.id, name: product.name, slug: product.slug,
-        product_type: isCustom ? "customizable" : "standard",
         image: (product.images || [])[0], price: customUnitPrice || getBulkUnitPrice(product, nextQty),
-        custom_total: isCustom && opts.custom_total != null ? Number(opts.custom_total) : null,
         base_price: product.price, bulk_order: product.bulk_order || null,
         compare_at_price: product.compare_at_price, qty: nextQty, available,
         variant_id: opts.variant_id || null, gift_wrap: !!opts.gift_wrap,

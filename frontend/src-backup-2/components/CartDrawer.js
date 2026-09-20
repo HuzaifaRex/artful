@@ -64,7 +64,7 @@ export default function CartDrawer() {
                         <span className="px-3 text-sm" data-testid={`cart-qty-${item.slug}`}>{item.qty}</span>
                         <button onClick={() => updateQty(item.key, item.qty + 1)} className="p-1.5 text-plum" data-testid={`cart-inc-${item.slug}`}><Plus size={13} /></button>
                       </div>}
-                      <span className="text-sm text-plum font-medium">{inr(item.custom_total ?? (item.price * item.qty))}</span>
+                      <span className="text-sm text-plum font-medium">{inr(item.price * item.qty)}</span>
                     </div>
                   </div>
                 </div>
