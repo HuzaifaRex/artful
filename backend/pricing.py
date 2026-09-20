@@ -74,9 +74,13 @@ async def build_line_items(items):
                     if not val:
                         errors.append({"product_id": prod["id"], "name": prod["name"], "error": f"Invalid selection for {opt.get('name', 'option')}."})
                         continue
-                    addon = int(round(float(val.get("add_on") or 0)))
+                    raw_addon = int(round(float(val.get("add_on", val.get("price", 0)) or 0)))
+                    basis = opt.get("price_basis", "per_unit")
+                    pcs_per_unit = max(1, int((custom_cfg.get("unit_definition") or {}).get("pcs_per_unit", 10) or 10))
+                    multiplier = qty if basis == "per_pcs" else max(1, (qty + pcs_per_unit - 1) // pcs_per_unit)
+                    addon = raw_addon * multiplier
                     option_addons += addon
-                    option_details.append({"option_id": opt.get("id"), "option": opt.get("name"), "value_id": val.get("id"), "value": val.get("label"), "add_on": addon})
+                    option_details.append({"option_id": opt.get("id"), "option": opt.get("name"), "value_id": val.get("id"), "value": val.get("label"), "add_on": addon, "unit_add_on": raw_addon, "price_basis": basis})
 
             # Size selection is first-class for print products. Standard presets have no surcharge;
             # custom dimensions can use a fixed surcharge or price-per-cm².
@@ -105,6 +109,12 @@ async def build_line_items(items):
                             size_addon = max(float(size_cfg.get("min_price", 0) or 0), area_cm2 * float(size_cfg.get("price_per_area", 0) or 0))
                         else:
                             size_addon = float(size_cfg.get("min_price", 0) or 0)
+                        basis = size_cfg.get("price_basis") or size_cfg.get("display_basis") or "per_unit"
+                        if basis == "pcs": basis = "per_pcs"
+                        elif basis == "unit": basis = "per_unit"
+                        pcs_per_unit = max(1, int((custom_cfg.get("unit_definition") or {}).get("pcs_per_unit", 10) or 10))
+                        multiplier = qty if basis == "per_pcs" else max(1, (qty + pcs_per_unit - 1) // pcs_per_unit)
+                        size_addon *= multiplier
                         normalized_size = {"custom": True, "width": w, "height": h, "unit": unit}
                     else:
                         preset = next((sp for sp in size_cfg.get("presets", []) if sp.get("id") == size_input.get("preset_id")), None)
@@ -112,23 +122,60 @@ async def build_line_items(items):
                             errors.append({"product_id": prod["id"], "name": prod["name"], "error": "Invalid size selection."})
                         else:
                             normalized_size = {"preset_id": preset.get("id"), "label": preset.get("label"), "width": float(preset.get("width")), "height": float(preset.get("height")), "unit": unit}
+                            raw_size_price = float(preset.get("price", preset.get("add_on", 0)) or 0)
+                            basis = size_cfg.get("price_basis") or size_cfg.get("display_basis") or "per_unit"
+                            if basis == "pcs": basis = "per_pcs"
+                            elif basis == "unit": basis = "per_unit"
+                            pcs_per_unit = max(1, int((custom_cfg.get("unit_definition") or {}).get("pcs_per_unit", 10) or 10))
+                            multiplier = qty if basis == "per_pcs" else max(1, (qty + pcs_per_unit - 1) // pcs_per_unit)
+                            size_addon = raw_size_price * multiplier
 
             pricing = custom_cfg.get("pricing") or {}
             mode = pricing.get("mode", "base_addons")
+            pricing_model = pricing.get("pricing_model", "unit_price")
             unit_price = base_price
+            custom_order_total = None
 
-            # Each pricing mode has one clear responsibility:
-            # - base_addons: base product price + selected option add-ons.
-            # - quantity: quantity tiers determine the base unit price, then option add-ons apply.
-            # - combination: the matching rule supplies the complete unit price; option add-ons are not added again.
-            if mode == "base_addons":
-                unit_price = base_price + option_addons
+            # New print-product builder pricing model: quantity rows are total order prices,
+            # then selected option and size charges are added once. The resulting server unit
+            # price is normalized so existing cart/checkout UIs can continue to use price * qty.
+            if pricing_model == "order_total":
+                if mode not in ("quantity", "base_addons"):
+                    errors.append({"product_id": prod["id"], "name": prod["name"], "error": "Invalid pricing method configured for this product."})
+                    continue
+                tiers = sorted(pricing.get("quantity_tiers") or [], key=lambda x: int(x.get("min_quantity", x.get("quantity", 0)) or 0))
+                selected_tier = None
+                for tier in tiers:
+                    tq = int(tier.get("quantity", tier.get("min_quantity", 0)) or 0)
+                    tp = float(tier.get("price", 0) or 0)
+                    if tq > 0 and tq <= qty and tp >= 0:
+                        selected_tier = (tq, tp)
+                if selected_tier:
+                    tq, tp = selected_tier
+                    if qty == tq:
+                        custom_order_total = tp
+                    elif pricing.get("allow_custom_quantity", True):
+                        custom_order_total = round((qty / tq) * tp)
+                elif tiers and pricing.get("allow_custom_quantity", True):
+                    tq = int(tiers[0].get("quantity", tiers[0].get("min_quantity", 0)) or 0)
+                    tp = float(tiers[0].get("price", 0) or 0)
+                    custom_order_total = round((qty / tq) * tp) if tq > 0 else 0
+                elif not tiers:
+                    custom_order_total = float(base_price)
+                if custom_order_total is None:
+                    errors.append({"product_id": prod["id"], "name": prod["name"], "error": "Please choose one of the available quantities."})
+                    continue
+                custom_order_total += option_addons + int(round(size_addon))
+                custom_order_total = max(0, int(round(custom_order_total)))
+                unit_price = round(custom_order_total / qty) if qty > 0 else custom_order_total
+            elif mode == "base_addons":
+                unit_price = base_price + option_addons + int(round(size_addon))
             elif mode == "quantity":
                 tiers = sorted(pricing.get("quantity_tiers") or [], key=lambda x: int(x.get("min_quantity", 0) or 0))
                 for tier in tiers:
                     if int(tier.get("min_quantity", 0) or 0) <= qty and float(tier.get("price", 0) or 0) > 0:
                         unit_price = int(round(float(tier["price"])))
-                unit_price += option_addons
+                unit_price += option_addons + int(round(size_addon))
             elif mode == "combination":
                 unit_price = 0
                 for rule in pricing.get("rules") or []:
@@ -145,10 +192,10 @@ async def build_line_items(items):
                 if unit_price <= 0:
                     errors.append({"product_id": prod["id"], "name": prod["name"], "error": "This customization and quantity combination is not available."})
                     continue
+                unit_price += int(round(size_addon))
             else:
                 errors.append({"product_id": prod["id"], "name": prod["name"], "error": "Invalid pricing method configured for this product."})
                 continue
-            unit_price += int(round(size_addon))
 
             artwork = it.get("artwork") or []
             artwork_cfg = custom_cfg.get("artwork") or {}
@@ -157,6 +204,19 @@ async def build_line_items(items):
             max_files = max(1, int(artwork_cfg.get("max_files", 1) or 1))
             if len(artwork) > max_files:
                 errors.append({"product_id": prod["id"], "name": prod["name"], "error": f"Maximum {max_files} artwork file(s) allowed."})
+            allowed_formats = set((artwork_cfg.get("formats") or ["pdf", "jpg", "jpeg", "png"]))
+            max_artwork_bytes = max(1, int(artwork_cfg.get("max_size_mb", 20) or 20)) * 1024 * 1024
+            for asset in artwork:
+                filename = str(asset.get("filename") or "")
+                ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+                if ext and ext not in allowed_formats:
+                    errors.append({"product_id": prod["id"], "name": prod["name"], "error": f"Artwork format .{ext} is not allowed."})
+                try:
+                    asset_size = int(asset.get("size") or 0)
+                except (TypeError, ValueError):
+                    asset_size = 0
+                if asset_size > max_artwork_bytes:
+                    errors.append({"product_id": prod["id"], "name": prod["name"], "error": f"Artwork file exceeds the {int(artwork_cfg.get('max_size_mb', 20) or 20)}MB limit."})
             price = unit_price
         else:
             price = bulk_unit_price(prod, qty, base_price)
@@ -199,7 +259,7 @@ async def build_line_items(items):
             "image": (prod.get("images") or [None])[0], "sku": prod.get("sku"),
             "variant_id": it.get("variant_id"), "variant_label": (variant or {}).get("label") if variant else None,
             "product_type": "customizable" if is_custom else "standard",
-            "price": price, "base_price": base_price, "cost_price": unit_cost, "qty": qty, "requested_qty": qty,
+            "price": price, "base_price": base_price, "custom_total": int(custom_order_total) if custom_order_total is not None else None, "cost_price": unit_cost, "qty": qty, "requested_qty": qty,
             "customization": {"selections": selection, "options": option_details, "option_addons": option_addons, "size": normalized_size, "size_addon": int(round(size_addon))} if is_custom else None,
             "artwork": artwork if is_custom else [],
             "artwork_status": ("Artwork Received" if artwork else "Awaiting Artwork") if is_custom else None,
@@ -210,7 +270,8 @@ async def build_line_items(items):
                            "regular_unit_price": int(base_price), "savings": bulk_savings},
             "gift_wrap": gift_wrap, "wrap_price": wrap_price,
             "personalization": it.get("personalization") or None,
-            "line_total": price * qty + wrap_price,
+            "line_total": (int(custom_order_total) if custom_order_total is not None else price * qty) + wrap_price,
+            "regular_line_total": (int(base_price) if custom_order_total is not None else (int(prod.get("compare_at_price")) if (prod.get("compare_at_price") or 0) > base_price else int(base_price)) * qty),
             "compare_at_price": prod.get("compare_at_price"),
         })
     return lines, errors
@@ -274,7 +335,10 @@ async def compute_totals(items, coupon_code=None, customer=None, state=None):
     tax_rate = settings.get("tax_rate", 0)
     taxable = max(0, subtotal - discount)
     tax = 0 if settings.get("tax_inclusive", True) else round(taxable * tax_rate / 100)
-    regular_total = sum((l.get("compare_at_price") if (l.get("compare_at_price") or 0) > (l.get("base_price") or l["price"]) else (l.get("base_price") or l["price"])) * l["qty"] for l in lines)
+    regular_total = 0
+    for l in lines:
+        fallback_regular = ((l.get("compare_at_price") if (l.get("compare_at_price") or 0) > (l.get("base_price") or l["price"]) else (l.get("base_price") or l["price"])) * l["qty"])
+        regular_total += int(l.get("regular_line_total", fallback_regular))
     savings = max(0, regular_total - subtotal) + discount
     total = max(0, subtotal - discount + shipping + tax)
     return {

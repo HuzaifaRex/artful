@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
-import { Heart, Plus, ArrowRight } from "lucide-react";
+import { Heart, Plus } from "lucide-react";
 import { useStore } from "../context/StoreContext";
 import { inr, discountPct, cn } from "../lib/utils";
 
@@ -24,8 +24,8 @@ export default function ProductCard({ product, index = 0 }) {
   const disc = discountPct(price, mrp);
   const saved = wishlist.includes(product.id);
   const available = (product.stock || 0) - (product.reserved || 0);
-  const isCustom = product.product_type === "customizable" || product.customization?.enabled;
-  const soldOut = product.status === "Out of Stock" || (!isCustom && available <= 0);
+  const soldOut = product.status === "Out of Stock" || available <= 0;
+
   const description = (product.short_description || "").trim();
   const tags = (Array.isArray(product.tags) ? product.tags : []).slice(0, 2);
   const badges = (Array.isArray(product.badges) ? product.badges : []).slice(0, 2);
@@ -41,7 +41,7 @@ export default function ProductCard({ product, index = 0 }) {
         onMouseEnter={() => setHover(true)}
         onMouseLeave={() => setHover(false)}
       >
-        <Link to={`/products/${product.slug}`} className="block h-full" aria-label={`View ${product.name}`}>
+        <Link to={`/products/${product.slug}`} className="block h-full">
           <img
             src={imgs[hover && imgs[1] ? 1 : 0]}
             alt={product.name}
@@ -52,11 +52,21 @@ export default function ProductCard({ product, index = 0 }) {
 
         <div className="absolute left-3 top-3 flex max-w-[78%] flex-wrap gap-1.5">
           {badges.map((b) => (
-            <span key={b} className={cn("rounded-full border px-2.5 py-1 text-[10px] font-semibold", badgeStyles[b] || "border-plum/15 bg-white/90 text-plum")}>
+            <span
+              key={b}
+              className={cn(
+                "rounded-full border px-2.5 py-1 text-[10px] font-semibold",
+                badgeStyles[b] || "border-plum/15 bg-white/90 text-plum"
+              )}
+            >
               {b}
             </span>
           ))}
-          {disc > 0 && <span className="rounded-full border border-accent bg-accent px-2.5 py-1 text-[10px] font-semibold text-white">{disc}% OFF</span>}
+          {disc > 0 && (
+            <span className="rounded-full border border-accent bg-accent px-2.5 py-1 text-[10px] font-semibold text-white">
+              {disc}% OFF
+            </span>
+          )}
         </div>
 
         <button
@@ -70,33 +80,43 @@ export default function ProductCard({ product, index = 0 }) {
       </div>
 
       <div className="flex flex-1 flex-col p-4 sm:p-5">
-        <Link to={`/products/${product.slug}`} className="block">
-          <h3 className="line-clamp-2 text-base font-semibold leading-6 text-ink transition-colors group-hover:text-plum">{product.name}</h3>
+        <Link to={`/products/${product.slug}`}>
+          <h3 className="line-clamp-2  text-base font-semibold leading-6 text-ink transition-colors hover:text-plum">
+            {product.name}
+          </h3>
         </Link>
 
-        {description && <p className="mt-1 line-clamp-2 text-xs leading-5 text-ink-muted">{description}</p>}
+        {description && (
+          <p className="mt-1 line-clamp-2  text-xs leading-5 text-ink-muted">
+            {description}
+          </p>
+        )}
 
-        {tags.length > 0 && <div className="mt-2 flex min-h-[22px] flex-wrap gap-1.5">{tags.map((tag, i) => <span key={`${tag}-${i}`} className="rounded-full bg-surface px-2.5 py-1 text-[10px] font-medium text-ink-secondary">{tag}</span>)}</div>}
+        {tags.length > 0 && (
+          <div className="mt-2 flex min-h-[22px] flex-wrap gap-1.5">
+            {tags.map((tag, i) => (
+              <span
+                key={`${tag}-${i}`}
+                className="rounded-full bg-surface px-2.5 py-1 text-[10px] font-medium text-ink-secondary"
+              >
+                {tag}
+              </span>
+            ))}
+          </div>
+        )}
 
-        <div className="mt-3 flex min-h-[28px] items-baseline gap-2">
+        <div className="mt-2 flex min-h-[28px] items-baseline gap-2">
           <span className="text-lg font-semibold text-plum">{inr(price)}</span>
-          {mrp > price && <span className="text-xs text-ink-muted line-through">{inr(mrp)}</span>}
+          {mrp > price && (
+            <span className="text-xs text-ink-muted line-through">{inr(mrp)}</span>
+          )}
         </div>
 
-        <div className="mt-auto pt-4">
+        <div className="mt-auto pt-3">
           {soldOut ? (
             <div className="rounded-full border border-line py-3 text-center text-[11px] font-semibold uppercase tracking-widest2 text-ink-muted">
               Sold Out
             </div>
-          ) : isCustom ? (
-            <Link
-              to={`/products/${product.slug}`}
-              className="flex h-11 w-full items-center justify-center gap-2 rounded-full border border-plum bg-white px-4 text-xs font-semibold uppercase tracking-widest text-plum transition-colors hover:bg-plum hover:text-white"
-              aria-label={`Customize ${product.name}`}
-              data-testid={`customize-${product.slug}`}
-            >
-              Customize <ArrowRight size={14} className="transition-transform group-hover:translate-x-0.5" />
-            </Link>
           ) : (
             <button
               onClick={() => addToCart(product, 1)}

@@ -60,29 +60,27 @@ export function StoreProvider({ children }) {
     const available = isCustom ? 999999 : Math.max(0, Number(product?.stock || 0) - Number(product?.reserved || 0));
     if (available <= 0) { toast.error("This product is out of stock"); return; }
     setCart((prev) => {
-      const isCustom = product?.product_type === "customizable" || product?.customization?.enabled;
-      const customKey = (opts.customization || opts.custom_size || opts.artwork?.length) ? JSON.stringify({ customization: opts.customization || null, custom_size: opts.custom_size || null, artwork: opts.artwork || [] }) : "";
+      const customKey = (opts.customization || opts.custom_size) ? JSON.stringify({ customization: opts.customization || null, custom_size: opts.custom_size || null }) : "";
       const key = product.id + (opts.variant_id || "") + (opts.gift_wrap ? "gw" : "") + (opts.personalization || "") + (opts.bulk_tier_quantity ? `bulk${opts.bulk_tier_quantity}` : "") + customKey;
       const idx = prev.findIndex((i) => i.key === key);
       if (idx >= 0) {
         const next = [...prev];
-        if (next[idx].bulk_locked) return next;
         const nextQty = Math.min(available, next[idx].qty + qty);
         if (nextQty === next[idx].qty && qty > 0) toast.error(`Only ${available} units are available`);
+        if (next[idx].bulk_locked) return next;
         next[idx] = { ...next[idx], qty: nextQty, available, price: getBulkUnitPrice(next[idx], nextQty) };
         return next;
       }
       const nextQty = Math.min(available, Math.max(1, qty));
       if (nextQty < qty) toast.error(`Only ${available} units are available`);
-      const customUnitPrice = isCustom && Number(opts.custom_unit_price) > 0 ? Number(opts.custom_unit_price) : null;
       return [...prev, {
         key, product_id: product.id, name: product.name, slug: product.slug,
-        image: (product.images || [])[0], price: customUnitPrice || getBulkUnitPrice(product, nextQty),
+        image: (product.images || [])[0], price: getBulkUnitPrice(product, nextQty),
         base_price: product.price, bulk_order: product.bulk_order || null,
         compare_at_price: product.compare_at_price, qty: nextQty, available,
         variant_id: opts.variant_id || null, gift_wrap: !!opts.gift_wrap,
         personalization: opts.personalization || null,
-        bulk_locked: isCustom ? true : !!opts.bulk_locked,
+        bulk_locked: !!opts.bulk_locked,
         bulk_tier_quantity: opts.bulk_tier_quantity || null,
         bulk_tier_price: opts.bulk_tier_price || null,
         customization: opts.customization || null,

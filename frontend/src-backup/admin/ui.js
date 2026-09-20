@@ -19,12 +19,12 @@ export function StatusChip({ status }) {
   return <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-medium ${map[status] || "bg-gray-100 text-gray-700"}`}>{status}</span>;
 }
 
-export function Modal({ open, onClose, title, children, wide, xwide }) {
+export function Modal({ open, onClose, title, children, wide }) {
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center p-4 overflow-y-auto">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className={`relative bg-white rounded-lg shadow-xl w-full ${xwide ? "max-w-6xl" : wide ? "max-w-3xl" : "max-w-lg"} my-8`}>
+      <div className={`relative bg-white rounded-lg shadow-xl w-full ${wide ? "max-w-3xl" : "max-w-lg"} my-8`}>
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
           <h3 className="font-semibold text-gray-900">{title}</h3>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-700"><X size={20} /></button>

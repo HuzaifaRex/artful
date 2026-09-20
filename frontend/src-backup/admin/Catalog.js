@@ -1,12 +1,11 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { Plus, Search, Copy, Archive, Edit, Trash2, Boxes, AlertTriangle, ArrowDownToLine, ArrowUpFromLine, PackageCheck, RotateCcw, Eye, Tag, Layers3, ShoppingBag, Package, Power, Sparkles } from "lucide-react";
+import { Plus, Search, Copy, Archive, Edit, Trash2, Boxes, AlertTriangle, ArrowDownToLine, ArrowUpFromLine, PackageCheck, RotateCcw, Eye, Tag, Layers3, ShoppingBag, Package, Power } from "lucide-react";
 import { adminApi, apiError } from "../lib/api";
 import { toast } from "sonner";
 import { inr } from "../lib/utils";
 import { StatusChip, Modal, Field, inputCls, PageHead, Empty } from "./ui";
 import { ImageUpload, MultiImageUpload, VideoUpload } from "./ImageUpload";
 import { DataTable, KpiCards } from "./DataTable";
-import CustomProductForm from "./CustomProductForm";
 
 const BADGES = ["New", "Bestseller", "Limited", "Sale", "Featured"];
 const STATUSES = ["Draft", "Active", "Inactive", "Out of Stock", "Archived"];
@@ -99,10 +98,7 @@ export function Products() {
           <button onClick={() => bulkSetStatus("deactivate")} className="border border-amber-200 text-amber-700 bg-white rounded-md px-3 py-2 text-sm flex items-center gap-2 hover:bg-amber-50" data-testid="bulk-deactivate-products"><Archive size={15} /> Deactivate ({selected.size})</button>
           <button onClick={bulkDelete} className="border border-red-200 text-red-600 bg-white rounded-md px-3 py-2 text-sm flex items-center gap-2 hover:bg-red-50" data-testid="bulk-delete-products"><Trash2 size={15} /> Delete ({selected.size})</button>
         </div>}
-        <div className="flex items-center gap-2">
-          <button onClick={() => setEditing({})} className="bg-white border border-gray-300 text-gray-800 rounded-md px-4 py-2 text-sm flex items-center gap-2 hover:border-plum hover:text-plum" data-testid="add-product-btn"><Plus size={16} /> Add Product</button>
-          <button onClick={() => setEditing({ product_type: "customizable" })} className="bg-plum text-white rounded-md px-4 py-2 text-sm flex items-center gap-2 hover:bg-plum-wine" data-testid="add-custom-product-btn"><Sparkles size={15} /> Add Customizable Product</button>
-        </div>
+        <button onClick={() => setEditing({})} className="bg-plum text-white rounded-md px-4 py-2 text-sm flex items-center gap-2" data-testid="add-product-btn"><Plus size={16} /> Add Product</button>
       </div>} />
       {summary && <KpiCards cards={[
         { label: "Total Products", value: summary.total, icon: Package },
@@ -135,9 +131,7 @@ export function Products() {
         onRowClick={(p) => setDetail(p)}
       />
       {detail && <ProductDetailModal productId={detail.id} onClose={() => setDetail(null)} />}
-      {editing && (editing.product_type === "customizable" || editing.customization?.enabled)
-        ? <CustomProductForm product={editing} cats={cats} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />
-        : editing ? <ProductForm product={editing} cats={cats} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} /> : null}
+      {editing && <ProductForm product={editing} cats={cats} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />}
     </div>
   );
 }
