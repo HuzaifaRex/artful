@@ -305,7 +305,7 @@ export default function ProductDetail() {
           {p.review_count > 0 && (
             <div className="flex items-center gap-1 mt-3">{[...Array(5)].map((_, i) => <Star key={i} size={15} className={i < Math.round(p.rating) ? "fill-gold text-gold" : "text-line"} />)}<span className="text-xs text-ink-muted ml-2">{p.rating} ({p.review_count})</span></div>
           )}
-          {Number(p.pack_quantity || 1) > 1 && <p className="mt-3 text-sm text-ink-secondary" data-testid="pdp-pack-quantity">Price is per pack of {Number(p.pack_quantity).toLocaleString("en-IN")} {p.quantity_unit || "pieces"}.</p>}
+          {Number(p.pack_quantity || 1) > 1 && <p className="mt-3 text-sm text-ink-secondary" data-testid="pdp-pack-quantity">QTY {Number(p.pack_quantity).toLocaleString("en-IN")} {p.quantity_unit || "pieces"}.</p>}
           <div className="mt-5 rounded-2xl border border-plum/15 bg-plum/5 p-4" data-testid="pdp-price-summary">
             {customization?.enabled ? <>
               <div className="flex items-center justify-between gap-3"><span className="text-xs text-ink-muted">Base Price</span><span className="text-sm font-medium text-ink-muted">{inr(p.price)}</span></div>
