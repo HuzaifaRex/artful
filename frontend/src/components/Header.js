@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
-import { Search, User, Heart, ShoppingBag, Menu, X, Sun, Moon, Home as HomeIcon, Store, Info } from "lucide-react";
+import { Search, User, Heart, ShoppingBag, Menu, X, Sun, Moon, Home as HomeIcon, Store, Info, Tractor } from "lucide-react";
 import { useStore } from "../context/StoreContext";
 import { useTheme } from "../context/ThemeContext";
 
@@ -128,7 +128,7 @@ export default function Header() {
         {[
           { label: "Home", to: "/", Icon: HomeIcon },
           { label: "Shop", to: "/shop", Icon: Store },
-          { label: "About", to: "/about", Icon: Info },
+          { label: "Tracking", to: "/account/orders", Icon: Tractor },
         ].map(({ label, to, Icon }) => {
           const active = to === "/" ? location.pathname === "/" : location.pathname === to || location.pathname.startsWith(`${to}/`);
           return <Link key={label} to={to} className={`flex min-h-[60px] flex-col items-center justify-center gap-1 text-[10px] font-medium transition-colors ${active ? "text-plum" : "text-ink-muted"}`} aria-current={active ? "page" : undefined}><Icon size={19} strokeWidth={active ? 2.3 : 1.8} /><span>{label}</span></Link>;
