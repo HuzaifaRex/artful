@@ -1,9 +1,19 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { Plus, ShieldCheck, AlertCircle, CheckCircle2 } from "lucide-react";
+import { Plus, ShieldCheck, AlertCircle, CheckCircle2, Trash2, ChevronUp, ChevronDown } from "lucide-react";
 import { adminApi, apiError } from "../lib/api";
 import { toast } from "sonner";
 import { formatDateTime, INDIAN_STATES } from "../lib/utils";
 import { StatusChip, Modal, Field, inputCls, PageHead, Empty } from "./ui";
+
+const DEFAULT_NAVIGATION = [
+  { key: "shop", label: "Shop", to: "/shop", page_heading: "Shop All", page_subheading: "Explore the complete ARTFUL collection." },
+  { key: "collections", label: "Collections", to: "/collections", page_heading: "Collections", page_subheading: "Discover thoughtful collections for every occasion." },
+  { key: "gifts", label: "Games and Gifts", to: "/collections/festive-gifts", page_heading: "Games and Gifts", page_subheading: "Find thoughtful gifts and playful finds." },
+  { key: "new_arrivals", label: "New Arrivals", to: "/collections/new-arrivals", page_heading: "New Arrivals", page_subheading: "Discover what's new at ARTFUL." },
+  { key: "bestsellers", label: "Bestsellers", to: "/collections/bestsellers", page_heading: "Bestsellers", page_subheading: "Customer favourites, all in one place." },
+  { key: "corporate_gifting", label: "Business and Bulk Orders", to: "/corporate-gifting", page_heading: "Business and Bulk Orders", page_subheading: "Thoughtful gifting and custom orders for your business." },
+  { key: "about", label: "About", to: "/about", page_heading: "About ARTFUL", page_subheading: "Thoughtfully chosen finds, made to mean more." },
+];
 
 export function Settings() {
   const [s, setS] = useState(null);
@@ -11,6 +21,11 @@ export function Settings() {
   useEffect(() => { load(); }, []);
   const set = (k, v) => setS((p) => ({ ...p, [k]: v }));
   const setSocial = (k, v) => setS((p) => ({ ...p, social: { ...(p.social || {}), [k]: v } }));
+  const navigation = Array.isArray(s?.navigation_menu) && s.navigation_menu.length ? s.navigation_menu : DEFAULT_NAVIGATION;
+  const setNavigation = (next) => setS((p) => ({ ...p, navigation_menu: next }));
+  const updateNavigation = (index, key, value) => setNavigation(navigation.map((item, i) => i === index ? { ...item, [key]: value } : item));
+  const moveNavigation = (index, delta) => { const next = [...navigation]; const target = index + delta; if (target < 0 || target >= next.length) return; [next[index], next[target]] = [next[target], next[index]]; setNavigation(next); };
+
   const defaultDelivery = { dispatch_min_days: 1, dispatch_max_days: 2, delivery_min_days: 3, delivery_max_days: 5 };
   const currentDelivery = () => s.delivery_logic || { default: defaultDelivery, state_rules: [] };
   const setDelivery = (next) => setS((p) => ({ ...p, delivery_logic: next }));
@@ -57,13 +72,10 @@ export function Settings() {
           <Field label="Contact Email"><input value={s.contact_email || ""} onChange={(e) => set("contact_email", e.target.value)} className={inputCls} /></Field>
           <Field label="Contact Phone"><input value={s.contact_phone || ""} onChange={(e) => set("contact_phone", e.target.value)} className={inputCls} /></Field>
           <Field label="Free Shipping Threshold ₹"><input type="number" value={s.free_shipping_threshold ?? ""} onChange={(e) => set("free_shipping_threshold", Number(e.target.value))} className={inputCls} data-testid="set-free-ship" /></Field>
-          <Field label="Flat Shipping ₹"><input type="number" value={s.shipping_flat ?? ""} onChange={(e) => set("shipping_flat", Number(e.target.value))} className={inputCls} /></Field>
-          <Field label="COD Fee ₹"><input type="number" value={s.cod_fee ?? ""} onChange={(e) => set("cod_fee", Number(e.target.value))} className={inputCls} /></Field>
         </div>
         <Field label="Announcement Text"><input value={s.announcement_text || ""} onChange={(e) => set("announcement_text", e.target.value)} className={inputCls} data-testid="set-announcement" /></Field>
         <div className="flex gap-6">
           <label className="flex items-center gap-2 text-sm text-gray-600"><input type="checkbox" checked={!!s.announcement_enabled} onChange={(e) => set("announcement_enabled", e.target.checked)} className="accent-plum" /> Show announcement bar</label>
-          <label className="flex items-center gap-2 text-sm text-gray-600"><input type="checkbox" checked={!!s.cod_enabled} onChange={(e) => set("cod_enabled", e.target.checked)} className="accent-plum" /> Enable COD</label>
         </div>
         <div className="pt-2">
           <h3 className="font-semibold text-gray-900 mb-3 text-sm">Social Links</h3>
@@ -141,12 +153,22 @@ export function Settings() {
                 <Field label="Delivery Min"><input type="number" min="0" value={rule.delivery_min_days ?? 3} onChange={(e) => updateDeliveryRule(i, "delivery_min_days", e.target.value)} className={inputCls} /></Field>
                 <Field label="Delivery Max"><input type="number" min="0" value={rule.delivery_max_days ?? 5} onChange={(e) => updateDeliveryRule(i, "delivery_max_days", e.target.value)} className={inputCls} /></Field>
                 <div className="flex items-end gap-2">
-                  <Field label="Shipping ₹"><input type="number" min="0" value={rule.shipping_charge ?? s.shipping_flat ?? 79} onChange={(e) => updateDeliveryRule(i, "shipping_charge", e.target.value)} className={inputCls} /></Field>
                   <button type="button" onClick={() => removeDeliveryRule(i)} className="h-10 px-3 border border-gray-300 rounded-md text-xs text-red-600 mb-0.5">Remove</button>
                 </div>
               </div>
             </div>
           ))}
+        </div>
+        <div className="pt-4 border-t border-gray-200 space-y-3">
+          <h3 className="font-semibold text-gray-900 text-sm">Footer Content</h3>
+          <Field label="Footer Description"><textarea rows={3} value={s.footer_description || ""} onChange={(e) => set("footer_description", e.target.value)} className={inputCls} placeholder="Short description shown beneath the logo in the website footer" /></Field>
+        </div>
+        <div className="pt-4 border-t border-gray-200 space-y-3">
+          <div className="flex flex-wrap justify-between items-center gap-3"><div><h3 className="font-semibold text-gray-900 text-sm">Website Menu & Page Headings</h3><p className="text-xs text-gray-500 mt-1">Labels, destinations, headings and subheadings shown on the storefront.</p></div><button type="button" onClick={() => setNavigation([...navigation, { key: `custom_${Date.now()}`, label: "New menu item", to: "/shop", page_heading: "", page_subheading: "" }])} className="flex items-center gap-1 border rounded px-3 py-2 text-xs"><Plus size={14}/> Add Menu</button></div>
+          <div className="space-y-3">{navigation.map((item, index) => <div key={item.key || index} className="rounded-lg border border-gray-200 p-3 space-y-3">
+            <div className="flex justify-between items-center gap-2"><p className="text-sm font-semibold text-gray-800">Menu item {index + 1}</p><div className="flex items-center gap-1"><button type="button" title="Move up" disabled={index === 0} onClick={() => moveNavigation(index, -1)} className="p-1.5 border rounded disabled:opacity-30"><ChevronUp size={14}/></button><button type="button" title="Move down" disabled={index === navigation.length - 1} onClick={() => moveNavigation(index, 1)} className="p-1.5 border rounded disabled:opacity-30"><ChevronDown size={14}/></button><button type="button" title="Remove menu item" onClick={() => setNavigation(navigation.filter((_, i) => i !== index))} className="p-1.5 border border-red-200 text-red-600 rounded"><Trash2 size={14}/></button></div></div>
+            <div className="grid sm:grid-cols-2 gap-3"><Field label="Display Name"><input value={item.label || ""} onChange={(e) => updateNavigation(index, "label", e.target.value)} className={inputCls}/></Field><Field label="Destination / Route"><input value={item.to || ""} onChange={(e) => updateNavigation(index, "to", e.target.value)} className={inputCls} placeholder="/collections/new-arrivals"/></Field><Field label="Page Heading"><input value={item.page_heading || ""} onChange={(e) => updateNavigation(index, "page_heading", e.target.value)} className={inputCls}/></Field><Field label="Page Subheading"><textarea rows={2} value={item.page_subheading || ""} onChange={(e) => updateNavigation(index, "page_subheading", e.target.value)} className={inputCls}/></Field></div>
+          </div>)}</div>
         </div>
         <Field label="SEO Title"><input value={s.seo_title || ""} onChange={(e) => set("seo_title", e.target.value)} className={inputCls} /></Field>
         <Field label="SEO Description"><textarea rows={2} value={s.seo_description || ""} onChange={(e) => set("seo_description", e.target.value)} className={inputCls} /></Field>
@@ -231,18 +253,18 @@ export function AuditLogs() {
 
 export function Corporate() {
   const [items, setItems] = useState([]);
-  const STATUSES = ["New", "Contacted", "In Discussion", "Quoted", "Won", "Lost"];
+  const STATUSES = ["Pending", "In Discussion", "Accepted", "Rejected"];
   const load = () => adminApi.get("/corporate-inquiries").then(({ data }) => setItems(data.items)).catch(() => {});
   useEffect(() => { load(); }, []);
   const update = async (id, status) => { await adminApi.put(`/corporate-inquiries/${id}`, { status }); toast.success("Updated"); load(); };
   return (
     <div>
-      <PageHead title="Corporate Inquiries" subtitle="Manage your gifting pipeline" />
+      <PageHead title="Business and Bulk Orders Inquiries" subtitle="Review submissions and update customer-visible ticket status" />
       <div className="space-y-3">
         {items.map((c) => (
           <div key={c.id} className="bg-white rounded-lg border border-gray-200 p-4">
             <div className="flex justify-between flex-wrap gap-3">
-              <div><p className="font-medium text-gray-900">{c.company_name}</p><p className="text-sm text-gray-600">{c.contact_person} · {c.mobile} {c.email && `· ${c.email}`}</p><p className="text-sm text-gray-500 mt-1">{c.requirement} {c.quantity && `· Qty ${c.quantity}`} {c.budget && `· ₹${c.budget}`}</p>{c.message && <p className="text-sm text-gray-500 mt-1 italic">"{c.message}"</p>}</div>
+              <div><p className="font-medium text-gray-900">{c.company_name}</p><p className="text-sm text-gray-600">{c.contact_person} · {c.mobile} {c.email && `· ${c.email}`}</p><p className="text-sm text-gray-500 mt-1">{c.requirement} {c.quantity && `· Qty ${c.quantity}`} {c.budget && `· ₹${c.budget}`}</p>{c.message && <p className="text-sm text-gray-500 mt-1 italic">"{c.message}"</p>}<p className="text-[11px] text-gray-400 mt-2">Ref: {c.id} · Submitted {c.created_at ? formatDateTime(c.created_at) : "—"}</p>{Array.isArray(c.status_history) && c.status_history.length > 1 && <p className="text-[11px] text-gray-400 mt-1">Last status update: {formatDateTime(c.status_history[c.status_history.length - 1].at)}</p>}</div>
               <select value={c.status} onChange={(e) => update(c.id, e.target.value)} className={inputCls + " max-w-[160px] h-9"}>{STATUSES.map((s) => <option key={s}>{s}</option>)}</select>
             </div>
           </div>

@@ -8,6 +8,7 @@ from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, HTTPException, Request, Depends, UploadFile, File, Query
 from fastapi.responses import StreamingResponse
 from db import db, clean
+from html_safety import sanitize_html
 from security import (verify_password, hash_password, create_token, get_current_admin,
                       require_permission, now_iso, ROLE_PERMISSIONS)
 import integrations as ig
@@ -324,37 +325,66 @@ async def inventory_adjust(payload: dict, request: Request, admin: dict = Depend
     if not p: raise HTTPException(404, "Product not found.")
     if p.get("product_type") == "customizable":
         raise HTTPException(400, "Customizable print products are made to order and do not use inventory.")
-    qty = abs(_int_num(payload.get("quantity"), 0)); action = (payload.get("action") or "add").lower(); reason = (payload.get("reason") or "Manual Adjustment").strip()[:100]
-    if qty <= 0: raise HTTPException(400, "Quantity must be greater than zero.")
+    # Support the storefront admin UI's signed change and the legacy quantity/action payload.
+    try:
+        if payload.get("change") is not None:
+            delta = int(float(payload.get("change") or 0))
+        else:
+            qty = abs(_int_num(payload.get("quantity"), 0))
+            action = (payload.get("action") or "add").lower()
+            delta = qty if action == "add" else -qty
+    except (TypeError, ValueError):
+        raise HTTPException(400, "Enter a valid stock change.")
+    reason = str(payload.get("reason") or "Manual Adjustment").strip()[:100]
+    if delta == 0: raise HTTPException(400, "Stock change must not be zero.")
     old_stock = max(0, _int_num(p.get("stock"))); reserved = max(0, _int_num(p.get("reserved")))
-    delta = qty if action == "add" else -qty
-    new_stock = old_stock + delta
-    if new_stock < reserved: raise HTTPException(400, f"Cannot remove {qty} units. {reserved} units are currently reserved.")
-    new_available = max(0, new_stock - reserved)
-    upd = {"stock": new_stock, "updated_at": now_iso()}
-    if p.get("status") == "Active" and new_available <= 0: upd["status"] = "Out of Stock"
-    elif p.get("status") == "Out of Stock" and new_available > 0: upd["status"] = "Active"
+    proposed_stock = max(0, old_stock + delta)
+    if proposed_stock < reserved: raise HTTPException(400, f"Cannot reduce stock below {reserved} reserved units.")
+    available = max(0, proposed_stock - reserved)
+    upd = {"stock": proposed_stock, "updated_at": now_iso()}
+    if available <= 0 and p.get("status") == "Active": upd["status"] = "Out of Stock"
+    elif available > 0 and p.get("status") == "Out of Stock": upd["status"] = "Active"
     await db.products.update_one({"id": pid}, {"$set": upd})
-    await db.inventory_transactions.insert_one({"id":str(uuid.uuid4()),"product_id":pid,"change":delta,"reason":reason,"notes":payload.get("notes"),"admin":admin["email"],"at":now_iso(),"source":"manual"})
-    await audit(admin, "inventory_adjust", "product", pid, before={"stock":old_stock}, after={"stock":new_stock,"change":delta,"reason":reason}, request=request)
-    return {"ok":True,"stock":new_stock,"reserved":reserved,"available":max(0,new_stock-reserved)}
+    updated_product = await db.products.find_one({"id": pid}, {"_id": 0})
+    await _notify_out_of_stock(updated_product, str(p.get("status") or ""))
+    await db.inventory_transactions.insert_one({"id":str(uuid.uuid4()),"product_id":pid,"change":proposed_stock-old_stock,"reason":reason,"notes":payload.get("notes"),"admin":admin["email"],"at":now_iso(),"source":"manual"})
+    await audit(admin, "inventory_adjust", "product", pid, before={"stock":old_stock}, after={"stock":proposed_stock,"change":proposed_stock-old_stock,"reason":reason}, request=request)
+    return {"ok":True,"stock":proposed_stock,"reserved":reserved,"available":available}
 
 
 @router.post("/inventory/bulk-adjust")
 async def inventory_bulk_adjust(payload: dict, request: Request, admin: dict = Depends(require_permission("catalog"))):
-    ids=[str(x) for x in payload.get("ids",[]) if str(x).strip()]; qty=abs(_int_num(payload.get("quantity"),0)); action=(payload.get("action") or "add").lower(); reason=(payload.get("reason") or "Manual Adjustment").strip()[:100]
-    if not ids or qty<=0: raise HTTPException(400,"Select products and enter a quantity.")
-    delta=qty if action=="add" else -qty; updated=0
-    async for p in db.products.find({"id":{"$in":ids}},{"_id":0}):
+    ids = [str(x) for x in payload.get("ids", []) if str(x).strip()]
+    try:
+        if payload.get("change") is not None:
+            delta = int(float(payload.get("change") or 0))
+        else:
+            qty = abs(_int_num(payload.get("quantity"), 0))
+            action = (payload.get("action") or "add").lower()
+            delta = qty if action == "add" else -qty
+    except (TypeError, ValueError):
+        raise HTTPException(400, "Enter a valid stock change.")
+    reason = str(payload.get("reason") or "Manual Adjustment").strip()[:100]
+    if not ids or delta == 0: raise HTTPException(400, "Select products and enter a non-zero stock change.")
+    updated = 0; skipped = 0
+    async for p in db.products.find({"id": {"$in": ids}}, {"_id": 0}):
         if p.get("product_type") == "customizable":
-            continue
-        stock=max(0,_int_num(p.get("stock"))); reserved=max(0,_int_num(p.get("reserved"))); new_stock=stock+delta
-        if new_stock<reserved: continue
-        await db.products.update_one({"id":p["id"]},{"$set":{"stock":new_stock,"updated_at":now_iso()}})
-        await db.inventory_transactions.insert_one({"id":str(uuid.uuid4()),"product_id":p["id"],"change":delta,"reason":reason,"admin":admin["email"],"at":now_iso(),"source":"bulk"})
-        updated+=1
-    await audit(admin,"inventory_bulk_adjust","products",None,after={"ids":ids,"change":delta,"reason":reason},request=request)
-    return {"ok":True,"updated":updated,"skipped":len(ids)-updated}
+            skipped += 1; continue
+        stock = max(0, _int_num(p.get("stock"))); reserved = max(0, _int_num(p.get("reserved")))
+        new_stock = max(0, stock + delta)
+        if new_stock < reserved:
+            skipped += 1; continue
+        available = max(0, new_stock - reserved)
+        status = p.get("status")
+        if available <= 0 and status == "Active": status = "Out of Stock"
+        elif available > 0 and status == "Out of Stock": status = "Active"
+        await db.products.update_one({"id": p["id"]}, {"$set": {"stock": new_stock, "status": status, "updated_at": now_iso()}})
+        updated_product = await db.products.find_one({"id": p["id"]}, {"_id": 0})
+        await _notify_out_of_stock(updated_product, str(p.get("status") or ""))
+        await db.inventory_transactions.insert_one({"id":str(uuid.uuid4()),"product_id":p["id"],"change":new_stock-stock,"reason":reason,"admin":admin["email"],"at":now_iso(),"source":"bulk"})
+        updated += 1
+    await audit(admin, "inventory_bulk_adjust", "products", None, after={"ids": ids, "change": delta, "reason": reason}, request=request)
+    return {"ok": True, "updated": updated, "skipped": skipped}
 
 
 @router.post("/inventory/set-threshold")
@@ -510,7 +540,7 @@ async def create_product(payload: dict, request: Request, admin: dict = Depends(
     is_customizable = product_type == "customizable"
     doc = {"id": str(uuid.uuid4()), "name": name, "slug": slug,
            "short_description": payload.get("short_description", ""),
-           "description": payload.get("description", ""),
+           "description": sanitize_html(payload.get("description", "")),
            "images": payload.get("images", []), "video": payload.get("video"),
            "price": int(payload["price"]), "compare_at_price": None if is_customizable else payload.get("compare_at_price"),
            "mrp": None if is_customizable else payload.get("mrp", payload.get("compare_at_price")),
@@ -520,6 +550,12 @@ async def create_product(payload: dict, request: Request, admin: dict = Depends(
            "material": payload.get("material"), "color": payload.get("color"),
            "dimensions": payload.get("dimensions"), "weight": payload.get("weight"),
            "care": payload.get("care"), "shipping_info": payload.get("shipping_info"),
+           "pack_quantity": max(1, _int_num(payload.get("pack_quantity"), 1)),
+           "quantity_unit": str(payload.get("quantity_unit") or "pieces")[:30],
+           "cod_available": bool(payload.get("cod_available", True)),
+           "shipping_charge": None if payload.get("shipping_charge") in (None, "") else max(0, _num(payload.get("shipping_charge"), 0)),
+           "material_care": payload.get("material_care", []),
+           "filter_values": payload.get("filter_values", []),
            "stock": 0 if is_customizable else int(payload.get("stock", 0)), "reserved": 0,
            "low_stock_threshold": 0 if is_customizable else int(payload.get("low_stock_threshold", 5)),
            "status": ("Draft" if is_customizable and payload.get("status") == "Out of Stock" else payload.get("status", "Draft")), "badges": payload.get("badges", []),
@@ -553,12 +589,24 @@ async def update_product(pid: str, payload: dict, request: Request, admin: dict 
     if not p:
         raise HTTPException(404, "Product not found.")
     fields = {k: v for k, v in payload.items() if k not in ("id", "_id", "created_at", "reserved", "sales_count", "views")}
+    if "description" in fields:
+        fields["description"] = sanitize_html(fields.get("description", ""))
     if "mrp" in fields and "compare_at_price" not in fields:
         fields["compare_at_price"] = fields.get("mrp")
     if "compare_at_price" in fields and "mrp" not in fields:
         fields["mrp"] = fields.get("compare_at_price")
     if "cost_price" in fields:
         fields["cost_price"] = _num(fields.get("cost_price"), 0)
+    if "pack_quantity" in fields:
+        fields["pack_quantity"] = max(1, _int_num(fields.get("pack_quantity"), 1))
+    if "quantity_unit" in fields:
+        fields["quantity_unit"] = str(fields.get("quantity_unit") or "pieces")[:30]
+    if "cod_available" in fields:
+        fields["cod_available"] = bool(fields.get("cod_available"))
+    if "shipping_charge" in fields:
+        fields["shipping_charge"] = None if fields.get("shipping_charge") in (None, "") else max(0, _num(fields.get("shipping_charge"), 0))
+    if "material_care" in fields and not isinstance(fields["material_care"], list):
+        raise HTTPException(400, "Material and Care entries must be a list.")
     is_customizable = fields.get("product_type", p.get("product_type")) == "customizable"
     if is_customizable:
         fields["cost_price"] = 0
@@ -577,6 +625,8 @@ async def update_product(pid: str, payload: dict, request: Request, admin: dict 
         if available <= 0 and fields.get("status", p.get("status")) == "Active": fields["status"] = "Out of Stock"
         elif available > 0 and fields.get("status", p.get("status")) == "Out of Stock": fields["status"] = "Active"
     await db.products.update_one({"id": pid}, {"$set": fields})
+    updated_product = await db.products.find_one({"id": pid}, {"_id": 0})
+    await _notify_out_of_stock(updated_product, str(p.get("status") or ""))
     if "stock" in fields and new_stock != old_stock and not is_customizable:
         await db.inventory_transactions.insert_one({"id":str(uuid.uuid4()),"product_id":pid,"change":new_stock-old_stock,"reason":"Manual Adjustment","admin":admin["email"],"at":now_iso(),"source":"product_edit"})
     await audit(admin, "update", "product", pid,
@@ -620,6 +670,8 @@ async def adjust_inventory(pid: str, payload: dict, request: Request, admin: dic
     if new_stock > 0 and p.get("status") == "Out of Stock":
         upd["status"] = "Active"
     await db.products.update_one({"id": pid}, {"$set": upd})
+    updated_product = await db.products.find_one({"id": pid}, {"_id": 0})
+    await _notify_out_of_stock(updated_product, str(p.get("status") or ""))
     await db.inventory_transactions.insert_one({"id": str(uuid.uuid4()), "product_id": pid,
         "change": change, "reason": reason, "admin": admin["email"], "at": now_iso()})
     await audit(admin, "inventory", "product", pid, before={"stock": p.get("stock")}, after={"stock": new_stock}, request=request)
@@ -749,6 +801,8 @@ def register_crud(path, collection, area, name_field="name", extra_defaults=None
     @router.post(f"/{path}", name=f"create_{path}")
     async def _create(payload: dict, request: Request, admin: dict = Depends(require_permission(area))):
         doc = {"id": str(uuid.uuid4()), **(extra_defaults or {}), **payload, "created_at": now_iso()}
+        if collection == "pages" and "content" in doc:
+            doc["content"] = sanitize_html(doc.get("content", ""))
         if slug_from and not doc.get("slug"):
             doc["slug"] = slugify(doc.get(slug_from, ""))
         await db[collection].insert_one(dict(doc))
@@ -761,6 +815,8 @@ def register_crud(path, collection, area, name_field="name", extra_defaults=None
         if not r:
             raise HTTPException(404, "Not found.")
         fields = {k: v for k, v in payload.items() if k not in ("id", "_id", "created_at")}
+        if collection == "pages" and "content" in fields:
+            fields["content"] = sanitize_html(fields.get("content", ""))
         await db[collection].update_one({"id": rid}, {"$set": fields})
         await audit(admin, "update", collection, rid, request=request)
         return clean(await db[collection].find_one({"id": rid}))
@@ -776,6 +832,8 @@ register_crud("categories", "categories", "catalog", slug_from="name",
               extra_defaults={"status": "Active", "order": 0})
 register_crud("collections", "collections", "catalog", slug_from="name",
               extra_defaults={"status": "Active", "order": 0, "type": "manual", "rules": {}, "product_ids": []})
+register_crud("product-filters", "product_filters", "catalog", slug_from="name",
+              extra_defaults={"status": "Active", "order": 0, "type": "multi", "values": [], "category_slugs": []})
 register_crud("coupons", "coupons", "marketing",
               extra_defaults={"status": "Active", "used_count": 0, "stackable": False})
 register_crud("discounts", "discounts", "marketing",
@@ -964,6 +1022,14 @@ async def update_order_status(order_number: str, payload: dict, request: Request
          "$push": {"status_history": {"status": new_status, "at": now_iso(), "note": payload.get("note", "")}}})
 
     updated_order = await db.orders.find_one({"order_number": order_number})
+    if old_status != new_status:
+        try:
+            await db.notifications.insert_one({"id": str(uuid.uuid4()), "event_key": f"order-status:{order_number}:{new_status}:{updated_order.get('updated_at') if updated_order else now_iso()}",
+                "type": "order_status", "title": ("Order dispatched" if new_status == "Shipped" else "Order cancelled" if new_status == "Cancelled" else "Order updated"),
+                "description": f"Order {order_number} status changed from {old_status or 'Unknown'} to {new_status}.",
+                "order_number": order_number, "link": "/admin/orders", "read": False, "at": (updated_order or {}).get("updated_at") or now_iso()})
+        except Exception as exc:
+            print(f"[notifications] failed to record order status event: {exc}")
     customer = await db.customers.find_one({"id": o.get("customer_id")}, {"phone": 1, "name": 1, "_id": 0})
     if customer and customer.get("phone") and o.get("status") != new_status:
         name = customer.get("name") or (o.get("customer") or {}).get("name") or "there"
@@ -1097,6 +1163,116 @@ async def customer_note(cid: str, payload: dict, admin: dict = Depends(require_p
 
 
 # ---------------- REVIEWS ----------------
+async def _notify_out_of_stock(product: dict, previous_status: str = ""):
+    if not product or product.get("product_type") == "customizable":
+        return
+    if product.get("status") != "Out of Stock" or previous_status == "Out of Stock":
+        return
+    now = now_iso()
+    event_key = f"out-of-stock:{product.get('id')}:{now}"
+    await db.notifications.update_one({"event_key": event_key}, {"$setOnInsert": {
+        "id": str(uuid.uuid4()), "event_key": event_key, "title": "Product out of stock",
+        "description": f"{product.get('name') or 'A product'} is now out of stock.",
+        "product_id": product.get("id"), "link": f"/admin/products", "read": False, "created_at": now,
+    }}, upsert=True)
+
+
+async def _recalculate_product_review_rating(product_id: str):
+    approved = [x async for x in db.reviews.find({"product_id": product_id, "status": "Approved"}, {"rating": 1, "_id": 0})]
+    ratings = [max(1, min(5, _int_num(x.get("rating"), 0))) for x in approved if _int_num(x.get("rating"), 0) >= 1]
+    await db.products.update_one({"id": product_id}, {"$set": {
+        "rating": round(sum(ratings) / len(ratings), 1) if ratings else 0,
+        "review_count": len(ratings),
+    }})
+
+
+def _review_image_url(value):
+    value = str(value or "").strip()
+    if not value:
+        return None
+    from urllib.parse import urlparse
+    parsed = urlparse(value)
+    if value.startswith("/") and not value.startswith("//"):
+        return value[:1500]
+    if parsed.scheme in ("https", "http") and parsed.netloc:
+        return value[:1500]
+    raise HTTPException(400, "Review image must be an uploaded path or a valid HTTP(S) URL.")
+
+
+@router.post("/reviews/manage")
+async def create_admin_review(payload: dict, request: Request, admin: dict = Depends(require_permission("catalog"))):
+    product_id = str(payload.get("product_id") or "").strip()
+    product_slug = str(payload.get("product_slug") or "").strip()
+    product = await db.products.find_one({"id": product_id}) if product_id else None
+    if not product and product_slug:
+        product = await db.products.find_one({"slug": product_slug})
+    if not product:
+        raise HTTPException(400, "Select a valid product for this review.")
+    name = str(payload.get("customer_name") or payload.get("reviewer_name") or "").strip()[:120]
+    body = str(payload.get("body") or payload.get("review") or "").strip()[:5000]
+    title = str(payload.get("title") or "").strip()[:200]
+    rating = _int_num(payload.get("rating"), 0)
+    status = payload.get("status", "Approved")
+    if not name or not body:
+        raise HTTPException(400, "Reviewer name and review text are required.")
+    if rating < 1 or rating > 5:
+        raise HTTPException(400, "Rating must be between 1 and 5.")
+    if status not in ("Pending", "Approved", "Rejected"):
+        raise HTTPException(400, "Invalid review status.")
+    image_url = _review_image_url(payload.get("image_url"))
+    review = {
+        "id": str(uuid.uuid4()), "product_id": product["id"], "product_slug": product.get("slug"),
+        "customer_id": None, "customer_name": name, "rating": rating, "title": title,
+        "body": body, "image_url": image_url, "image_status": ("Approved" if image_url and status == "Approved" else ("Pending" if image_url else None)),
+        "verified_buyer": False, "admin_created": True, "status": status, "created_at": now_iso(),
+    }
+    await db.reviews.insert_one(review)
+    await _recalculate_product_review_rating(product["id"])
+    await audit(admin, "create", "review", review["id"], after={"product_id": product["id"], "rating": rating, "status": status}, request=request)
+    review.pop("_id", None)
+    return clean(review)
+
+
+@router.put("/reviews/{rid}/details")
+async def update_admin_review(rid: str, payload: dict, request: Request, admin: dict = Depends(require_permission("catalog"))):
+    review = await db.reviews.find_one({"id": rid})
+    if not review:
+        raise HTTPException(404, "Review not found.")
+    fields = {}
+    if "customer_name" in payload or "reviewer_name" in payload:
+        name = str(payload.get("customer_name") or payload.get("reviewer_name") or "").strip()[:120]
+        if not name: raise HTTPException(400, "Reviewer name is required.")
+        fields["customer_name"] = name
+    if "title" in payload: fields["title"] = str(payload.get("title") or "").strip()[:200]
+    if "body" in payload or "review" in payload:
+        body = str(payload.get("body") or payload.get("review") or "").strip()[:5000]
+        if not body: raise HTTPException(400, "Review text is required.")
+        fields["body"] = body
+    if "rating" in payload:
+        rating = _int_num(payload.get("rating"), 0)
+        if not 1 <= rating <= 5: raise HTTPException(400, "Rating must be between 1 and 5.")
+        fields["rating"] = rating
+    if "status" in payload:
+        if payload["status"] not in ("Pending", "Approved", "Rejected"): raise HTTPException(400, "Invalid review status.")
+        fields["status"] = payload["status"]
+    if "image_url" in payload:
+        fields["image_url"] = _review_image_url(payload.get("image_url"))
+        fields["image_status"] = "Pending" if fields["image_url"] else None
+    fields["updated_at"] = now_iso()
+    await db.reviews.update_one({"id": rid}, {"$set": fields})
+    await _recalculate_product_review_rating(review["product_id"])
+    await audit(admin, "update", "review", rid, before={"rating": review.get("rating"), "status": review.get("status")}, after={k: fields.get(k) for k in ("rating", "status", "customer_name") if k in fields}, request=request)
+    return {"ok": True}
+
+
+@router.delete("/reviews/{rid}")
+async def delete_review(rid: str, request: Request, admin: dict = Depends(require_permission("catalog"))):
+    review = await db.reviews.find_one({"id": rid})
+    if not review: raise HTTPException(404, "Review not found.")
+    await db.reviews.delete_one({"id": rid})
+    await _recalculate_product_review_rating(review["product_id"])
+    await audit(admin, "delete", "review", rid, before={"product_id": review.get("product_id"), "rating": review.get("rating")}, request=request)
+    return {"ok": True}
 @router.get("/reviews")
 async def admin_reviews(status: str = "", admin: dict = Depends(require_permission("catalog"))):
     query = {"status": status} if status else {}
@@ -1117,12 +1293,7 @@ async def moderate_review(rid: str, payload: dict, admin: dict = Depends(require
     if image_status in ("Pending", "Approved", "Rejected"):
         update["image_status"] = image_status
     await db.reviews.update_one({"id": rid}, {"$set": update})
-    approved = [x async for x in db.reviews.find({"product_id": r["product_id"], "status": "Approved"}, {"rating": 1, "_id": 0})]
-    if approved:
-        avg = round(sum(a["rating"] for a in approved) / len(approved), 1)
-        await db.products.update_one({"id": r["product_id"]}, {"$set": {"rating": avg, "review_count": len(approved)}})
-    else:
-        await db.products.update_one({"id": r["product_id"]}, {"$set": {"rating": 0, "review_count": 0}})
+    await _recalculate_product_review_rating(r["product_id"])
     return {"ok": True}
 
 
@@ -1173,6 +1344,9 @@ async def cms_page_get(slug: str, admin: dict = Depends(require_permission("cont
 @router.put("/cms/pages/{slug}")
 async def cms_page_update(slug: str, payload: dict, request: Request, admin: dict = Depends(require_permission("content"))):
     fields = {k: v for k, v in payload.items() if k not in ("id", "_id", "slug")}
+    for key in ("content", "body_html", "description"):
+        if key in fields and isinstance(fields[key], str):
+            fields[key] = sanitize_html(fields[key])
     await db.cms_pages.update_one({"slug": slug}, {"$set": fields}, upsert=True)
     await audit(admin, "update", "cms_page", slug, request=request)
     return clean(await db.cms_pages.find_one({"slug": slug}))
@@ -1203,9 +1377,26 @@ async def corporate(admin: dict = Depends(require_permission("corporate"))):
 
 
 @router.put("/corporate-inquiries/{cid}")
-async def corporate_update(cid: str, payload: dict, admin: dict = Depends(require_permission("corporate"))):
-    await db.corporate_inquiries.update_one({"id": cid}, {"$set": {"status": payload.get("status")}})
-    return {"ok": True}
+async def corporate_update(cid: str, payload: dict, request: Request, admin: dict = Depends(require_permission("corporate"))):
+    allowed = {"Pending", "In Discussion", "Accepted", "Rejected"}
+    status = payload.get("status")
+    if status not in allowed:
+        raise HTTPException(400, "Invalid inquiry status.")
+    before = await db.corporate_inquiries.find_one({"id": cid}, {"_id": 0})
+    if not before:
+        raise HTTPException(404, "Inquiry not found.")
+    if before.get("status") == status:
+        return {"ok": True, "status": status, "unchanged": True}
+    now = now_iso()
+    await db.corporate_inquiries.update_one({"id": cid}, {"$set": {"status": status, "updated_at": now},
+        "$push": {"status_history": {"status": status, "at": now, "admin_email": admin.get("email")}}})
+    import uuid
+    event_key = f"inquiry-status:{cid}:{status}:{now}"
+    await db.notifications.insert_one({"id": str(uuid.uuid4()), "event_key": event_key, "type": "corporate_inquiry_status",
+        "title": "Business inquiry status updated", "description": f"Inquiry {cid} changed from {before.get('status', 'Pending')} to {status}.",
+        "inquiry_id": cid, "link": "/admin/corporate", "read": False, "at": now})
+    await audit(admin, "status_change", "corporate_inquiry", cid, before={"status": before.get("status")}, after={"status": status}, request=request)
+    return {"ok": True, "status": status}
 
 
 # ---------------- REFUNDS ----------------
@@ -1536,7 +1727,7 @@ async def transaction_detail(order_number: str, admin: dict = Depends(require_pe
 # ---------------- NOTIFICATIONS ----------------
 @router.get("/notifications")
 async def notifications(admin: dict = Depends(get_current_admin)):
-    cur = db.notifications.find({}, {"_id": 0}).sort("at", -1).limit(30)
+    cur = db.notifications.find({}, {"_id": 0}).sort("at", -1).limit(100)
     items = [n async for n in cur]
     unread = await db.notifications.count_documents({"read": False})
     return {"items": items, "unread": unread}
@@ -1545,6 +1736,22 @@ async def notifications(admin: dict = Depends(get_current_admin)):
 @router.post("/notifications/read")
 async def mark_read(admin: dict = Depends(get_current_admin)):
     await db.notifications.update_many({"read": False}, {"$set": {"read": True}})
+    return {"ok": True}
+
+
+@router.post("/notifications/{nid}/read")
+async def set_notification_read(nid: str, payload: dict, admin: dict = Depends(get_current_admin)):
+    result = await db.notifications.update_one({"id": nid}, {"$set": {"read": bool(payload.get("read", True))}})
+    if not result.matched_count:
+        raise HTTPException(404, "Notification not found.")
+    return {"ok": True, "read": bool(payload.get("read", True))}
+
+
+@router.delete("/notifications/{nid}")
+async def delete_notification(nid: str, admin: dict = Depends(get_current_admin)):
+    result = await db.notifications.delete_one({"id": nid})
+    if not result.deleted_count:
+        raise HTTPException(404, "Notification not found.")
     return {"ok": True}
 
 

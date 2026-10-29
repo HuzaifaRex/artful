@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../lib/api";
 import { Icon } from "../lib/icons";
+import { sanitizeHtml } from "../lib/sanitizeHtml";
 
 const FALLBACK = {
   hero_eyebrow: "About ARTFUL",
@@ -16,6 +17,7 @@ export default function AboutPage() {
   useEffect(() => { api.get("/cms/page/about").then(({ data }) => setP(data)).catch(() => setP(FALLBACK)); }, []);
   const d = p || FALLBACK;
   const cards = d.cards || [];
+  if (p === null) return <div className="min-h-[52vh] bg-plum-wine" aria-busy="true" data-testid="about-loading" />;
 
   return (
     <div data-testid="about-page">
@@ -29,7 +31,7 @@ export default function AboutPage() {
 
       {d.body_html && (
         <section className="container-artful py-16 lg:py-24 max-w-3xl">
-          <div className="prose prose-lg max-w-none text-ink-secondary" data-testid="about-body" dangerouslySetInnerHTML={{ __html: d.body_html }} />
+          <div className="prose prose-lg max-w-none text-ink-secondary" data-testid="about-body" dangerouslySetInnerHTML={{ __html: sanitizeHtml(d.body_html) }} />
         </section>
       )}
 

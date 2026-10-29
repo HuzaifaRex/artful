@@ -8,9 +8,9 @@ import { popConfetti } from "../lib/confetti";
 import { isValidEmail } from "../lib/utils";
 
 const COLS = [
-  { title: "Shop", links: [["All Products", "/shop"], ["New Arrivals", "/collections/new-arrivals"], ["Bestsellers", "/collections/bestsellers"], ["Gifts", "/collections/festive-gifts"]] },
+  { title: "Shop", links: [["All Products", "/shop"], ["New Arrivals", "/collections/new-arrivals"], ["Bestsellers", "/collections/bestsellers"], ["Games and Gifts", "/collections/festive-gifts"]] },
   { title: "Help", links: [["FAQ", "/faq"], ["Shipping", "/shipping"],  ["Contact", "/contact"], ["Track Order", "/track-order"]] },
-  { title: "About", links: [["About", "/about"], ["Our Story", "/our-story"], ["Corporate Gifting", "/corporate-gifting"]] },
+  { title: "About", links: [["About", "/about"], ["Our Story", "/our-story"], ["Business and Bulk Orders", "/corporate-gifting"]] },
   { title: "Legal", links: [["Privacy", "/privacy"], ["Terms", "/terms"], ["Returns & Refund", "/returns"]] },
 ];
 
@@ -73,7 +73,7 @@ export default function Footer() {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 mb-14">
           <div className="lg:col-span-4">
             <img src="/logo-cream.webp" alt="ARTFUL" className="h-7 w-auto mb-5" data-testid="footer-logo" />
-            <p className="text-cream/70 text-sm leading-relaxed max-w-xs">Thoughtfully made. Beautifully given. Handcrafted lifestyle objects and bespoke gift boxes.</p>
+            <p className="text-cream/70 text-sm leading-relaxed max-w-xs">{settings?.footer_description || "Thoughtfully made. Beautifully given. Handcrafted lifestyle objects and bespoke gift boxes."}</p>
             <form onSubmit={subscribe} className="mt-8 flex" data-testid="newsletter-form">
               <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Your email" className="flex-1 bg-transparent border border-cream/30 px-4 py-3 text-sm placeholder:text-cream/40 focus:outline-none focus:border-gold" data-testid="newsletter-input" />
               <button disabled={loading} className="bg-gold text-plum-wine px-6 text-xs uppercase tracking-widest font-medium hover:bg-gold-soft transition-colors disabled:opacity-60" data-testid="newsletter-submit">Join</button>

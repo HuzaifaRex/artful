@@ -63,11 +63,14 @@ export function MultiImageUpload({ value = [], onChange, testid = "images" }) {
   return (
     <div>
       <input ref={ref} type="file" accept="image/*" multiple hidden onChange={pick} data-testid={`upload-${testid}`} />
+      <p className="text-xs text-gray-500 mb-2">Drag thumbnails to change display order. The first image is the primary image.</p>
       <div className="flex flex-wrap gap-3">
         {(value || []).map((u, i) => (
-          <div key={i} className="relative w-20 h-24 rounded-md overflow-hidden border border-gray-200">
-            <img src={u} alt="" className="w-full h-full object-cover" />
-            <button type="button" onClick={() => remove(i)} className="absolute top-0.5 right-0.5 bg-black/60 text-white rounded-full p-0.5"><X size={12} /></button>
+          <div key={`${u}-${i}`} draggable onDragStart={(e) => { e.dataTransfer.setData("text/plain", String(i)); e.dataTransfer.effectAllowed = "move"; }} onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }} onDrop={(e) => { e.preventDefault(); const from = Number(e.dataTransfer.getData("text/plain")); if (!Number.isInteger(from) || from < 0 || from >= value.length || from === i) return; const next = [...value]; const [item] = next.splice(from, 1); next.splice(i, 0, item); onChange(next); }} className="relative w-20 h-24 rounded-md overflow-hidden border border-gray-200 cursor-grab active:cursor-grabbing" title="Drag to reorder">
+            <img src={u} alt={`Product image ${i + 1}`} className="w-full h-full object-cover" />
+            {i === 0 && <span className="absolute inset-x-0 bottom-0 bg-plum text-white text-[9px] text-center py-1">Primary</span>}
+            <span className="absolute top-0.5 left-0.5 bg-black/60 text-white rounded px-1 text-[9px]">{i + 1}</span>
+            <button type="button" onClick={() => remove(i)} className="absolute top-0.5 right-0.5 bg-black/60 text-white rounded-full p-0.5" aria-label={`Remove image ${i + 1}`}><X size={12} /></button>
           </div>
         ))}
         <button type="button" onClick={() => ref.current?.click()} disabled={busy} className="w-20 h-24 rounded-md border-2 border-dashed border-gray-300 flex flex-col items-center justify-center text-gray-400 hover:border-plum hover:text-plum text-[10px] gap-1" data-testid={`upload-btn-${testid}`}>

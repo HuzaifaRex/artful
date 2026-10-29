@@ -71,15 +71,16 @@ export default function ProductCard({ product, index = 0 }) {
 
       <div className="flex flex-1 flex-col p-4 sm:p-5">
         <Link to={`/products/${product.slug}`} className="block">
-          <h3 className="line-clamp-2 text-base font-semibold leading-6 text-ink transition-colors group-hover:text-plum">{product.name}</h3>
+          <h3 className="artful-product-name line-clamp-2 text-base font-semibold leading-6 text-ink transition-colors group-hover:text-plum">{product.name}</h3>
         </Link>
 
+        {Number(product.pack_quantity || 1) > 1 && <p className="mt-1 text-[11px] text-ink-muted">Pack of {Number(product.pack_quantity)} {product.quantity_unit || "pieces"}</p>}
         {description && <p className="mt-1 line-clamp-2 text-xs leading-5 text-ink-muted">{description}</p>}
 
         {tags.length > 0 && <div className="mt-2 flex min-h-[22px] flex-wrap gap-1.5">{tags.map((tag, i) => <span key={`${tag}-${i}`} className="rounded-full bg-surface px-2.5 py-1 text-[10px] font-medium text-ink-secondary">{tag}</span>)}</div>}
 
         <div className="mt-3 flex min-h-[28px] items-baseline gap-2">
-          <span className="text-lg font-semibold text-plum">{inr(price)}</span>
+          <span className="artful-product-price text-lg font-semibold text-plum">{inr(price)}</span>
           {mrp > price && <span className="text-xs text-ink-muted line-through">{inr(mrp)}</span>}
         </div>
 

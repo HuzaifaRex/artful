@@ -272,6 +272,8 @@ def build_invoice_pdf(order, settings):
         extras = []
         if item.get("variant_label"):
             extras.append(f"Variant: {html.escape(str(item['variant_label']))}")
+        if int(item.get("pack_quantity") or 1) > 1:
+            extras.append(f"Pack: {html.escape(str(item.get('pack_quantity')))} {html.escape(str(item.get('quantity_unit') or 'pieces'))} each · Total: {html.escape(str(item.get('total_pieces') or int(item.get('qty') or 0) * int(item.get('pack_quantity') or 1)))} {html.escape(str(item.get('quantity_unit') or 'pieces'))}")
         custom = item.get("customization") or {}
         if item.get("product_type") == "customizable" and custom:
             extras.append(f"Quantity: {html.escape(str(custom.get('quantity') or item.get('qty') or 0))} pcs")
@@ -308,7 +310,7 @@ def build_invoice_pdf(order, settings):
         item_rows.append([
             description,
             _paragraph(item.get("sku") or "-", styles["TableCell"]),
-            _paragraph(str(item.get("qty", 0)), styles["TableCellRight"]),
+            _paragraph((f"{item.get('qty', 0)} packs" if int(item.get("pack_quantity") or 1) > 1 else str(item.get("qty", 0))), styles["TableCellRight"]),
             _paragraph(_money(item.get("price")), styles["TableCellRight"]),
             _paragraph(_money(item.get("line_total", (item.get("price", 0) or 0) * (item.get("qty", 0) or 0))), styles["TableCellRight"]),
         ])

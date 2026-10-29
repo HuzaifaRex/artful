@@ -33,11 +33,14 @@ function getCustomizationSummary(item) {
 }
 
 export default function Checkout() {
-  const { cart, cartPayload, customer, setCustomer, loginSuccess, clearCart, updateQty, removeItem, updateArtwork } = useStore();
+  const { cart, cartPayload, customer, setCustomer, loginSuccess, clearCart, updateQty, removeItem, updateArtwork, settings } = useStore();
   const navigate = useNavigate();
   const [totals, setTotals] = useState(null);
   const [coupon, setCoupon] = useState("");
+  const [couponOptions, setCouponOptions] = useState([]);
   const [applied, setApplied] = useState(null);
+  const codFee = Math.max(0, Number(settings?.cod_fee ?? 99));
+  const canUseCod = cart.every((item) => item.cod_available !== false);
   // auth
   const [otpStep, setOtpStep] = useState("phone");
   const [phone, setPhone] = useState("");
@@ -59,7 +62,7 @@ export default function Checkout() {
     try {
       const { data } = await api.post("/cart/validate", {
         items: cartPayload,
-        coupon_code: c ?? applied,
+        coupon_code: c === undefined ? applied : c,
         state: addr.state,
       });
       setTotals(data);
@@ -67,6 +70,14 @@ export default function Checkout() {
   }, [cart, cartPayload, applied, addr.state]);
 
   useEffect(() => { validate(); }, [validate]);
+  useEffect(() => { if (!canUseCod && method === "cod") setMethod("razorpay"); }, [canUseCod, method]);
+
+  useEffect(() => {
+    if (!cart.length) { setCouponOptions([]); return; }
+    let active = true;
+    api.post("/coupons/options", { items: cartPayload }).then(({ data }) => { if (active) setCouponOptions(data.items || []); }).catch(() => { if (active) setCouponOptions([]); });
+    return () => { active = false; };
+  }, [cartPayload, cart.length]);
 
   useEffect(() => {
     if (customer) {
@@ -346,10 +357,10 @@ export default function Checkout() {
           <section className={`border border-line p-6 ${!customer || !mobileVerified ? "opacity-50 pointer-events-none" : ""}`}>
             <div className="flex items-center gap-3 mb-5"><span className="w-7 h-7 rounded-full bg-plum text-white flex items-center justify-center text-xs">3</span><h2 className="font-serif text-xl text-ink">Payment</h2></div>
             <div className="space-y-3">
-              {[["razorpay", "UPI / Cards / Net Banking / Wallets", "Secure payment via Razorpay"], ["cod", "Cash on Delivery", "Pay when your order arrives (+₹99)"]].map(([val, label, desc]) => (
+              {[["razorpay", "UPI / Cards / Net Banking / Wallets", "Secure payment via Razorpay"], ["cod", "Cash on Delivery", `Pay when your order arrives (+${inr(codFee)})`]].map(([val, label, desc]) => (
                 <label key={val} className={`flex items-start gap-3 border p-4 cursor-pointer ${method === val ? "border-plum bg-plum-light" : "border-line"}`} data-testid={`payment-${val}`}>
-                  <input type="radio" name="method" checked={method === val} onChange={() => setMethod(val)} className="mt-1 accent-plum" />
-                  <div><p className="text-sm font-medium text-ink">{label}</p><p className="text-xs text-ink-muted">{desc}</p></div>
+                  <input type="radio" name="method" checked={method === val} disabled={val === "cod" && !canUseCod} onChange={() => setMethod(val)} className="mt-1 accent-plum" />
+                  <div><p className="text-sm font-medium text-ink">{label}</p><p className="text-xs text-ink-muted">{desc}</p>{val === "cod" && !canUseCod && <p className="text-xs text-red-600 mt-1">Cash on Delivery is not available for one or more products in your cart.</p>}</div>
                 </label>
               ))}
             </div>
@@ -374,10 +385,11 @@ export default function Checkout() {
                           <div className="min-w-0"><p className="text-ink leading-tight line-clamp-2 font-medium">{i.name}</p>{isCustom && <span className="inline-flex mt-1 rounded-full bg-plum-light text-plum px-2 py-0.5 text-[10px] font-semibold">Custom Print</span>}</div>
                           <button onClick={() => removeItem(i.key)} className="text-ink-muted hover:text-err shrink-0" data-testid={`checkout-remove-${i.key}`} aria-label="Remove"><Trash2 size={15} /></button>
                         </div>
-                        {i.bulk_order?.applied && <p className="text-[11px] text-violet-700 mt-1">Bulk rate applied · {inr(i.price)} / pc</p>}
+                        {Number(i.pack_quantity || 1) > 1 && <p className="text-[11px] text-ink-muted mt-1">Pack of {i.pack_quantity} {i.quantity_unit || "pieces"} · {i.qty} packs = {i.qty * Number(i.pack_quantity)} {i.quantity_unit || "pieces"}</p>}
+                        {i.bulk_order?.applied && <p className="text-[11px] text-violet-700 mt-1">Bulk rate applied · {inr(i.price)} / {Number(i.pack_quantity || 1) > 1 ? "pack" : "pc"}</p>}
                         {customDetails.length > 0 && <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-1">{customDetails.map((d, idx) => <p key={idx} className="text-[11px] text-ink-secondary truncate"><span className="text-ink-muted">{d.label}:</span> {d.value}</p>)}</div>}
                         <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-                          {i.bulk_locked ? <span className="rounded-full bg-violet-50 text-violet-700 px-2.5 py-1 text-[11px] font-medium">Bulk pack · {i.qty} pcs</span> : <div className="inline-flex items-center border border-line rounded-full">
+                          {i.bulk_locked ? <span className="rounded-full bg-violet-50 text-violet-700 px-2.5 py-1 text-[11px] font-medium">Bulk · {i.qty} {Number(i.pack_quantity || 1) > 1 ? `packs (${i.qty * Number(i.pack_quantity)} ${i.quantity_unit || "pieces"})` : "pcs"}</span> : <div className="inline-flex items-center border border-line rounded-full">
                             <button onClick={() => i.qty > 1 ? updateQty(i.key, i.qty - 1) : removeItem(i.key)} className="w-7 h-7 flex items-center justify-center text-plum hover:bg-surface rounded-l-full" data-testid={`checkout-qty-dec-${i.key}`} aria-label="Decrease">{i.qty > 1 ? <Minus size={13} /> : <Trash2 size={13} />}</button>
                             <span className="w-8 text-center text-plum font-medium" data-testid={`checkout-qty-${i.key}`}>{i.qty}</span>
                             <button onClick={() => updateQty(i.key, i.qty + 1)} className="w-7 h-7 flex items-center justify-center text-plum hover:bg-surface rounded-r-full" data-testid={`checkout-qty-inc-${i.key}`} aria-label="Increase"><Plus size={13} /></button>
@@ -402,11 +414,16 @@ export default function Checkout() {
                 );
               })}
             </div>
-            <div className="flex gap-2 mb-4">
-              <input value={coupon} onChange={(e) => setCoupon(e.target.value.toUpperCase())} placeholder="Coupon" className="input-field flex-1" data-testid="checkout-coupon-input" />
-              <button onClick={applyCoupon} className="btn-primary !px-4">Apply</button>
+            <div className="space-y-2 mb-4">
+              <label className="block text-xs font-medium text-ink-secondary">Choose an available coupon</label>
+              <select value={coupon} onChange={(e) => setCoupon(e.target.value)} className="input-field w-full" data-testid="checkout-coupon-select">
+                <option value="">Select coupon</option>
+                {couponOptions.map((option) => <option key={option.code} value={option.code} disabled={!option.eligible}>{option.code} — {option.description || "Offer"}{option.eligible ? "" : ` · ${option.reason || "Not eligible"}`}</option>)}
+              </select>
+              {couponOptions.filter((option) => !option.eligible).slice(0, 3).map((option) => <p key={option.code} className="text-[11px] text-ink-muted">{option.code}: {option.reason || "Not eligible for this cart"}</p>)}
+              <div className="flex gap-2"><input value={coupon} onChange={(e) => setCoupon(e.target.value.toUpperCase())} placeholder="Or enter coupon code" className="input-field flex-1" data-testid="checkout-coupon-input" /><button onClick={applyCoupon} className="btn-primary !px-4">Apply</button></div>
+              {applied && <button type="button" onClick={() => { setApplied(null); setCoupon(""); validate(null); }} className="text-xs text-err underline">Remove coupon {applied}</button>}
             </div>
-            {applied && <p className="text-xs text-ok mb-3">Coupon {applied} applied</p>}
             {totals && (
               <div className="space-y-2 text-sm border-t border-line pt-4">
                 {(() => { const wrap = giftWrapTotal(totals.items); return (<>
@@ -414,7 +431,7 @@ export default function Checkout() {
                 {wrap > 0 && <div className="flex justify-between text-ink-secondary" data-testid="checkout-giftwrap"><span>Gift Wrapping</span><span>{inr(wrap)}</span></div>}
                 {totals.discount > 0 && <div className="flex justify-between text-ok"><span>Discount</span><span>-{inr(totals.discount)}</span></div>}
                 <div className="flex justify-between text-ink-secondary"><span>Shipping</span><span>{totals.shipping === 0 ? "Free" : inr(totals.shipping)}</span></div>
-                <div className="flex justify-between text-lg text-plum font-medium pt-2 border-t border-line-subtle"><span>Total</span><span data-testid="checkout-total">{inr(totals.total + (method === "cod" ? 99 : 0))}</span></div>
+                <div className="flex justify-between text-lg text-plum font-medium pt-2 border-t border-line-subtle"><span>Total</span><span data-testid="checkout-total">{inr(totals.total + (method === "cod" ? codFee : 0))}</span></div>
                 </>); })()}
               </div>
             )}

@@ -275,9 +275,22 @@ async def build_line_items(items):
                 "custom_total": int(custom_order_total) if custom_order_total is not None else None,
                 "unit_price": int(price),
             }
+        pack_quantity = max(1, int(prod.get("pack_quantity") or 1))
+        quantity_unit = str(prod.get("quantity_unit") or "pieces")
+        try:
+            product_shipping_charge = None if prod.get("shipping_charge") is None or prod.get("shipping_charge") == "" else max(0, int(round(float(prod.get("shipping_charge")))))
+        except (TypeError, ValueError):
+            product_shipping_charge = None
         lines.append({
             "product_id": prod["id"], "name": prod["name"], "slug": prod["slug"],
             "image": (prod.get("images") or [None])[0], "sku": prod.get("sku"),
+            "pack_quantity": pack_quantity, "quantity_unit": quantity_unit,
+            "total_pieces": qty * pack_quantity if quantity_unit.lower() in ("piece", "pieces", "unit", "units") else None,
+            "cod_available": prod.get("cod_available", True),
+            "product_shipping_charge": product_shipping_charge,
+            "product_shipping_total": product_shipping_charge * qty if product_shipping_charge is not None else None,
+            "material_care": prod.get("material_care") or [],
+            "category_slug": prod.get("category_slug"),
             "variant_id": it.get("variant_id"), "variant_label": (variant or {}).get("label") if variant else None,
             "product_type": "customizable" if is_custom else "standard",
             "price": price, "base_price": base_price, "custom_total": int(custom_order_total) if custom_order_total is not None else None, "cost_price": unit_cost, "qty": qty, "requested_qty": qty,
@@ -305,6 +318,31 @@ async def validate_coupon(code, subtotal, lines, customer=None):
     coupon = await db.coupons.find_one({"code": code.upper().strip(), "status": "Active"}, {"_id": 0})
     if not coupon:
         return None, 0, False, "This coupon code is not valid."
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+    def parse_date(value):
+        if not value:
+            return None
+        try:
+            parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+        except (TypeError, ValueError):
+            return None
+    start = parse_date(coupon.get("start_date") or coupon.get("starts_at") or coupon.get("valid_from"))
+    end = parse_date(coupon.get("end_date") or coupon.get("ends_at") or coupon.get("valid_until"))
+    if start and now < start:
+        return None, 0, False, "This coupon is not active yet."
+    if end and now > end:
+        return None, 0, False, "This coupon has expired."
+    product_ids = set(str(x) for x in (coupon.get("eligible_product_ids") or coupon.get("product_ids") or []))
+    excluded_ids = set(str(x) for x in (coupon.get("excluded_product_ids") or []))
+    category_slugs = set(str(x) for x in (coupon.get("category_slugs") or coupon.get("eligible_categories") or []))
+    if product_ids and not any(str(line.get("product_id")) in product_ids for line in lines):
+        return None, 0, False, "This coupon does not apply to products in your cart."
+    if category_slugs and not any(str(line.get("category_slug") or "") in category_slugs for line in lines):
+        return None, 0, False, "This coupon does not apply to product categories in your cart."
+    if excluded_ids and all(str(line.get("product_id")) in excluded_ids for line in lines):
+        return None, 0, False, "This coupon excludes the products in your cart."
     if coupon.get("min_cart") and subtotal < coupon["min_cart"]:
         return None, 0, False, f"Add ₹{coupon['min_cart'] - subtotal} more to use {coupon['code']}."
     if coupon.get("usage_limit") is not None and coupon.get("used_count", 0) >= coupon["usage_limit"]:
@@ -352,6 +390,12 @@ async def compute_totals(items, coupon_code=None, customer=None, state=None):
             except (TypeError, ValueError):
                 shipping_charge = flat_ship
             break
+    # Explicit product shipping is charged per selling unit. Legacy products without a
+    # product-level value retain the existing store/state rate as a single order charge.
+    configured_lines = [line for line in lines if line.get("product_shipping_charge") is not None]
+    legacy_lines = [line for line in lines if line.get("product_shipping_charge") is None]
+    product_shipping = sum(int(line.get("product_shipping_total") or 0) for line in configured_lines)
+    shipping_charge = product_shipping + (shipping_charge if legacy_lines else 0)
     shipping = 0 if (subtotal - discount) >= threshold or free_shipping or subtotal == 0 else shipping_charge
     tax_rate = settings.get("tax_rate", 0)
     taxable = max(0, subtotal - discount)
@@ -366,7 +410,7 @@ async def compute_totals(items, coupon_code=None, customer=None, state=None):
         "items": lines, "errors": errors,
         "subtotal": subtotal, "discount": discount, "coupon_code": coupon["code"] if coupon else None,
         "coupon_error": coupon_error, "coupon_description": coupon.get("description") if coupon else None,
-        "shipping": shipping, "shipping_charge": shipping_charge, "free_shipping_threshold": threshold, "tax": tax,
+        "shipping": shipping, "shipping_charge": shipping_charge, "product_shipping": product_shipping, "free_shipping_threshold": threshold, "tax": tax,
         "savings": savings, "total": total,
         "currency_symbol": settings.get("currency_symbol", "₹"),
     }

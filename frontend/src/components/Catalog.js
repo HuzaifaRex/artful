@@ -20,6 +20,7 @@ export default function Catalog({ fixed = {}, title, subtitle }) {
   const [total, setTotal] = useState(0);
   const [pages, setPages] = useState(1);
   const [cats, setCats] = useState([]);
+  const [dynamicFilters, setDynamicFilters] = useState([]);
   const [showFilters, setShowFilters] = useState(false);
 
   const page = parseInt(params.get("page") || "1");
@@ -30,7 +31,24 @@ export default function Catalog({ fixed = {}, title, subtitle }) {
   const priceBand = params.get("price") || "";
   const onSale = params.get("on_sale") === "1";
 
-  useEffect(() => { api.get("/categories").then(({ data }) => setCats(data.items)).catch(() => {}); }, []);
+  useEffect(() => { api.get("/categories").then(({ data }) => setCats(data.items)).catch(() => {}); api.get("/filters").then(({ data }) => setDynamicFilters(data.items || [])).catch(() => setDynamicFilters([])); }, []);
+  const selectedDynamic = params.getAll("filter");
+  const toggleDynamic = (definition, value) => {
+    const token = `${definition.id}:${value}`;
+    const next = new URLSearchParams(params);
+    const current = next.getAll("filter");
+    const already = current.includes(token);
+    next.delete("filter");
+    if (definition.type === "multi") {
+      current.filter((item) => item !== token).forEach((item) => next.append("filter", item));
+      if (!already) next.append("filter", token);
+    } else {
+      current.filter((item) => !item.startsWith(`${definition.id}:`)).forEach((item) => next.append("filter", item));
+      if (!already) next.append("filter", token);
+    }
+    next.delete("page");
+    setParams(next);
+  };
 
   const load = useCallback(async () => {
     setItems(null);
@@ -41,12 +59,13 @@ export default function Catalog({ fixed = {}, title, subtitle }) {
     if (occasion) qp.set("occasion", occasion);
     if (recipient) qp.set("recipient", recipient);
     if (onSale) qp.set("on_sale", "true");
+    selectedDynamic.forEach((item) => qp.append("filter", item));
     if (priceBand) { const [mn, mx] = priceBand.split("-"); if (mn) qp.set("min_price", mn); if (mx) qp.set("max_price", mx); }
     try {
       const { data } = await api.get(`/products?${qp.toString()}`);
       setItems(data.items); setTotal(data.total); setPages(data.pages);
     } catch { setItems([]); }
-  }, [page, sort, category, occasion, recipient, priceBand, onSale, fixed.collection]);
+  }, [page, sort, category, occasion, recipient, priceBand, onSale, fixed.collection, selectedDynamic.join("|")]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -61,7 +80,7 @@ export default function Catalog({ fixed = {}, title, subtitle }) {
     if (params.get("sort")) next.set("sort", params.get("sort"));
     setParams(next);
   };
-  const activeCount = [occasion, recipient, priceBand, onSale ? "1" : "", fixed.category ? "" : category].filter(Boolean).length;
+  const activeCount = [occasion, recipient, priceBand, onSale ? "1" : "", fixed.category ? "" : category, ...selectedDynamic].filter(Boolean).length;
 
   const FilterPanel = () => (
     <div className="space-y-8">
@@ -126,6 +145,10 @@ export default function Catalog({ fixed = {}, title, subtitle }) {
           ))}
         </div>
       </div>
+      {dynamicFilters.filter((f) => !(f.category_slugs || []).length || (category && f.category_slugs.includes(category)) || (fixed.category && f.category_slugs.includes(fixed.category))).map((definition) => <div key={definition.id}>
+        <p className="label-caption mb-4">{definition.name}</p>
+        <div className="flex flex-wrap gap-2">{(definition.values || []).map((value) => { const token = `${definition.id}:${value}`; const active = selectedDynamic.includes(token); return <button key={value} type="button" onClick={() => toggleDynamic(definition, value)} className={`px-3 py-1.5 text-xs border transition-colors ${active ? "bg-plum text-white border-plum" : "border-line text-ink-secondary hover:border-plum hover:text-plum"}`} aria-pressed={active}>{value}</button>; })}</div>
+      </div>)}
       <div>
         <p className="label-caption mb-4">Availability</p>
         <div className="flex flex-wrap gap-2">
@@ -180,12 +203,12 @@ export default function Catalog({ fixed = {}, title, subtitle }) {
           <aside className="hidden lg:block w-56 shrink-0"><FilterPanel /></aside>
           <div className="flex-1 min-w-0">
             {items === null ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-10">{[...Array(6)].map((_, i) => <ProductSkeleton key={i} />)}</div>
+              <div className="artful-product-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-10">{[...Array(6)].map((_, i) => <ProductSkeleton key={i} />)}</div>
             ) : items.length === 0 ? (
               <div className="text-center py-24"><p className="font-serif text-2xl text-plum mb-2">No products found</p><p className="text-ink-secondary">Try adjusting your filters.</p><button onClick={clearAll} className="btn-outline mt-6">Clear Filters</button></div>
             ) : (
               <>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-10" data-testid="product-catalog-grid">
+                <div className="artful-product-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-10" data-testid="product-catalog-grid">
                   {items.map((p, i) => <ProductCard key={p.id} product={p} index={i} />)}
                 </div>
                 {pages > 1 && (

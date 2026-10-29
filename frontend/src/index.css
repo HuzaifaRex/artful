@@ -41,7 +41,7 @@ body {
   margin: 0;
   background: rgb(var(--c-cream));
   color: rgb(var(--c-ink));
-  font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+  font-family: "Arcon", Arial, sans-serif;
   transition: background-color 0.3s ease, color 0.3s ease;
 }
 
@@ -148,3 +148,45 @@ background: linear-gradient(152deg, rgba(18, 68, 204, 0) 0%, rgba(13, 44, 168, 0
 .fixed.inset-0.z-50.flex{
   background: rgba(0, 0, 0, .7) !important;
 }
+
+/* ARTFUL typography: Arcon is the single active font across storefront and admin. */
+@font-face {
+  font-family: "Arcon";
+  src: url("/fonts/Arcon-Regular.otf") format("opentype");
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+}
+html, body, body *, body *::before, body *::after,
+input, textarea, select, button, option, .ck-content, .ck-editor,
+[contenteditable="true"] {
+  font-family: "Arcon", Arial, sans-serif !important;
+}
+
+/* Mobile layout helpers. Desktop navigation and grids remain unchanged. */
+@media (max-width: 1023px) { body { padding-bottom: calc(66px + env(safe-area-inset-bottom)); } }
+@media (max-width: 767px) {
+  .artful-product-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 10px !important; }
+  .artful-product-grid .artful-product-name { font-size: 12px !important; line-height: 1.35 !important; }
+  .artful-product-grid .artful-product-price { font-size: 15px !important; line-height: 1.2 !important; }
+  .artful-mobile-bottom-nav { padding-bottom: env(safe-area-inset-bottom); }
+}
+.artful-mobile-categories { display: none; }
+@media (max-width: 767px) {
+  .artful-mobile-categories { display: block; }
+  .artful-mobile-category-track { display:flex; gap:12px; overflow-x:auto; overscroll-behavior-x:contain; scroll-snap-type:x mandatory; padding: 12px 16px 15px; }
+  .artful-mobile-category { flex:0 0 72px; width:72px; scroll-snap-align:start; text-align:center; }
+  .artful-mobile-category-image { width:68px; height:68px; border:2px solid var(--plum); border-radius:50%; padding:2px; overflow:hidden; background:rgb(var(--c-surface)); }
+  .artful-mobile-category-image img { display:block; width:100%; height:100%; object-fit:cover; border-radius:50%; }
+  .artful-mobile-category-name { font-size:11px; line-height:1.25; margin-top:6px; white-space:normal; overflow-wrap:anywhere; }
+}
+.artful-hero-media-wrap { padding:15px; background:rgb(var(--c-cream)); }
+.artful-hero-media { display:block; width:100%; max-height:72vh; height:auto; aspect-ratio: 16 / 6; object-fit:contain; border-radius:15px; background:rgb(var(--c-surface)); }
+@media (max-width: 767px) { .artful-hero-media { aspect-ratio: 4 / 3; max-height:55vh; } }
+.artful-rich-editor [contenteditable="true"] { min-height:180px; padding:12px; outline:none; line-height:1.6; }
+.artful-rich-editor .rt-toolbar { display:flex; flex-wrap:wrap; gap:6px; padding:8px; border-bottom:1px solid #e5e7eb; background:#f9fafb; }
+.artful-rich-editor .rt-toolbar button, .artful-rich-editor .rt-toolbar select, .artful-rich-editor .rt-toolbar input { min-height:32px; border:1px solid #d1d5db; border-radius:5px; padding:4px 8px; background:white; font-size:12px; color:#374151; }
+.artful-rich-editor .rt-toolbar button:hover { border-color:#5C3243; color:#5C3243; }
+.artful-rich-editor [contenteditable="true"] ul { list-style:disc; padding-left:1.5rem; }
+.artful-rich-editor [contenteditable="true"] ol { list-style:decimal; padding-left:1.5rem; }
+.artful-rich-editor [contenteditable="true"] p { margin:.35rem 0; }

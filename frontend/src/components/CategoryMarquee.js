@@ -12,7 +12,7 @@ export default function CategoryMarquee() {
   const row = [...cats, ...cats]; // duplicate for seamless loop
 
   return (
-    <section className="bg-plum text-cream py-4 overflow-hidden border-y border-plum-wine/40" data-testid="category-marquee">
+    <section className="hidden lg:block bg-plum text-cream py-4 overflow-hidden border-y border-plum-wine/40" data-testid="category-marquee">
       <div className="flex animate-marquee marquee-track whitespace-nowrap will-change-transform">
         {row.map((c, i) => {
           const IconCmp = getIcon(c.icon);

@@ -57,15 +57,16 @@ export default function CartDrawer() {
                     </div>
                     {item.gift_wrap && <p className="text-[11px] text-plum mt-0.5">+ Gift wrap</p>}
                     {item.personalization && <p className="text-[11px] text-ink-muted mt-0.5 truncate">"{item.personalization}"</p>}
-                    {item.bulk_order && item.qty >= Number(item.bulk_order.min_quantity || 0) && <p className="text-[11px] text-violet-700 mt-0.5">Bulk rate applied · {inr(item.price)} / pc</p>}
+                    {item.bulk_order && item.qty >= Number(item.bulk_order.min_quantity || 0) && <p className="text-[11px] text-violet-700 mt-0.5">Bulk rate applied · {inr(item.price)} / {Number(item.pack_quantity || 1) > 1 ? "pack" : "pc"}</p>}
                     <div className="flex items-center justify-between mt-2">
-                      {item.bulk_locked ? <span className="rounded-full bg-violet-50 text-violet-700 px-2.5 py-1 text-[11px] font-medium">Fixed bulk pack · {item.qty} pcs</span> : <div className="flex items-center border border-line">
+                      {item.bulk_locked ? <span className="rounded-full bg-violet-50 text-violet-700 px-2.5 py-1 text-[11px] font-medium">Bulk · {item.qty} {Number(item.pack_quantity || 1) > 1 ? `packs (${item.qty * Number(item.pack_quantity)} ${item.quantity_unit || "pieces"})` : "pcs"}</span> : <div className="flex items-center border border-line">
                         <button onClick={() => updateQty(item.key, item.qty - 1)} className="p-1.5 text-plum" data-testid={`cart-dec-${item.slug}`}><Minus size={13} /></button>
                         <span className="px-3 text-sm" data-testid={`cart-qty-${item.slug}`}>{item.qty}</span>
                         <button onClick={() => updateQty(item.key, item.qty + 1)} className="p-1.5 text-plum" data-testid={`cart-inc-${item.slug}`}><Plus size={13} /></button>
                       </div>}
                       <span className="text-sm text-plum font-medium">{inr(item.custom_total ?? (item.price * item.qty))}</span>
                     </div>
+                    {Number(item.pack_quantity || 1) > 1 && <p className="text-[10px] text-ink-muted mt-1">{item.qty} packs × {item.pack_quantity} {item.quantity_unit || "pieces"} = {item.qty * Number(item.pack_quantity)} {item.quantity_unit || "pieces"}</p>}
                   </div>
                 </div>
               ))}

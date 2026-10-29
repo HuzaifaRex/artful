@@ -205,6 +205,26 @@ async def coupon_validate(payload: dict, request: Request):
             "free_shipping": free_ship, "description": coupon.get("description")}
 
 
+@router.post("/coupons/options")
+async def coupon_options(payload: dict, request: Request):
+    """Return active coupons with server-evaluated eligibility for this cart."""
+    cust = await optional_customer(request)
+    lines, errors = await build_line_items(payload.get("items", []))
+    subtotal = sum(line.get("line_total", 0) for line in lines)
+    out = []
+    cur = db.coupons.find({"status": "Active"}, {"_id": 0}).sort("code", 1).limit(100)
+    async for row in cur:
+        code = str(row.get("code") or "").strip().upper()
+        if not code:
+            continue
+        coupon, discount, free_ship, err = await validate_coupon(code, subtotal, lines, cust)
+        out.append({"code": code, "description": row.get("description") or ("Free shipping" if row.get("type") == "free_shipping" else "Special offer"),
+                    "type": row.get("type"), "value": row.get("value"), "min_cart": row.get("min_cart", 0),
+                    "eligible": bool(coupon and not errors), "reason": (errors[0].get("error") if errors else err),
+                    "discount": discount if coupon and not errors else 0, "free_shipping": free_ship if coupon and not errors else False})
+    return {"items": out}
+
+
 # ---------------- WISHLIST ----------------
 @router.get("/wishlist")
 async def get_wishlist(cust: dict = Depends(get_current_customer)):
@@ -308,6 +328,21 @@ async def create_order(payload: dict, cust: dict = Depends(get_current_customer)
         raise HTTPException(400, "Unable to place order. Please review your cart.")
 
     method = payload.get("payment_method", "razorpay")
+    if method not in ("cod", "razorpay"):
+        raise HTTPException(400, "Please select a valid payment method.")
+    if method == "cod":
+        settings = await db.settings.find_one({"id": "store"}, {"_id": 0}) or {}
+        restricted = [line.get("name") for line in totals["items"] if line.get("cod_available") is False]
+        if restricted:
+            raise HTTPException(400, "Cash on Delivery is unavailable for: " + ", ".join(restricted))
+        try:
+            cod_fee = max(0, int(round(float(settings.get("cod_fee", 99) or 0))))
+        except (TypeError, ValueError):
+            cod_fee = 99
+        totals["cod_fee"] = cod_fee
+        totals["total"] = max(0, int(totals["total"]) + cod_fee)
+    else:
+        totals["cod_fee"] = 0
     order_number = await _order_number()
     order_id = str(uuid.uuid4())
 
@@ -322,6 +357,16 @@ async def create_order(payload: dict, cust: dict = Depends(get_current_customer)
         prod = await db.products.find_one({"id": line["product_id"]}, {"stock":1,"reserved":1,"status":1,"_id":0})
         if prod and prod.get("status") == "Active" and int(prod.get("stock",0) or 0) - int(prod.get("reserved",0) or 0) <= 0:
             await db.products.update_one({"id": line["product_id"]}, {"$set": {"status": "Out of Stock"}})
+            try:
+                product = await db.products.find_one({"id": line["product_id"]}, {"_id": 0, "name": 1}) or {}
+                event_key = f"out-of-stock:{line['product_id']}:order:{order_number}"
+                await db.notifications.update_one({"event_key": event_key}, {"$setOnInsert": {
+                    "id": str(uuid.uuid4()), "event_key": event_key, "type": "inventory_out_of_stock",
+                    "title": "Product out of stock", "description": f"{product.get('name') or line.get('name') or 'A product'} is now out of stock.",
+                    "product_id": line["product_id"], "link": "/admin/products", "read": False, "at": now_iso()
+                }}, upsert=True)
+            except Exception as exc:
+                print(f"[notifications] out-of-stock event failed: {exc}")
 
     try:
         if method == "cod":
@@ -361,7 +406,7 @@ async def create_order(payload: dict, cust: dict = Depends(get_current_customer)
         "pricing": {
             "subtotal": totals["subtotal"], "discount": totals["discount"],
             "coupon_code": totals["coupon_code"], "shipping": totals["shipping"],
-            "tax": totals["tax"], "savings": totals["savings"], "total": totals["total"],
+            "tax": totals["tax"], "cod_fee": totals.get("cod_fee", 0), "savings": totals["savings"], "total": totals["total"],
             "currency_symbol": totals["currency_symbol"],
         },
         "address": address, "payment_method": method,

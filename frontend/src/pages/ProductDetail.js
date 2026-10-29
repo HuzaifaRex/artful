@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { Heart, Minus, Plus, ChevronDown, Truck, Gift, Star, Check, FileText, X } from "lucide-react";
 import { api, apiError } from "../lib/api";
+import { sanitizeHtml } from "../lib/sanitizeHtml";
 import { useStore } from "../context/StoreContext";
 import ProductCard from "../components/ProductCard";
 import { PageLoader } from "../components/Loader";
@@ -304,11 +305,12 @@ export default function ProductDetail() {
           {p.review_count > 0 && (
             <div className="flex items-center gap-1 mt-3">{[...Array(5)].map((_, i) => <Star key={i} size={15} className={i < Math.round(p.rating) ? "fill-gold text-gold" : "text-line"} />)}<span className="text-xs text-ink-muted ml-2">{p.rating} ({p.review_count})</span></div>
           )}
+          {Number(p.pack_quantity || 1) > 1 && <p className="mt-3 text-sm text-ink-secondary" data-testid="pdp-pack-quantity">Price is per pack of {Number(p.pack_quantity).toLocaleString("en-IN")} {p.quantity_unit || "pieces"}.</p>}
           <div className="mt-5 rounded-2xl border border-plum/15 bg-plum/5 p-4" data-testid="pdp-price-summary">
             {customization?.enabled ? <>
               <div className="flex items-center justify-between gap-3"><span className="text-xs text-ink-muted">Base Price</span><span className="text-sm font-medium text-ink-muted">{inr(p.price)}</span></div>
               <div className="flex items-end justify-between gap-3 mt-1"><div><p className="text-[10px] uppercase tracking-widest2 text-plum/70">Current Price</p><p className="text-3xl text-plum font-semibold" data-testid="pdp-price">{inr(displayPrice)}</p></div><span className="text-xs text-ink-muted">{isOrderTotalPricing ? `for ${qty.toLocaleString("en-IN")} pcs` : "per piece"}</span></div>
-            </> : <div className="flex items-baseline gap-3"><span className="text-2xl text-plum font-medium" data-testid="pdp-price">{inr(displayPrice)}</span>{selectedTier && <span className="text-ink-muted line-through">{inr(p.price)} / pc</span>}{!selectedTier && p.compare_at_price > p.price && <span className="text-ink-muted line-through">{inr(p.compare_at_price)}</span>}<span className="text-xs text-ink-muted">(incl. of taxes)</span></div>}
+            </> : <div className="flex items-baseline gap-3"><span className="text-2xl text-plum font-medium" data-testid="pdp-price">{inr(displayPrice)}</span>{selectedTier && <span className="text-ink-muted line-through">{inr(p.price)} / {Number(p.pack_quantity || 1) > 1 ? "pack" : "pc"}</span>}{!selectedTier && p.compare_at_price > p.price && <span className="text-ink-muted line-through">{inr(p.compare_at_price)}</span>}<span className="text-xs text-ink-muted">(incl. of taxes)</span></div>}
           </div>
           {customization?.enabled && quantityTiers.length > 0 ? (
             <div className="mt-5 rounded-2xl border border-line bg-white p-4 space-y-3" data-testid="custom-quantity-selector">
@@ -322,8 +324,8 @@ export default function ProductDetail() {
           ) : null}
           {!customization?.enabled && bulkTiers.length > 0 && (
             <div className="mt-4 rounded-2xl border border-line bg-surface/70 p-4" data-testid="bulk-pricing">
-              <div className="flex items-center justify-between gap-3 mb-3"><div><p className="text-sm font-semibold text-plum">Bulk ordering</p><p className="text-xs text-ink-muted">Select a pack to unlock the special unit price.</p></div><span className="text-[10px] uppercase tracking-widest2 text-ink-muted">From {p.bulk_order.min_quantity || bulkTiers[0].min_quantity} pcs</span></div>
-              <div className="grid gap-2">{bulkTiers.map((tier) => { const checked = selectedTier?.min_quantity === tier.min_quantity; const unavailable = tier.min_quantity > available; const saving = Math.max(0, (Number(p.price || 0) - tier.price) * tier.min_quantity); return <label key={tier.min_quantity} className={`flex items-center justify-between gap-4 rounded-2xl border px-4 py-3 transition ${checked ? "border-plum bg-plum/5 ring-1 ring-plum" : "border-line bg-white hover:border-plum/50"} ${unavailable ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}><span className="flex items-center gap-3 min-w-0"><input type="radio" name="bulk-tier" checked={checked} disabled={unavailable} onChange={() => selectBulkTier(tier)} className="accent-plum" /><span><span className="block text-sm font-semibold text-ink">{tier.min_quantity} pcs</span><span className="block text-xs text-ink-muted">{unavailable ? "Not enough stock" : `${inr(tier.price)} / piece`}</span></span></span><span className="text-right shrink-0"><span className="block text-sm font-semibold text-plum">{inr(tier.price * tier.min_quantity)}</span>{saving > 0 && !unavailable && <span className="block text-[11px] text-ok">Save {inr(saving)}</span>}</span></label>; })}</div>
+              <div className="flex items-center justify-between gap-3 mb-3"><div><p className="text-sm font-semibold text-plum">Bulk ordering</p><p className="text-xs text-ink-muted">Select a bulk tier; tap it again to switch back to regular ordering.</p></div><span className="text-[10px] uppercase tracking-widest2 text-ink-muted">From {p.bulk_order.min_quantity || bulkTiers[0].min_quantity} {Number(p.pack_quantity || 1) > 1 ? "packs" : "pcs"}</span></div>
+              <div className="grid gap-2">{bulkTiers.map((tier) => { const checked = selectedTier?.min_quantity === tier.min_quantity; const unavailable = tier.min_quantity > available; const saving = Math.max(0, (Number(p.price || 0) - tier.price) * tier.min_quantity); const packs = Math.max(1, Number(p.pack_quantity || 1)); const qtyLabel = packs > 1 ? `${tier.min_quantity} packs · ${tier.min_quantity * packs} ${p.quantity_unit || "pieces"}` : `${tier.min_quantity} pcs`; const unitLabel = packs > 1 ? "pack" : "piece"; return <label key={tier.min_quantity} className={`flex items-center justify-between gap-4 rounded-2xl border px-4 py-3 transition ${checked ? "border-plum bg-plum/5 ring-1 ring-plum" : "border-line bg-white hover:border-plum/50"} ${unavailable ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}><span className="flex items-center gap-3 min-w-0"><input type="checkbox" checked={checked} disabled={unavailable} onChange={(e) => e.target.checked ? selectBulkTier(tier) : (setSelectedBulkTier(null), setQty(1))} className="accent-plum" /><span><span className="block text-sm font-semibold text-ink">{qtyLabel}</span><span className="block text-xs text-ink-muted">{unavailable ? "Not enough stock" : `${inr(tier.price)} / ${unitLabel}`}</span></span></span><span className="text-right shrink-0"><span className="block text-sm font-semibold text-plum">{inr(tier.price * tier.min_quantity)}</span>{saving > 0 && !unavailable && <span className="block text-[11px] text-ok">Save {inr(saving)}</span>}</span></label>; })}</div>
               {selectedTier && <div className="mt-3 flex items-center justify-between rounded-xl bg-white border border-plum/20 px-4 py-3 text-sm"><span className="text-ink-secondary">Selected bulk total</span><b className="text-plum text-lg">{inr(bulkProductTotal)}</b></div>}
             </div>
           )}
@@ -393,7 +395,7 @@ export default function ProductDetail() {
               <button onClick={() => setQty(Math.max(1, qty - 1))} className="p-3 text-plum" data-testid="qty-dec"><Minus size={15} /></button>
               <span className="px-5 text-sm" data-testid="qty-value">{qty}</span>
               <button onClick={() => setQty(Math.min(available, qty + 1))} disabled={qty >= available} className="p-3 text-plum disabled:opacity-30" data-testid="qty-inc"><Plus size={15} /></button>
-            </div> : customization?.enabled ? <div className="rounded-full bg-surface border border-line px-4 py-2.5 text-xs font-medium text-ink-secondary">{qty.toLocaleString("en-IN")} pcs selected</div> : <div className="rounded-xl border border-plum/20 bg-plum/5 px-4 py-3 text-sm text-plum font-medium">Bulk pack quantity: {selectedTier.min_quantity} pcs</div>}
+            </div> : customization?.enabled ? <div className="rounded-full bg-surface border border-line px-4 py-2.5 text-xs font-medium text-ink-secondary">{qty.toLocaleString("en-IN")} pcs selected</div> : <div className="rounded-xl border border-plum/20 bg-plum/5 px-4 py-3 text-sm text-plum font-medium">Bulk quantity: {selectedTier.min_quantity} {Number(p.pack_quantity || 1) > 1 ? `packs (${selectedTier.min_quantity * Number(p.pack_quantity)} ${p.quantity_unit || "pieces"})` : "pcs"}</div>}
             <button onClick={() => toggleWishlist(p.id)} className="p-3 border border-line text-plum hover:border-plum rounded-full" data-testid="wishlist-toggle-button"><Heart size={18} className={saved ? "fill-accent text-accent" : ""} /></button>
           </div>
 
@@ -417,8 +419,12 @@ export default function ProductDetail() {
           </div>
 
           <div className="mt-8">
-            <Accordion title="Description" open><p>{p.description}</p></Accordion>
-            <Accordion title="Materials & Care"><p><b>Material:</b> {p.material || "—"}<br /><b>Color:</b> {p.color || "—"}<br /><b>Dimensions:</b> {p.dimensions || "—"}<br /><b>Care:</b> {p.care}</p></Accordion>
+            <Accordion title="Material and Care" open>
+              <div className="space-y-2 text-sm text-ink-secondary">
+                {Array.isArray(p.material_care) && p.material_care.length > 0 ? p.material_care.filter((row) => row && row.visible !== false).map((row, index) => <div key={row.id || index}><b>{row.label || row.type || `Details ${index + 1}`}:</b> {row.value || row.description || "—"}</div>) : <><p><b>Material:</b> {p.material || "—"}</p><p><b>Color:</b> {p.color || "—"}</p><p><b>Dimensions:</b> {p.dimensions || "—"}</p><p><b>Care:</b> {p.care || "—"}</p></>}
+              </div>
+            </Accordion>
+            <Accordion title="Description"><div className="prose prose-sm max-w-none text-ink-secondary" dangerouslySetInnerHTML={{ __html: sanitizeHtml(p.description || "") }} /></Accordion>
             <Accordion title="Shipping & Returns"><p>{p.shipping_info} Non-personalized items can be returned within 7 days of delivery.</p></Accordion>
           </div>
         </div>

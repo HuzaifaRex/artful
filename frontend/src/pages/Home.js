@@ -8,78 +8,68 @@ import { ProductSkeleton } from "../components/Loader";
 import { getIcon } from "../lib/icons";
 import CategoryMarquee from "../components/CategoryMarquee";
 
-/* ---------------- HERO CAROUSEL (admin-controlled slides + trust badges) ---------------- */
-function TrustBadges({ badges }) {
-  if (!badges?.length) return null;
+/* ---------------- MEDIA-ONLY HERO CAROUSEL (admin controlled) ---------------- */
+function safeDestination(value) {
+  const url = String(value || "").trim();
+  if (!url) return "";
+  if (/^javascript:/i.test(url)) return "";
+  if (url.startsWith("/") || url.startsWith("#")) return url;
+  try { const parsed = new URL(url, window.location.origin); return ["http:", "https:"].includes(parsed.protocol) ? parsed.href : ""; } catch { return ""; }
+}
+
+function MobileCategoryCircles() {
+  const [cats, setCats] = useState([]);
+  useEffect(() => { api.get("/categories").then(({ data }) => setCats(data.items || [])).catch(() => setCats([])); }, []);
+  if (!cats.length) return null;
   return (
-    <div className="mt-10 flex flex-wrap gap-x-6 gap-y-3 animate-fadeUp" style={{ animationDelay: "340ms" }} data-testid="hero-trust-badges">
-      {badges.map((b, i) => {
-        const IconCmp = getIcon(b.icon);
-        return (
-          <div key={i} className="flex items-center gap-2.5 bg-cream/10 backdrop-blur-sm border border-cream/15 rounded-full pl-2.5 pr-4 py-1.5">
-            <span className="w-7 h-7 rounded-full bg-gold/90 text-plum-wine flex items-center justify-center shrink-0"><IconCmp size={15} /></span>
-            <span className="text-xs sm:text-[13px] font-medium text-cream">{b.label}</span>
-          </div>
-        );
-      })}
-    </div>
+    <section className="artful-mobile-categories" aria-label="Shop by category" data-testid="mobile-category-circles">
+      <div className="artful-mobile-category-track hide-scrollbar">
+        {cats.map((c) => <Link key={c.slug} to={`/categories/${c.slug}`} className="artful-mobile-category" data-testid={`mobile-category-${c.slug}`}>
+          <div className="artful-mobile-category-image">{c.image ? <img src={c.image} alt={c.name} loading="lazy" /> : <span className="flex w-full h-full items-center justify-center text-plum text-lg">{String(c.name || "?").slice(0,1)}</span>}</div>
+          <div className="artful-mobile-category-name text-ink-secondary">{c.name}</div>
+        </Link>)}
+      </div>
+    </section>
   );
 }
 
-function HeroCarousel({ section }) {
-  const slides = section.slides?.length ? section.slides : [{
-    heading: section.heading, subheading: section.subheading, image: section.image,
-    eyebrow: "Artisanal · Handcrafted · Gifting", cta_text: section.cta_text, cta_link: section.cta_link,
-    cta_secondary_text: section.cta_secondary_text, cta_secondary_link: section.cta_secondary_link, badges: [],
-  }];
-  const [emblaRef, embla] = useEmblaCarousel({ loop: true, duration: 30 });
+function HeroCarousel({ section, banners = [] }) {
+  const cmsSlides = section?.slides?.length ? section.slides : (section ? [{ ...section }] : []);
+  const activeBanners = banners.filter((b) => String(b.status || "Active").toLowerCase() === "active");
+  const source = activeBanners.length ? activeBanners : cmsSlides;
+  const slides = source.map((s, idx) => {
+    const mediaType = String(s.media_type || (s.video || s.video_url ? "video" : "image")).toLowerCase() === "video" ? "video" : "image";
+    const media = mediaType === "video" ? (s.video_url || s.video || s.media_url || "") : (s.image || s.media_url || "");
+    return { id: s.id || idx, mediaType, media, destination: safeDestination(s.destination_url || s.url || s.cta_link) };
+  }).filter((s) => !!s.media);
+  const [emblaRef, embla] = useEmblaCarousel({ loop: slides.length > 1, duration: 30 });
   const [selected, setSelected] = useState(0);
-
   useEffect(() => {
-    if (!embla) return;
+    if (!embla || slides.length < 2) return;
     const onSelect = () => setSelected(embla.selectedScrollSnap());
     embla.on("select", onSelect); onSelect();
     const timer = setInterval(() => embla.scrollNext(), 6000);
     return () => { clearInterval(timer); embla.off("select", onSelect); };
-  }, [embla]);
+  }, [embla, slides.length]);
 
+  if (!slides.length) return null;
   return (
-    <section className="relative bg-plum-wine text-cream overflow-hidden" data-testid="hero-section">
-      <div className="overflow-hidden" ref={emblaRef}>
-        <div className="flex">
-          {slides.map((s, idx) => (
-            <div key={s.id || idx} className="relative flex-[0_0_100%] min-w-0">
-              <div className="grid lg:grid-cols-2 min-h-[78vh] lg:min-h-[86vh]">
-                <div className="flex flex-col justify-center px-6 sm:px-12 lg:px-20 py-16 order-2 lg:order-1">
-                  {s.eyebrow && <p className="label-caption !text-gold-soft mb-6 animate-fadeUp">{s.eyebrow}</p>}
-                  <h1 className="font-serif text-4xl sm:text-5xl lg:text-6xl xl:text-7xl font-light leading-[1.05] tracking-tight animate-fadeUp" style={{ animationDelay: "80ms" }}>{s.heading}</h1>
-                  <p className="mt-6 text-cream/75 text-base sm:text-lg max-w-md leading-relaxed animate-fadeUp" style={{ animationDelay: "160ms" }}>{s.subheading}</p>
-                  <div className="mt-10 flex flex-wrap gap-4 animate-fadeUp" style={{ animationDelay: "240ms" }}>
-                    <Link to={s.cta_link || "/shop"} className="bg-gold text-plum-wine text-xs font-medium uppercase tracking-widest2 px-9 py-4 hover:bg-gold-soft transition-colors" data-testid={`hero-primary-cta-${idx}`}>{s.cta_text || "Shop Now"}</Link>
-                    {s.cta_secondary_text && <Link to={s.cta_secondary_link || "/collections"} className="border border-cream/40 text-cream text-xs font-medium uppercase tracking-widest2 px-9 py-4 hover:bg-cream hover:text-plum-wine transition-colors" data-testid={`hero-secondary-cta-${idx}`}>{s.cta_secondary_text}</Link>}
-                  </div>
-                  <TrustBadges badges={s.badges} />
-                </div>
-                <div className="relative order-1 lg:order-2 min-h-[42vh] lg:min-h-full">
-                  <img src={s.image} alt={s.heading} className="absolute inset-0 w-full h-full object-cover" />
-                </div>
-              </div>
-            </div>
-          ))}
+    <section className="bg-surface" data-testid="hero-section">
+      <div className="artful-hero-media-wrap">
+        <div className="overflow-hidden rounded-[15px]" ref={emblaRef}>
+          <div className="flex">
+            {slides.map((slide, idx) => {
+              const media = slide.mediaType === "video"
+                ? <video src={slide.media} muted autoPlay loop playsInline preload="metadata" className="artful-hero-media" data-testid={`hero-video-${idx}`} />
+                : <img src={slide.media} alt="ARTFUL home banner" loading={idx === 0 ? "eager" : "lazy"} className="artful-hero-media" data-testid={`hero-image-${idx}`} />;
+              return <div key={slide.id || idx} className="min-w-0 flex-[0_0_100%]">
+                {slide.destination ? <a href={slide.destination} className="block" aria-label="Open banner destination">{media}</a> : media}
+              </div>;
+            })}
+          </div>
         </div>
       </div>
-
-      {slides.length > 1 && (
-        <>
-          <button onClick={() => embla && embla.scrollPrev()} className="hidden sm:flex absolute left-4 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-cream/15 backdrop-blur hover:bg-gold hover:text-plum-wine text-cream items-center justify-center transition-colors z-10" data-testid="hero-prev" aria-label="Previous"><ChevronLeft size={20} /></button>
-          <button onClick={() => embla && embla.scrollNext()} className="hidden sm:flex absolute right-4 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-cream/15 backdrop-blur hover:bg-gold hover:text-plum-wine text-cream items-center justify-center transition-colors z-10" data-testid="hero-next" aria-label="Next"><ChevronRight size={20} /></button>
-          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex gap-2.5 z-10" data-testid="hero-dots">
-            {slides.map((_, i) => (
-              <button key={i} onClick={() => embla && embla.scrollTo(i)} className={`h-2 rounded-full transition-all duration-300 ${selected === i ? "w-8 bg-gold" : "w-2 bg-cream/40 hover:bg-cream/70"}`} aria-label={`Slide ${i + 1}`} />
-            ))}
-          </div>
-        </>
-      )}
+      {slides.length > 1 && <div className="flex items-center justify-center gap-2 py-2" data-testid="hero-dots">{slides.map((slide, i) => <button key={slide.id || i} onClick={() => embla?.scrollTo(i)} aria-label={`Go to banner ${i + 1}`} className={`h-1.5 rounded-full transition-all ${selected === i ? "w-7 bg-plum" : "w-2 bg-plum/30"}`} />)}</div>}
     </section>
   );
 }
@@ -99,7 +89,7 @@ function ProductRail({ heading, subheading, collectionSlug }) {
         </div>
         <Link to={`/collections/${collectionSlug}`} className="btn-ghost !px-0 hidden sm:flex">View All <ArrowRight size={15} /></Link>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-4 sm:gap-x-5 gap-y-6 sm:gap-y-10">
+      <div className="artful-product-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-4 sm:gap-x-5 gap-y-6 sm:gap-y-10">
         {!items ? [0, 1, 2, 3].map((i) => <ProductSkeleton key={i} />)
           : items.slice(0, 4).map((p, i) => <ProductCard key={p.id} product={p} index={i} />)}
       </div>
@@ -190,19 +180,14 @@ function OccasionSection({ s }) {
 }
 
 function BannerSection({ s }) {
-  return (
-    <section className="container-artful py-16 lg:py-20">
-      <div className="relative overflow-hidden min-h-[380px] flex items-center hover-zoom" data-testid="featured-collection-banner">
-        <img src={s.image} alt={s.heading} className="absolute inset-0 w-full h-full object-cover" />
-        <div className="absolute inset-0 bg-plum-wine/55" />
-        <div className="relative px-8 sm:px-16 py-16 max-w-xl text-cream">
-          <h2 className="font-serif text-3xl sm:text-4xl lg:text-5xl font-light leading-tight">{s.heading}</h2>
-          <p className="mt-4 text-cream/80">{s.subheading}</p>
-          <Link to={s.cta_link || "/shop"} className="inline-flex mt-8 bg-gold text-plum-wine text-xs font-medium uppercase tracking-widest2 px-8 py-4 hover:bg-gold-soft transition-colors">{s.cta_text}</Link>
-        </div>
-      </div>
-    </section>
-  );
+  const mediaType = String(s.media_type || (s.video || s.video_url ? "video" : "image")).toLowerCase();
+  const src = mediaType === "video" ? (s.video_url || s.video) : s.image;
+  const href = safeDestination(s.destination_url || s.url || s.cta_link);
+  if (!src) return null;
+  const media = mediaType === "video"
+    ? <video src={src} muted autoPlay loop playsInline className="artful-hero-media" />
+    : <img src={src} alt="ARTFUL featured banner" loading="lazy" className="artful-hero-media" />;
+  return <section className="container-artful py-5 lg:py-8" data-testid="featured-collection-banner"><div className="artful-hero-media-wrap rounded-[15px] overflow-hidden">{href ? <a href={href} className="block">{media}</a> : media}</div></section>;
 }
 
 function StorySection({ s }) {
@@ -234,7 +219,7 @@ function ValuesSection({ s }) {
           {s.subheading && <p className="text-cream/70 mt-4">{s.subheading}</p>}
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5 lg:gap-6">
-          {(s.items || []).map((v, i) => {
+          {(s.items || []).slice().sort((a, b) => Number(a.order || 0) - Number(b.order || 0)).filter((v) => v.visible !== false).map((v, i) => {
             const IconCmp = getIcon(v.icon);
             return (
               <div key={i} className="group relative bg-cream/[0.06] hover:bg-cream/[0.1] border border-cream/10 rounded-2xl p-7 transition-all duration-300 hover:-translate-y-1.5 animate-fadeUp" style={{ animationDelay: `${i * 80}ms` }} data-testid={`value-card-${i}`}>
@@ -260,7 +245,7 @@ function PromiseSection({ s }) {
         {s.subheading && <p className="text-ink-secondary mt-3">{s.subheading}</p>}
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
-        {(s.items || []).map((it, i) => {
+        {(s.items || []).slice().sort((a, b) => Number(a.order || 0) - Number(b.order || 0)).filter((it) => it.visible !== false).map((it, i) => {
           const IconCmp = getIcon(it.icon);
           return (
             <div key={i} className="flex items-start gap-4 p-6 rounded-2xl border border-line bg-surface hover:border-plum transition-colors animate-fadeUp" style={{ animationDelay: `${i * 70}ms` }} data-testid={`promise-card-${i}`}>
@@ -283,7 +268,8 @@ export default function Home() {
 
   return (
     <div>
-      {heroSection && <HeroCarousel section={heroSection} />}
+      <MobileCategoryCircles />
+      {heroSection && <HeroCarousel section={heroSection} banners={data.banners || []} />}
       <CategoryMarquee />
       {data.sections.map((s) => {
         switch (s.type) {

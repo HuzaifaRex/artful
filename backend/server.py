@@ -1,5 +1,6 @@
 import os
 import uuid
+import asyncio
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 
@@ -16,6 +17,7 @@ import routers_shop
 import routers_admin
 import invoice
 import chatbot
+import notification_jobs
 
 app = FastAPI(title="ARTFUL API")
 
@@ -53,8 +55,12 @@ async def seed_admin():
         await db.admin_users.update_one({"email": email}, {"$set": {"password_hash": hash_password(password)}})
 
 
+_dispatch_monitor_task = None
+
 @app.on_event("startup")
 async def startup():
+    global _dispatch_monitor_task
+    await db.notifications.create_index("event_key", unique=True, sparse=True)
     await db.products.create_index("slug", unique=True)
     await db.products.create_index("category_slug")
     await db.products.create_index([("name", "text"), ("tags", "text")])
@@ -77,3 +83,16 @@ async def startup():
         storage.init_storage()
     except Exception as e:
         print(f"[storage] init deferred: {e}")
+    if _dispatch_monitor_task is None or _dispatch_monitor_task.done():
+        _dispatch_monitor_task = asyncio.create_task(notification_jobs.dispatch_delay_monitor())
+
+
+@app.on_event("shutdown")
+async def shutdown():
+    global _dispatch_monitor_task
+    if _dispatch_monitor_task and not _dispatch_monitor_task.done():
+        _dispatch_monitor_task.cancel()
+        try:
+            await _dispatch_monitor_task
+        except asyncio.CancelledError:
+            pass

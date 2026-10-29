@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Routes, Route, Link, useLocation, useNavigate, useParams } from "react-router-dom";
-import { User, Package, MapPin, Heart, LogOut, Plus, Trash2, Check, X, AlertTriangle } from "lucide-react";
+import { User, Package, MapPin, Heart, LogOut, Plus, Trash2, Check, X, AlertTriangle, Ticket } from "lucide-react";
 import { api, apiError } from "../lib/api";
 import { useStore } from "../context/StoreContext";
 import ProductCard from "../components/ProductCard";
@@ -13,6 +13,7 @@ const NAV = [
   ["/account/orders", "Orders", Package],
   ["/account/addresses", "Addresses", MapPin],
   ["/account/wishlist", "Wishlist", Heart],
+  ["/account/tickets", "Business Tickets", Ticket],
 ];
 
 function Profile() {
@@ -272,6 +273,23 @@ function Addresses() {
   );
 }
 
+function BusinessTickets() {
+  const [items, setItems] = useState(null);
+  const load = () => api.get("/corporate-inquiries/me").then(({ data }) => setItems(data.items || [])).catch(() => setItems([]));
+  useEffect(() => { load(); }, []);
+  if (items === null) return <p className="text-ink-muted">Loading business inquiries…</p>;
+  return <div>
+    <h2 className="font-serif text-2xl text-plum mb-2">Business & Bulk Orders Tickets</h2>
+    <p className="text-sm text-ink-secondary mb-6">Track the status of your business and bulk-order enquiries.</p>
+    {items.length === 0 ? <p className="text-ink-secondary">No business inquiries are linked to this account yet.</p> : <div className="space-y-3">{items.map((item) => <article key={item.id} className="border border-line rounded-xl p-4 sm:p-5 bg-white">
+      <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-semibold text-ink">{item.company_name || "Business inquiry"}</p><p className="text-xs text-ink-muted mt-1">Reference: {item.id}</p><p className="text-xs text-ink-muted">Submitted: {item.created_at ? new Date(item.created_at).toLocaleString("en-IN") : "—"}</p></div><span className={`rounded-full px-3 py-1 text-xs font-medium ${item.status === "Accepted" ? "bg-emerald-50 text-emerald-700" : item.status === "Rejected" ? "bg-red-50 text-red-700" : item.status === "In Discussion" ? "bg-sky-50 text-sky-700" : "bg-amber-50 text-amber-700"}`}>{item.status || "Pending"}</span></div>
+      <div className="grid sm:grid-cols-2 gap-x-4 gap-y-2 mt-4 text-sm"><p><span className="text-ink-muted">Contact:</span> {item.contact_person || "—"}</p><p><span className="text-ink-muted">Mobile:</span> {item.mobile || "—"}</p><p><span className="text-ink-muted">Email:</span> {item.email || "—"}</p><p><span className="text-ink-muted">Quantity:</span> {item.quantity || "—"}</p><p><span className="text-ink-muted">Budget:</span> {item.budget || "—"}</p><p><span className="text-ink-muted">Requirement:</span> {item.requirement || "—"}</p></div>
+      {item.message && <p className="text-sm text-ink-secondary mt-3 whitespace-pre-wrap">{item.message}</p>}
+      {item.updated_at && item.updated_at !== item.created_at && <p className="text-xs text-ink-muted mt-3">Last updated: {new Date(item.updated_at).toLocaleString("en-IN")}</p>}
+    </article>)}</div>}
+  </div>;
+}
+
 function Wishlist() {
   const [items, setItems] = useState(null);
   const { wishlist } = useStore();
@@ -297,7 +315,7 @@ export default function Account() {
       <div className="container-artful py-24 text-center">
         <User size={44} className="mx-auto text-ink-muted mb-5" strokeWidth={1} />
         <h1 className="section-title mb-3">Sign in to your account</h1>
-        <p className="text-ink-secondary mb-8">Access your orders, addresses and wishlist.</p>
+        <p className="text-ink-secondary mb-8">Access your orders, addresses, wishlist and business inquiry tickets.</p>
         <button onClick={() => setAuthOpen(true)} className="btn-primary" data-testid="account-signin-btn">Sign In</button>
       </div>
     );
@@ -327,6 +345,7 @@ export default function Account() {
             <Route path="orders/:num" element={<OrderDetail />} />
             <Route path="addresses" element={<Addresses />} />
             <Route path="wishlist" element={<Wishlist />} />
+            <Route path="tickets" element={<BusinessTickets />} />
           </Routes>
         </div>
       </div>

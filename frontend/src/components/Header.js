@@ -1,16 +1,16 @@
 import React, { useState, useEffect } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { Search, User, Heart, ShoppingBag, Menu, X, Sun, Moon } from "lucide-react";
+import { Link, useNavigate, useLocation } from "react-router-dom";
+import { Search, User, Heart, ShoppingBag, Menu, X, Sun, Moon, Home as HomeIcon, Store, Info } from "lucide-react";
 import { useStore } from "../context/StoreContext";
 import { useTheme } from "../context/ThemeContext";
 
 const NAV = [
   { label: "Shop", to: "/shop" },
   { label: "Collections", to: "/collections" },
-  { label: "Gifts", to: "/collections/festive-gifts" },
+  { label: "Games and Gifts", to: "/collections/festive-gifts", key: "gifts" },
   { label: "New Arrivals", to: "/collections/new-arrivals" },
   { label: "Bestsellers", to: "/collections/bestsellers" },
-  { label: "Corporate Gifting", to: "/corporate-gifting" },
+  { label: "Business and Bulk Orders", to: "/corporate-gifting", key: "corporate_gifting" },
   { label: "About", to: "/about" },
 ];
 
@@ -37,6 +37,11 @@ export default function Header() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
+  const configuredNav = Array.isArray(settings?.navigation_menu) && settings.navigation_menu.length ? settings.navigation_menu : null;
+  const navItems = configuredNav
+    ? configuredNav.filter((item) => String(item.label || "").trim() && String(item.to || "").startsWith("/")).map((item) => ({ ...item, label: item.label.trim(), to: item.to.trim() }))
+    : NAV;
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20);
@@ -68,7 +73,7 @@ export default function Header() {
             </Link>
 
             <nav className="hidden lg:flex items-center gap-7 xl:gap-9">
-              {NAV.map((n) => (
+              {navItems.map((n) => (
                 <Link key={n.to} to={n.to} className="text-[12px] font-medium uppercase tracking-widest text-ink-secondary hover:text-plum transition-colors link-underline" data-testid={`nav-${n.label.toLowerCase().replace(/\s/g, "-")}`}>
                   {n.label}
                 </Link>
@@ -106,7 +111,7 @@ export default function Header() {
               <button onClick={() => setMenuOpen(false)} className="p-2 text-plum" data-testid="mobile-menu-close"><X size={22} /></button>
             </div>
             <nav className="flex flex-col gap-1">
-              {NAV.map((n) => (
+              {navItems.map((n) => (
                 <Link key={n.to} to={n.to} onClick={() => setMenuOpen(false)} className="py-3 border-b border-line-subtle text-sm uppercase tracking-widest text-ink-secondary">
                   {n.label}
                 </Link>
@@ -119,6 +124,17 @@ export default function Header() {
           </div>
         </div>
       )}
+      <nav className="artful-mobile-bottom-nav lg:hidden fixed bottom-0 inset-x-0 z-40 grid grid-cols-4 border-t border-line bg-cream/95 backdrop-blur-lg shadow-[0_-8px_24px_rgba(30,20,25,0.08)]" aria-label="Mobile navigation">
+        {[
+          { label: "Home", to: "/", Icon: HomeIcon },
+          { label: "Shop", to: "/shop", Icon: Store },
+          { label: "About", to: "/about", Icon: Info },
+        ].map(({ label, to, Icon }) => {
+          const active = to === "/" ? location.pathname === "/" : location.pathname === to || location.pathname.startsWith(`${to}/`);
+          return <Link key={label} to={to} className={`flex min-h-[60px] flex-col items-center justify-center gap-1 text-[10px] font-medium transition-colors ${active ? "text-plum" : "text-ink-muted"}`} aria-current={active ? "page" : undefined}><Icon size={19} strokeWidth={active ? 2.3 : 1.8} /><span>{label}</span></Link>;
+        })}
+        <button type="button" onClick={accountClick} className={`flex min-h-[60px] flex-col items-center justify-center gap-1 text-[10px] font-medium transition-colors ${location.pathname.startsWith("/account") ? "text-plum" : "text-ink-muted"}`} aria-current={location.pathname.startsWith("/account") ? "page" : undefined}><User size={19} strokeWidth={location.pathname.startsWith("/account") ? 2.3 : 1.8} /><span>My Profile</span></button>
+      </nav>
     </header>
   );
 }

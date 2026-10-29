@@ -1,9 +1,9 @@
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request, Depends
 from fastapi.responses import Response
-from typing import Optional
+from typing import Optional, List
 from db import db, clean
 from search_engine import SearchEngine, normalize
-from security import now_iso
+from security import now_iso, optional_customer, get_current_customer
 
 router = APIRouter()
 
@@ -60,6 +60,7 @@ async def list_products(
     q: Optional[str] = None, occasion: Optional[str] = None, recipient: Optional[str] = None,
     material: Optional[str] = None, color: Optional[str] = None, badge: Optional[str] = None,
     section: Optional[str] = None,
+    filter: Optional[List[str]] = Query(None),
     min_price: Optional[int] = None, max_price: Optional[int] = None,
     in_stock: Optional[bool] = None, on_sale: Optional[bool] = None,
     sort: str = "featured", page: int = 1, page_size: int = 12,
@@ -79,6 +80,19 @@ async def list_products(
         query["color"] = {"$regex": color, "$options": "i"}
     if badge:
         query["badges"] = badge
+    if filter:
+        grouped_filter_values = {}
+        for token in filter:
+            if not isinstance(token, str) or ":" not in token:
+                continue
+            fid, value = token.split(":", 1)
+            if fid and value:
+                grouped_filter_values.setdefault(fid, set()).add(value)
+        # OR values belonging to the same filter; AND across different filters.
+        for fid, values in grouped_filter_values.items():
+            query.setdefault("$and", []).append({"filter_values": {"$elemMatch": {
+                "filter_id": fid, "values": {"$in": sorted(values)}
+            }}})
     if min_price is not None or max_price is not None:
         pr = {}
         if min_price is not None:
@@ -152,6 +166,12 @@ async def related(slug: str):
 
 
 # ---------- Categories & Collections ----------
+@router.get("/filters")
+async def public_product_filters():
+    cur = db.product_filters.find({"status": "Active"}, {"_id": 0}).sort("order", 1)
+    return {"items": [clean(row) async for row in cur]}
+
+
 @router.get("/categories")
 async def categories():
     cur = db.categories.find({"status": "Active"}, {"_id": 0}).sort("order", 1)
@@ -389,18 +409,31 @@ async def product_reviews(slug: str):
 
 
 @router.post("/corporate-inquiries")
-async def corporate_inquiry(payload: dict):
+async def corporate_inquiry(payload: dict, customer: dict = Depends(optional_customer)):
     import uuid
     required = ["company_name", "contact_person", "mobile"]
-    if not all(payload.get(k) for k in required):
+    if not all(str(payload.get(k) or "").strip() for k in required):
         raise HTTPException(400, "Please provide company name, contact person and mobile.")
-    doc = {"id": str(uuid.uuid4()), "company_name": payload.get("company_name"),
-           "contact_person": payload.get("contact_person"), "mobile": payload.get("mobile"),
+    now = now_iso()
+    doc = {"id": str(uuid.uuid4()), "company_name": str(payload.get("company_name") or "").strip(),
+           "contact_person": str(payload.get("contact_person") or "").strip(), "mobile": str(payload.get("mobile") or "").strip(),
            "email": payload.get("email"), "quantity": payload.get("quantity"),
            "budget": payload.get("budget"), "requirement": payload.get("requirement"),
-           "message": payload.get("message"), "status": "New", "created_at": now_iso()}
+           "message": payload.get("message"), "status": "Pending", "status_history": [{"status": "Pending", "at": now}],
+           "created_at": now, "updated_at": now, "customer_id": customer.get("id") if customer else None,
+           "customer_email": customer.get("email") if customer else None}
     await db.corporate_inquiries.insert_one(doc)
-    return {"ok": True, "message": "Thank you. Our team will be in touch shortly."}
+    await db.notifications.update_one({"event_key": f"inquiry:{doc['id']}"}, {"$setOnInsert": {
+        "id": str(uuid.uuid4()), "event_key": f"inquiry:{doc['id']}", "type": "corporate_inquiry",
+        "title": "New Business and Bulk Orders inquiry", "description": f"{doc['company_name']} submitted a business inquiry.",
+        "inquiry_id": doc["id"], "link": "/admin/corporate", "read": False, "at": now}}, upsert=True)
+    return {"ok": True, "message": "Thank you. Our team will be in touch shortly.", "id": doc["id"], "status": doc["status"]}
+
+
+@router.get("/corporate-inquiries/me")
+async def my_corporate_inquiries(customer: dict = Depends(get_current_customer)):
+    cur = db.corporate_inquiries.find({"customer_id": customer["id"]}, {"_id": 0}).sort("created_at", -1)
+    return {"items": [clean(item) async for item in cur]}
 
 
 

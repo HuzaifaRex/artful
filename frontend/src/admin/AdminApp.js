@@ -3,7 +3,7 @@ import { Routes, Route, NavLink, useNavigate, Navigate } from "react-router-dom"
 import {
   LayoutDashboard, Package, FolderTree, Layers, Boxes, Star, ShoppingCart, Users,
   Ticket, Search as SearchIcon, FileText, Image, Briefcase, Settings as SettingsIcon,
-  ScrollText, LogOut, Menu, X, ShieldCheck, CreditCard, Mail, MessageSquare, Eye, Globe, Bell,
+  ScrollText, LogOut, Menu, X, ShieldCheck, CreditCard, Mail, MessageSquare, Eye, Globe, Bell, SlidersHorizontal,
 } from "lucide-react";
 import { adminApi } from "../lib/api";
 import Dashboard from "./Dashboard";
@@ -16,15 +16,16 @@ import { Coupons } from "./Marketing";
 import Campaigns from "./Campaigns";
 import Refunds from "./Refunds";
 import SearchAdmin from "./SearchAdmin";
-import { HomepageCMS, Pages, FAQs } from "./Content";
+import { HomepageCMS, Pages, FAQs, Filters } from "./Content";
 import { Settings, AdminUsers, AuditLogs, Corporate } from "./Settings";
 import Transactions from "./Transactions";
 import SitePages from "./SitePages";
 import { Newsletter, Support, Visitors } from "./Leads";
+import Notifications from "./Notifications";
 
 const NAV = [
   { section: null, items: [["", "Dashboard", LayoutDashboard]] },
-  { section: "Catalog", items: [["products", "Products", Package], ["categories", "Categories", FolderTree], ["collections", "Collections", Layers], ["inventory", "Inventory", Boxes], ["reviews", "Reviews", Star]] },
+  { section: "Catalog", items: [["products", "Products", Package], ["categories", "Categories", FolderTree], ["collections", "Collections", Layers], ["filters", "Product Filters", SlidersHorizontal], ["inventory", "Inventory", Boxes], ["reviews", "Reviews", Star]] },
   { section: "Sales", items: [["orders", "Orders", ShoppingCart], ["transactions", "Payments", CreditCard], ["refunds", "Refunds", Ticket], ["customers", "Customers", Users]] },
   { section: "Leads", items: [["visitors", "Visitors", Eye], ["newsletter", "Newsletter", Mail], ["support", "Support Inbox", MessageSquare]] },
   { section: "Marketing", items: [["coupons", "Coupons & Discounts", Ticket], ["campaigns", "Campaigns", Image], ["search", "Search Rules", SearchIcon]] },
@@ -99,7 +100,7 @@ export default function AdminApp() {
           <button onClick={logout}><LogOut size={18} /></button>
         </header>
         <div className="hidden lg:flex items-center justify-end gap-4 px-8 py-3 bg-white border-b border-gray-200 sticky top-0 z-20">
-          <NavLink to="/admin" className="relative text-gray-500 hover:text-plum" data-testid="admin-notification-bell" title="Notifications">
+          <NavLink to="/admin/notifications" className="relative text-gray-500 hover:text-plum" data-testid="admin-notification-bell" title="Notifications">
             <Bell size={19} />
             {unread > 0 && <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[10px] min-w-[16px] h-4 px-1 rounded-full flex items-center justify-center">{unread}</span>}
           </NavLink>
@@ -111,9 +112,11 @@ export default function AdminApp() {
             <Route path="products" element={<Products />} />
             <Route path="categories" element={<Categories />} />
             <Route path="collections" element={<Collections />} />
+            <Route path="filters" element={<Filters />} />
             <Route path="inventory" element={<Inventory />} />
             <Route path="reviews" element={<Reviews />} />
             <Route path="pnl" element={<Pnl />} />
+            <Route path="notifications" element={<Notifications />} />
             <Route path="orders" element={<Orders />} />
             <Route path="transactions" element={<Transactions />} />
             <Route path="refunds" element={<Refunds />} />

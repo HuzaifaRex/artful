@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { inr } from "../lib/utils";
 import { StatusChip, Modal, Field, inputCls, PageHead, Empty } from "./ui";
 import { ImageUpload, MultiImageUpload, VideoUpload } from "./ImageUpload";
+import { RichEditor } from "./RichEditor";
 import { DataTable, KpiCards } from "./DataTable";
 import CustomProductForm from "./CustomProductForm";
 
@@ -154,6 +155,7 @@ function ProductForm({ product, cats, onClose, onSaved }) {
   const [f, setF] = useState({
     name: "", price: "", cost_price: "", mrp: "", compare_at_price: "", stock: 0, low_stock_threshold: 5, sku: "",
     category_slug: cats[0]?.slug || "", short_description: "", description: "", material: "", color: "",
+    pack_quantity: 1, quantity_unit: "pieces", cod_available: true, shipping_charge: "", material_care: [],
     status: "Draft", badges: [], tags: [], images: [], occasion: [], recipient: [],
     personalization: { enabled: false, char_limit: 30 },
     bulk_order: { enabled: false, min_quantity: 10, tiers: [] },
@@ -163,6 +165,8 @@ function ProductForm({ product, cats, onClose, onSaved }) {
   });
   const [tab, setTab] = useState("basic");
   const [saving, setSaving] = useState(false);
+  const [filterDefinitions, setFilterDefinitions] = useState([]);
+  useEffect(() => { adminApi.get("/product-filters").then(({ data }) => setFilterDefinitions((data.items || []).filter((x) => x.status === "Active" && (!(x.category_slugs || []).length || (x.category_slugs || []).includes(f.category_slug))))).catch(() => setFilterDefinitions([])); }, [f.category_slug]);
 
   useEffect(() => {
     setF((prev) => ({
@@ -176,6 +180,10 @@ function ProductForm({ product, cats, onClose, onSaved }) {
         size: { ...defaultCustomization.size, ...(prev.customization?.size || {}) },
       },
       bulk_order: prev.bulk_order || { enabled: false, min_quantity: 10, tiers: [] },
+      pack_quantity: Math.max(1, Number(prev.pack_quantity || 1)),
+      quantity_unit: prev.quantity_unit || "pieces",
+      cod_available: prev.cod_available !== false,
+      material_care: Array.isArray(prev.material_care) ? prev.material_care : [],
     }));
   }, []);
 
@@ -266,6 +274,12 @@ function ProductForm({ product, cats, onClose, onSaved }) {
       mrp: f.mrp ? Number(f.mrp) : (f.compare_at_price ? Number(f.compare_at_price) : null),
       compare_at_price: f.mrp ? Number(f.mrp) : (f.compare_at_price ? Number(f.compare_at_price) : null),
       stock: Number(f.stock), low_stock_threshold: Number(f.low_stock_threshold),
+      pack_quantity: Math.max(1, Number(f.pack_quantity || 1)),
+      quantity_unit: String(f.quantity_unit || "pieces").trim() || "pieces",
+      cod_available: f.cod_available !== false,
+      shipping_charge: f.shipping_charge === "" || f.shipping_charge == null ? null : Math.max(0, Number(f.shipping_charge || 0)),
+      material_care: (Array.isArray(f.material_care) ? f.material_care : []).map((item) => ({ ...item, label: String(item.label || "").trim(), value: String(item.value || "").trim() })).filter((item) => item.label && item.value),
+      filter_values: Array.isArray(f.filter_values) ? f.filter_values.filter((x) => x && x.filter_id && Array.isArray(x.values) && x.values.length) : [],
       bulk_order: bulk,
       customization: f.product_type === "customizable" ? {
         ...custom, enabled: true,
@@ -308,7 +322,23 @@ function ProductForm({ product, cats, onClose, onSaved }) {
         <Field label="Material"><input value={f.material || ""} onChange={(e) => set("material", e.target.value)} className={inputCls} /></Field>
         <Field label="Color"><input value={f.color || ""} onChange={(e) => set("color", e.target.value)} className={inputCls} /></Field>
         <div className="sm:col-span-2"><Field label="Short description"><input value={f.short_description || ""} onChange={(e) => set("short_description", e.target.value)} className={inputCls} /></Field></div>
-        <div className="sm:col-span-2"><Field label="Description"><textarea rows={3} value={f.description || ""} onChange={(e) => set("description", e.target.value)} className={inputCls} /></Field></div>
+        <div className="sm:col-span-2"><Field label="Description"><RichEditor value={f.description || ""} onChange={(value) => set("description", value)} testid="product-description-editor" /></Field></div>
+        <div className="sm:col-span-2 rounded-lg border border-gray-200 p-4 space-y-4">
+          <h4 className="font-semibold text-gray-800 text-sm">Pack Quantity & Fulfilment</h4>
+          <p className="text-xs text-gray-500">Price entered above is the price for one selling unit. Set pack quantity to 50 to sell that price per pack of 50 pieces. Existing products default to 1.</p>
+          <div className="grid sm:grid-cols-2 gap-4">
+            <Field label="Pieces / units included in one pack"><input type="number" min="1" value={f.pack_quantity ?? 1} onChange={(e) => set("pack_quantity", Math.max(1, Number(e.target.value || 1)))} className={inputCls} /></Field>
+            <Field label="Quantity unit"><select value={f.quantity_unit || "pieces"} onChange={(e) => set("quantity_unit", e.target.value)} className={inputCls}>{["pieces", "packs", "sets", "units", "pairs", "boxes"].map((unit) => <option key={unit} value={unit}>{unit}</option>)}</select></Field>
+            <Field label="Shipping charge per selling unit (₹; blank = legacy store rule)"><input type="number" min="0" value={f.shipping_charge ?? ""} onChange={(e) => set("shipping_charge", e.target.value)} className={inputCls} placeholder="Use store fallback" /></Field>
+            <div className="flex items-end pb-2"><label className="flex gap-2 text-sm text-gray-700 items-center"><input type="checkbox" checked={f.cod_available !== false} onChange={(e) => set("cod_available", e.target.checked)} className="accent-plum" /> Cash on Delivery available</label></div>
+          </div>
+        </div>
+        {filterDefinitions.length > 0 && <div className="sm:col-span-2 rounded-lg border border-gray-200 p-4 space-y-3"><h4 className="font-semibold text-gray-800 text-sm">Product Filter Values</h4><p className="text-xs text-gray-500">Choose the structured filter values customers can use to find this product.</p>{filterDefinitions.map((filter) => { const current = (f.filter_values || []).find((item) => item.filter_id === filter.id); const selected = current?.values || []; const setSelected = (value, checked) => { const next = [...(f.filter_values || [])].filter((item) => item.filter_id !== filter.id); const values = filter.type === "single" ? (checked ? [value] : []) : (checked ? [...selected, value] : selected.filter((x) => x !== value)); if (values.length) next.push({ filter_id: filter.id, filter_name: filter.name, values }); set("filter_values", next); }; return <div key={filter.id} className="border-b border-gray-100 pb-3 last:border-0"><p className="text-sm font-medium text-gray-700 mb-2">{filter.name}</p><div className="flex flex-wrap gap-2">{(filter.values || []).map((value) => <label key={value} className="flex items-center gap-2 text-xs border rounded-full px-3 py-1.5"><input type={filter.type === "single" ? "radio" : "checkbox"} name={`filter-${filter.id}`} checked={selected.includes(value)} onChange={(e) => setSelected(value, e.target.checked)} className="accent-plum"/>{value}</label>)}</div></div>; })}</div>}
+        <div className="sm:col-span-2 rounded-lg border border-gray-200 p-4 space-y-3">
+          <div className="flex items-center justify-between gap-3"><div><h4 className="font-semibold text-gray-800 text-sm">Material and Care entries</h4><p className="text-xs text-gray-500">These appear above Description on the product page.</p></div><button type="button" onClick={() => set("material_care", [...(f.material_care || []), { id: `mc-${Date.now()}`, label: "", value: "" }])} className="text-xs text-plum underline">+ Add entry</button></div>
+          {(f.material_care || []).map((item, index) => <div key={item.id || index} className="grid sm:grid-cols-[1fr,2fr,auto] gap-2 items-end"><Field label="Label"><input value={item.label || ""} onChange={(e) => set("material_care", f.material_care.map((x, i) => i === index ? { ...x, label: e.target.value } : x))} className={inputCls} placeholder="e.g. Material, Dimensions, Care" /></Field><Field label="Details"><input value={item.value || ""} onChange={(e) => set("material_care", f.material_care.map((x, i) => i === index ? { ...x, value: e.target.value } : x))} className={inputCls} placeholder="Enter product-specific information" /></Field><button type="button" onClick={() => set("material_care", f.material_care.filter((_, i) => i !== index))} className="text-xs text-red-600 border border-red-200 rounded px-3 py-2">Remove</button></div>)}
+          {!f.material_care?.length && <p className="text-xs text-gray-400">No extra entries configured. Existing material/care fields remain supported.</p>}
+        </div>
         <div className="sm:col-span-2"><Field label="Product Images"><MultiImageUpload value={Array.isArray(f.images) ? f.images : []} onChange={(v) => set("images", v)} testid="product-images" /></Field></div>
         <div className="sm:col-span-2"><Field label="Product Video (Optional)"><VideoUpload value={f.video || ""} onChange={(v) => set("video", v)} testid="product-video" /></Field></div>
         <div className="sm:col-span-2 border border-gray-100 rounded-lg p-4 bg-gray-50">
@@ -592,40 +622,63 @@ export function Collections() {
 
 export function Reviews() {
   const [items, setItems] = useState([]);
+  const [products, setProducts] = useState([]);
   const [filter, setFilter] = useState("Pending");
-  const load = useCallback(() => adminApi.get(`/reviews?status=${filter}`).then(({ data }) => setItems(data.items)).catch(() => {}), [filter]);
+  const [editing, setEditing] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const load = useCallback(() => adminApi.get(`/reviews?status=${filter}`).then(({ data }) => setItems(data.items || [])).catch((e) => toast.error(apiError(e))), [filter]);
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { adminApi.get("/products?page=1&page_size=200").then(({ data }) => setProducts(data.items || [])).catch(() => {}); }, []);
   const moderate = async (id, status) => { try { await adminApi.put(`/reviews/${id}`, { status }); toast.success(`Review ${status.toLowerCase()}`); load(); } catch (e) { toast.error(apiError(e)); } };
   const moderateImage = async (id, status) => { try { await adminApi.put(`/reviews/${id}/image`, { status }); toast.success(`Review image ${status.toLowerCase()}`); load(); } catch (e) { toast.error(apiError(e)); } };
+  const saveReview = async () => {
+    if (!editing?.product_id || !editing?.customer_name?.trim() || !editing?.body?.trim()) return toast.error("Select a product and enter reviewer name and review text.");
+    const rating = Number(editing.rating);
+    if (!Number.isInteger(rating) || rating < 1 || rating > 5) return toast.error("Rating must be between 1 and 5.");
+    setSaving(true);
+    try {
+      if (editing.id) await adminApi.put(`/reviews/${editing.id}/details`, editing);
+      else await adminApi.post("/reviews/manage", editing);
+      toast.success(editing.id ? "Review updated" : "Review created"); setEditing(null); await load();
+    } catch (e) { toast.error(apiError(e)); }
+    finally { setSaving(false); }
+  };
+  const deleteReview = async (r) => {
+    if (!window.confirm("Delete this review permanently?")) return;
+    try { await adminApi.delete(`/reviews/${r.id}`); toast.success("Review deleted"); await load(); }
+    catch (e) { toast.error(apiError(e)); }
+  };
+  const editReview = (r) => setEditing({ id: r.id, product_id: r.product_id, customer_name: r.customer_name || "", rating: r.rating || 5, title: r.title || "", body: r.body || "", image_url: r.image_url || "", status: r.status || "Pending" });
   return (
     <div>
-      <PageHead title="Reviews" subtitle="Moderate customer reviews and images" />
-      <div className="flex gap-2 mb-4">{["Pending", "Approved", "Rejected"].map((s) => <button key={s} onClick={() => setFilter(s)} className={`px-3 py-1.5 text-sm rounded ${filter === s ? "bg-plum text-white" : "bg-white border border-gray-200 text-gray-600"}`}>{s}</button>)}</div>
+      <PageHead title="Reviews" subtitle="Create and manage product reviews" action={<button onClick={() => setEditing({ product_id: products[0]?.id || "", customer_name: "", rating: 5, title: "", body: "", image_url: "", status: "Approved" })} className="bg-plum text-white rounded-md px-4 py-2 text-sm flex items-center gap-2"><Plus size={15}/> Add Review</button>} />
+      <div className="flex gap-2 mb-4">{["Pending", "Approved", "Rejected"].map((s) => <button key={s} onClick={() => setFilter(s)} className={`px-3 py-1.5 text-sm rounded ${filter === s ? "bg-plum text-white" : "bg-white border border-gray-200 text-gray-600"}`}>{s}</button>)}<button onClick={() => setFilter("")} className={`px-3 py-1.5 text-sm rounded ${filter === "" ? "bg-plum text-white" : "bg-white border border-gray-200 text-gray-600"}`}>All</button></div>
       <div className="space-y-3">
         {items.map((r) => (
           <div key={r.id} className="bg-white rounded-lg border border-gray-200 p-4">
             <div className="flex justify-between gap-4">
               <div className="flex gap-4 min-w-0">
-                {r.image_url && <img src={r.image_url} alt="Customer review" className="w-20 h-20 rounded object-cover border border-gray-200 shrink-0" />}
-                <div className="min-w-0">
-                  <p className="font-medium text-gray-900">{r.title || "Review"} · {r.rating}★</p>
-                  <p className="text-sm text-gray-600 mt-1">{r.body || "No written message."}</p>
-                  <p className="text-xs text-gray-400 mt-1">by {r.customer_name} · product {r.product_slug}</p>
-                  <div className="flex flex-wrap gap-2 mt-2 text-[11px]">
-                    <span className={`px-2 py-1 rounded-full ${r.status === "Approved" ? "bg-emerald-50 text-emerald-700" : r.status === "Rejected" ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-700"}`}>Review: {r.status}</span>
-                    {r.image_url && <span className={`px-2 py-1 rounded-full ${r.image_status === "Approved" ? "bg-emerald-50 text-emerald-700" : r.image_status === "Rejected" ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-700"}`}>Image: {r.image_status || "Pending"}</span>}
-                  </div>
-                </div>
+                {r.image_url && <img src={r.image_url} alt="Review attachment" className="w-20 h-20 rounded object-cover border border-gray-200 shrink-0" />}
+                <div className="min-w-0"><p className="font-medium text-gray-900">{r.title || "Review"} · {r.rating}★</p><p className="text-sm text-gray-600 mt-1">{r.body || "No written message."}</p><p className="text-xs text-gray-400 mt-1">by {r.customer_name} · product {r.product_slug}{r.verified_buyer ? " · verified purchase" : r.admin_created ? " · admin-created (not verified purchase)" : ""}</p><div className="flex flex-wrap gap-2 mt-2 text-[11px]"><span className={`px-2 py-1 rounded-full ${r.status === "Approved" ? "bg-emerald-50 text-emerald-700" : r.status === "Rejected" ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-700"}`}>Review: {r.status}</span>{r.image_url && <span className={`px-2 py-1 rounded-full ${r.image_status === "Approved" ? "bg-emerald-50 text-emerald-700" : r.image_status === "Rejected" ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-700"}`}>Image: {r.image_status || "Pending"}</span>}</div></div>
               </div>
-              <div className="flex flex-col gap-2 shrink-0">
-                {filter === "Pending" && <div className="flex gap-2"><button onClick={() => moderate(r.id, "Approved")} className="text-xs bg-emerald-600 text-white px-3 py-1.5 rounded">Approve review</button><button onClick={() => moderate(r.id, "Rejected")} className="text-xs bg-red-600 text-white px-3 py-1.5 rounded">Reject review</button></div>}
-                {r.image_url && r.image_status === "Pending" && <div className="flex gap-2"><button onClick={() => moderateImage(r.id, "Approved")} className="text-xs bg-sky-600 text-white px-3 py-1.5 rounded">Approve image</button><button onClick={() => moderateImage(r.id, "Rejected")} className="text-xs border border-red-200 text-red-600 px-3 py-1.5 rounded">Reject image</button></div>}
-              </div>
+              <div className="flex flex-col gap-2 shrink-0"><button onClick={() => editReview(r)} className="text-xs border border-gray-200 rounded px-3 py-1.5">Edit</button>{filter === "Pending" && <div className="flex gap-2"><button onClick={() => moderate(r.id, "Approved")} className="text-xs bg-emerald-600 text-white px-3 py-1.5 rounded">Approve</button><button onClick={() => moderate(r.id, "Rejected")} className="text-xs bg-red-600 text-white px-3 py-1.5 rounded">Reject</button></div>}{r.image_url && r.image_status === "Pending" && <div className="flex gap-2"><button onClick={() => moderateImage(r.id, "Approved")} className="text-xs bg-sky-600 text-white px-3 py-1.5 rounded">Approve image</button><button onClick={() => moderateImage(r.id, "Rejected")} className="text-xs border border-red-200 text-red-600 px-3 py-1.5 rounded">Reject image</button></div>}<button onClick={() => deleteReview(r)} className="text-xs border border-red-200 text-red-600 rounded px-3 py-1.5">Delete</button></div>
             </div>
           </div>
         ))}
-        {items.length === 0 && <Empty text="No reviews" />}
+        {items.length === 0 && <Empty text="No reviews in this view" />}
       </div>
+      {editing && <Modal open title={editing.id ? "Edit Review" : "Add Product Review"} onClose={() => setEditing(null)} wide>
+        <div className="grid sm:grid-cols-2 gap-4">
+          <Field label="Product *"><select disabled={!!editing.id} value={editing.product_id || ""} onChange={(e) => setEditing({ ...editing, product_id: e.target.value })} className={inputCls}><option value="">Select product</option>{products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></Field>
+          <Field label="Reviewer name *"><input value={editing.customer_name || ""} onChange={(e) => setEditing({ ...editing, customer_name: e.target.value })} className={inputCls} maxLength={120}/></Field>
+          <Field label="Rating *"><select value={editing.rating || 5} onChange={(e) => setEditing({ ...editing, rating: Number(e.target.value) })} className={inputCls}>{[5,4,3,2,1].map((n) => <option key={n} value={n}>{n} star{n === 1 ? "" : "s"}</option>)}</select></Field>
+          <Field label="Visibility"><select value={editing.status || "Pending"} onChange={(e) => setEditing({ ...editing, status: e.target.value })} className={inputCls}>{["Pending", "Approved", "Rejected"].map((n) => <option key={n}>{n}</option>)}</select></Field>
+          <div className="sm:col-span-2"><Field label="Review title"><input value={editing.title || ""} onChange={(e) => setEditing({ ...editing, title: e.target.value })} className={inputCls} maxLength={200}/></Field></div>
+          <div className="sm:col-span-2"><Field label="Review text *"><textarea value={editing.body || ""} onChange={(e) => setEditing({ ...editing, body: e.target.value })} className={inputCls + " min-h-28"} maxLength={5000}/></Field></div>
+          <div className="sm:col-span-2"><Field label="Review image (optional)"><ImageUpload value={editing.image_url || ""} onChange={(url) => setEditing({ ...editing, image_url: url })} testid="review-image"/><span className="text-xs text-gray-500">Admin-created reviews are not marked as verified purchases. Remove the current image in the uploader to clear it.</span></Field></div>
+        </div>
+        <div className="mt-5 flex justify-end gap-2"><button onClick={() => setEditing(null)} className="px-4 py-2 border rounded text-sm">Cancel</button><button onClick={saveReview} disabled={saving} className="bg-plum text-white rounded px-4 py-2 text-sm disabled:opacity-50">{saving ? "Saving…" : "Save review"}</button></div>
+      </Modal>}
     </div>
   );
 }
