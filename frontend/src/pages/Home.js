@@ -106,7 +106,7 @@ function CategoriesSection({ s }) {
       <style>{`
         @font-face {
           font-family: 'Arcon';
-          src: url('/fonts/Arcon-Regular.otf') format('opentype');
+          src: url('/src/fonts/Arcon-Regular.otf') format('opentype');
           font-style: normal;
           font-weight: 400;
           font-display: swap;

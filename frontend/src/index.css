@@ -152,7 +152,7 @@ background: linear-gradient(152deg, rgba(18, 68, 204, 0) 0%, rgba(13, 44, 168, 0
 /* ARTFUL typography: Arcon is the single active font across storefront and admin. */
 @font-face {
   font-family: "Arcon";
-  src: url("/fonts/Arcon-Regular.otf") format("opentype");
+  src: url("/src/fonts/Arcon-Regular.otf") format("opentype");
   font-style: normal;
   font-weight: 100 900;
   font-display: swap;

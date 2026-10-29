@@ -1,13 +1,14 @@
 {
   "files": {
-    "main.css": "/static/css/main.2316b5f6.css",
-    "main.js": "/static/js/main.a562cab3.js",
+    "main.css": "/static/css/main.4a52d6ea.css",
+    "main.js": "/static/js/main.cf295108.js",
+    "static/media/Arcon-Regular.otf": "/static/media/Arcon-Regular.89801b90a0dc72ede613.otf",
     "index.html": "/index.html",
-    "main.2316b5f6.css.map": "/static/css/main.2316b5f6.css.map",
-    "main.a562cab3.js.map": "/static/js/main.a562cab3.js.map"
+    "main.4a52d6ea.css.map": "/static/css/main.4a52d6ea.css.map",
+    "main.cf295108.js.map": "/static/js/main.cf295108.js.map"
   },
   "entrypoints": [
-    "static/css/main.2316b5f6.css",
-    "static/js/main.a562cab3.js"
+    "static/css/main.4a52d6ea.css",
+    "static/js/main.cf295108.js"
   ]
 }
