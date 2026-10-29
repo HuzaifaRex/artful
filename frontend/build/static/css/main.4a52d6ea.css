@@ -3649,12 +3649,13 @@ textarea {
 @media (max-width:767px) {
     .artful-product-grid {
         gap: 10px !important;
-        grid-template-columns: repeat(2, minmax(0, 1fr)) !important
+        grid-template-columns: repeat(1, minmax(0, 1fr)) !important
     }
 
     .artful-product-grid .artful-product-name {
-        font-size: 12px !important;
-        line-height: 1.35 !important
+        font-size: 14px !important;
+        line-height: 1.35 !important;
+        font-weight: 400 !important;
     }
 
     .artful-product-grid .artful-product-price {
@@ -4620,6 +4621,9 @@ textarea {
     }
     .btm80px{
         bottom: 80px !important;
+    }
+    .disp{
+display: none !important;
     }
 }
 

@@ -22,7 +22,7 @@ function MobileCategoryCircles() {
   useEffect(() => { api.get("/categories").then(({ data }) => setCats(data.items || [])).catch(() => setCats([])); }, []);
   if (!cats.length) return null;
   return (
-    <section className="artful-mobile-categories" aria-label="Shop by category" data-testid="mobile-category-circles">
+    <section className="artful-mobile-categories px-3 " aria-label="Shop by category" data-testid="mobile-category-circles">
       <div className="artful-mobile-category-track hide-scrollbar">
         {cats.map((c) => <Link key={c.slug} to={`/categories/${c.slug}`} className="artful-mobile-category" data-testid={`mobile-category-${c.slug}`}>
           <div className="artful-mobile-category-image">{c.image ? <img src={c.image} alt={c.name} loading="lazy" /> : <span className="flex w-full h-full items-center justify-center text-plum text-lg">{String(c.name || "?").slice(0,1)}</span>}</div>
@@ -102,7 +102,7 @@ function CategoriesSection({ s }) {
   useEffect(() => { api.get("/categories").then(({ data }) => setCats(data.items || [])).catch(() => {}); }, []);
 
   return (
-    <section className="container-artful py-16 lg:py-20" data-testid="featured-categories-section">
+    <section className="container-artful py-16 lg:py-20 disp" data-testid="featured-categories-section">
       <style>{`
         @font-face {
           font-family: 'Arcon';
