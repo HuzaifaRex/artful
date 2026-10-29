@@ -104,7 +104,7 @@ export default function OrderDetailModal({ orderNumber, onClose, onSaved, editab
                 const saving = Number(it.bulk_order?.savings ?? Math.max(0, (regular - bulk) * qty));
                 return <div key={i} className="rounded-xl border border-violet-100 bg-white p-3 text-sm">
                   <div className="flex items-center justify-between gap-3"><span className="font-medium text-gray-900">{it.name}</span><span className="font-semibold text-violet-700">{inr(bulk * qty)}</span></div>
-                  <div className="mt-1 text-xs text-gray-500">Tier: {it.bulk_order?.selected_tier_quantity || qty} pcs · Regular {inr(regular)} / pc → Bulk {inr(bulk)} / pc</div>
+                  <div className="mt-1 text-xs text-gray-500">Tier: {it.bulk_order?.selected_tier_quantity || qty} {it.bulk_order?.selected_tier_quantity_unit || it.quantity_unit || "pieces"} · Regular {inr(regular)} / item → Bulk {inr(bulk)} / item</div>
                   {saving > 0 && <div className="mt-1 text-xs font-medium text-emerald-700">Customer saved {inr(saving)}</div>}
                 </div>;
               })}

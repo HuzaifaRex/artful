@@ -122,12 +122,16 @@ export default function App() {
               <Route path="/shipping" element={<StaticPage slug="shipping" />} />
               <Route path="/shipping-policy" element={<StaticPage slug="shipping" />} />
               <Route path="/returns" element={<StaticPage slug="returns" />} />
+              <Route path="/refund" element={<StaticPage slug="returns" />} />
+              <Route path="/refunds" element={<StaticPage slug="returns" />} />
+              <Route path="/return-policy" element={<StaticPage slug="returns" />} />
               <Route path="/refund-policy" element={<StaticPage slug="returns" />} />
               <Route path="/refund-return-policy" element={<StaticPage slug="returns" />} />
               <Route path="/returns-and-refunds" element={<StaticPage slug="returns" />} />
               <Route path="/privacy" element={<StaticPage slug="privacy" />} />
               <Route path="/privacy-policy" element={<StaticPage slug="privacy" />} />
               <Route path="/terms" element={<StaticPage slug="terms" />} />
+              <Route path="/terms-conditions" element={<StaticPage slug="terms" />} />
               <Route path="/terms-and-conditions" element={<StaticPage slug="terms" />} />
               <Route path="*" element={<NotFound />} />
             </Route>

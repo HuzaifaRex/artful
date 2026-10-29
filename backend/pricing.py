@@ -242,7 +242,7 @@ async def build_line_items(items):
                 except (TypeError, ValueError):
                     continue
                 if tier_qty == selected_tier_qty and tier_price == int(price):
-                    applicable_bulk_tier = {"min_quantity": tier_qty, "price": tier_price}
+                    applicable_bulk_tier = {"min_quantity": tier_qty, "price": tier_price, "quantity_unit": tier.get("quantity_unit") or prod.get("quantity_unit") or "pieces"}
                     break
             if applicable_bulk_tier is None:
                 for tier in sorted((bulk_config.get("tiers") or []), key=lambda t: int(t.get("min_quantity", 0) or 0), reverse=True):
@@ -252,7 +252,7 @@ async def build_line_items(items):
                     except (TypeError, ValueError):
                         continue
                     if tier_qty <= qty and tier_qty >= int(bulk_config.get("min_quantity", 0) or 0) and tier_price == int(price):
-                        applicable_bulk_tier = {"min_quantity": tier_qty, "price": tier_price}
+                        applicable_bulk_tier = {"min_quantity": tier_qty, "price": tier_price, "quantity_unit": tier.get("quantity_unit") or prod.get("quantity_unit") or "pieces"}
                         break
         bulk_enabled_for_line = bool(not is_custom and bulk_config.get("enabled") and qty >= int(bulk_config.get("min_quantity", 0) or 0) and price != int(base_price))
         bulk_savings = max(0, (int(base_price) - int(price)) * qty) if bulk_enabled_for_line else 0
@@ -298,8 +298,11 @@ async def build_line_items(items):
             "artwork": artwork if is_custom else [],
             "artwork_status": ("Artwork Received" if artwork else "Awaiting Artwork") if is_custom else None,
             "bulk_order": {"enabled": bool(bulk_config.get("enabled")), "applied": bulk_enabled_for_line,
-                           "min_quantity": int(bulk_config.get("min_quantity", 0) or 0), "tiers": bulk_config.get("tiers", []),
+                           "min_quantity": int(bulk_config.get("min_quantity", 0) or 0),
+                           "min_quantity_unit": bulk_config.get("min_quantity_unit") or quantity_unit,
+                           "tiers": bulk_config.get("tiers", []),
                            "selected_tier_quantity": applicable_bulk_tier["min_quantity"] if applicable_bulk_tier else None,
+                           "selected_tier_quantity_unit": applicable_bulk_tier["quantity_unit"] if applicable_bulk_tier else None,
                            "selected_tier_unit_price": applicable_bulk_tier["price"] if applicable_bulk_tier else None,
                            "regular_unit_price": int(base_price), "savings": bulk_savings},
             "gift_wrap": gift_wrap, "wrap_price": wrap_price,

@@ -261,6 +261,28 @@ async def seed():
                                        "seo": {"title": f"{title} — ARTFUL", "description": content[:150]},
                                        "status": "Active", "updated_at": now()})
 
+    # Backfill required policy pages even when the pages collection already contains
+    # unrelated/older records. Never overwrite admin-edited content and avoid creating
+    # duplicates when an older alias or CMS page already exists.
+    legal_aliases = {
+        "shipping": ["shipping", "shipping-policy", "delivery-policy"],
+        "returns": ["returns", "refund", "refunds", "refund-policy", "refund-return-policy", "return-policy", "returns-and-refunds", "returns-refunds"],
+        "privacy": ["privacy", "privacy-policy", "privacy-policy-page"],
+        "terms": ["terms", "terms-and-conditions", "terms-conditions", "terms-of-service"],
+    }
+    for legal_slug, aliases in legal_aliases.items():
+        existing_page = await db.pages.find_one({"slug": {"$in": aliases}}, {"_id": 0, "id": 1})
+        existing_cms_page = await db.cms_pages.find_one({"slug": {"$in": aliases}}, {"_id": 0, "id": 1})
+        if not existing_page and not existing_cms_page:
+            default = next((entry for entry in PAGES if entry[0] == legal_slug), None)
+            if default:
+                _, title, content = default
+                await db.pages.insert_one({
+                    "id": str(uuid.uuid4()), "slug": legal_slug, "title": title,
+                    "content": content, "seo": {"title": f"{title} — ARTFUL", "description": content[:150]},
+                    "status": "Active", "updated_at": now(),
+                })
+
     if await db.coupons.count_documents({}) == 0:
         for c in COUPONS:
             await db.coupons.insert_one({"id": str(uuid.uuid4()), **c, "used_count": 0,

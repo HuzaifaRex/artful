@@ -371,12 +371,56 @@ async def delivery_estimate(state: str = Query(..., min_length=2)):
     return _delivery_estimate_for_state(canonical, settings)
 
 
+LEGAL_PAGE_ALIASES = {
+    "privacy": ["privacy", "privacy-policy", "privacy-policy-page"],
+    "terms": ["terms", "terms-and-conditions", "terms-conditions", "terms-of-service"],
+    "returns": ["returns", "refund", "refunds", "refund-policy", "refund-return-policy", "return-policy", "returns-and-refunds", "returns-refunds"],
+    "shipping": ["shipping", "shipping-policy", "delivery-policy"],
+}
+
+LEGAL_PAGE_DEFAULTS = {
+    "privacy": ("Privacy Policy", "We respect your privacy. We collect only the information needed to fulfil your orders and never sell your personal data."),
+    "terms": ("Terms & Conditions", "By using ARTFUL you agree to our terms of service. Please read them carefully before placing an order."),
+    "returns": ("Returns & Refunds", "Unused, non-personalized items can be returned within 7 days of delivery. Refunds are processed to the original payment method after inspection."),
+    "shipping": ("Shipping", "We ship across India. Orders are dispatched within 2 business days. Delivery timelines are shown at checkout based on your pincode."),
+}
+
+
 @router.get("/pages/{slug}")
 async def page(slug: str):
-    p = await db.pages.find_one({"slug": slug, "status": "Active"}, {"_id": 0})
-    if not p:
-        raise HTTPException(404, "Page not found.")
-    return p
+    # Resolve legacy URL aliases to the canonical slug without requiring database changes.
+    requested = (slug or "").strip().lower()
+    canonical = next((key for key, aliases in LEGAL_PAGE_ALIASES.items() if requested in aliases), requested)
+    candidates = LEGAL_PAGE_ALIASES.get(canonical, [requested])
+
+    # Some older deployments contain a different legal slug or omit the status field.
+    # Treat missing status as active for backwards compatibility; explicitly inactive
+    # non-legal pages are not exposed here.
+    p = await db.pages.find_one({
+        "slug": {"$in": candidates},
+        "$or": [{"status": "Active"}, {"status": "active"}, {"status": {"$exists": False}}, {"status": None}],
+    }, {"_id": 0})
+    if p:
+        return p
+
+    # Older content may have been saved via the general CMS rather than Legal Pages.
+    cms = await db.cms_pages.find_one({"slug": {"$in": candidates}}, {"_id": 0})
+    if cms:
+        title, _ = LEGAL_PAGE_DEFAULTS.get(canonical, (canonical.replace("-", " ").title(), ""))
+        return {
+            "id": cms.get("id"), "slug": canonical,
+            "title": cms.get("title") or title,
+            "content": cms.get("content") or cms.get("body_html") or cms.get("description") or "",
+            "status": cms.get("status", "Active"),
+        }
+
+    # Keep the four core policy URLs working on installations where the initial
+    # seed ran before individual legal pages were added. Admin-saved DB content
+    # above always takes precedence over these legacy-safe defaults.
+    if canonical in LEGAL_PAGE_DEFAULTS:
+        title, content = LEGAL_PAGE_DEFAULTS[canonical]
+        return {"id": f"default-{canonical}", "slug": canonical, "title": title, "content": f"<p>{content}</p>", "status": "Active", "is_default_content": True}
+    raise HTTPException(404, "Page not found.")
 
 
 @router.get("/cms/page/{slug}")

@@ -158,7 +158,7 @@ function ProductForm({ product, cats, onClose, onSaved }) {
     pack_quantity: 1, quantity_unit: "pieces", cod_available: true, shipping_charge: "", material_care: [],
     status: "Draft", badges: [], tags: [], images: [], occasion: [], recipient: [],
     personalization: { enabled: false, char_limit: 30 },
-    bulk_order: { enabled: false, min_quantity: 10, tiers: [] },
+    bulk_order: { enabled: false, min_quantity: 10, min_quantity_unit: "pieces", tiers: [] },
     customization: defaultCustomization,
     product_type: "standard",
     video: null, ...product,
@@ -179,7 +179,12 @@ function ProductForm({ product, cats, onClose, onSaved }) {
         artwork: { ...defaultCustomization.artwork, ...(prev.customization?.artwork || {}) },
         size: { ...defaultCustomization.size, ...(prev.customization?.size || {}) },
       },
-      bulk_order: prev.bulk_order || { enabled: false, min_quantity: 10, tiers: [] },
+      bulk_order: {
+        enabled: !!prev.bulk_order?.enabled,
+        min_quantity: Math.max(2, Number(prev.bulk_order?.min_quantity || 10)),
+        min_quantity_unit: prev.bulk_order?.min_quantity_unit || prev.quantity_unit || "pieces",
+        tiers: (prev.bulk_order?.tiers || []).map((tier) => ({ ...tier, quantity_unit: tier.quantity_unit || prev.quantity_unit || "pieces" })),
+      },
       pack_quantity: Math.max(1, Number(prev.pack_quantity || 1)),
       quantity_unit: prev.quantity_unit || "pieces",
       cod_available: prev.cod_available !== false,
@@ -263,9 +268,15 @@ function ProductForm({ product, cats, onClose, onSaved }) {
     if (!f.name || (f.product_type !== "customizable" && f.price === "")) return toast.error(f.product_type === "customizable" ? "Product name is required" : "Name and price are required");
     setSaving(true);
     const bulk = f.bulk_order?.enabled ? {
-      enabled: true, min_quantity: Math.max(2, Number(f.bulk_order?.min_quantity || 2)),
-      tiers: (f.bulk_order?.tiers || []).map((t) => ({ min_quantity: Math.max(2, Number(t.min_quantity || 0)), price: Math.max(1, Number(t.price || 0)) })).filter((t) => t.min_quantity > 0 && t.price > 0)
-    } : { enabled: false, min_quantity: Number(f.bulk_order?.min_quantity || 10), tiers: [] };
+      enabled: true,
+      min_quantity: Math.max(2, Number(f.bulk_order?.min_quantity || 2)),
+      min_quantity_unit: String(f.bulk_order?.min_quantity_unit || f.quantity_unit || "pieces"),
+      tiers: (f.bulk_order?.tiers || []).map((t) => ({
+        min_quantity: Math.max(2, Number(t.min_quantity || 0)),
+        price: Math.max(1, Number(t.price || 0)),
+        quantity_unit: String(t.quantity_unit || f.quantity_unit || "pieces"),
+      })).filter((t) => t.min_quantity > 0 && t.price > 0)
+    } : { enabled: false, min_quantity: Number(f.bulk_order?.min_quantity || 10), min_quantity_unit: String(f.bulk_order?.min_quantity_unit || f.quantity_unit || "pieces"), tiers: [] };
     const payload = {
       ...f,
       product_type: f.product_type,
@@ -313,6 +324,8 @@ function ProductForm({ product, cats, onClose, onSaved }) {
         <Field label="SKU"><input value={f.sku} onChange={(e) => set("sku", e.target.value)} className={inputCls} /></Field>
         <Field label="Product Type *"><select value={f.product_type} onChange={(e) => { set("product_type", e.target.value); setTab(e.target.value === "customizable" ? "custom" : "basic"); }} className={inputCls}><option value="standard">Standard Product</option><option value="customizable">Customizable Product</option></select></Field>
         {f.product_type === "standard" && <Field label="Selling Price (₹) *"><input type="number" value={f.price} onChange={(e) => set("price", e.target.value)} className={inputCls} data-testid="pf-price" /></Field>}
+        {f.product_type === "standard" && <Field label="Product Qty"><input type="number" min="1" value={f.pack_quantity ?? 1} onChange={(e) => set("pack_quantity", Math.max(1, Number(e.target.value || 1)))} className={inputCls} data-testid="pf-product-qty" /></Field>}
+        {f.product_type === "standard" && <Field label="Unit Type"><select value={f.quantity_unit || "pieces"} onChange={(e) => { const nextUnit = e.target.value; const previousUnit = f.quantity_unit || "pieces"; setF((prev) => ({ ...prev, quantity_unit: nextUnit, bulk_order: { ...(prev.bulk_order || {}), min_quantity_unit: (!prev.bulk_order?.min_quantity_unit || prev.bulk_order.min_quantity_unit === previousUnit) ? nextUnit : prev.bulk_order.min_quantity_unit, tiers: (prev.bulk_order?.tiers || []).map((tier) => ({ ...tier, quantity_unit: (!tier.quantity_unit || tier.quantity_unit === previousUnit) ? nextUnit : tier.quantity_unit })) } })); }} className={inputCls} data-testid="pf-quantity-unit">{["pieces", "packs", "sets", "boxes", "pairs", "units"].map((unit) => <option key={unit} value={unit}>{unit}</option>)}</select></Field>}
         <Field label="Purchase Price / COGS (₹)"><input type="number" min="0" value={f.cost_price ?? ""} onChange={(e) => set("cost_price", e.target.value)} className={inputCls} /></Field>
         <Field label="MRP (₹)"><input type="number" min="0" value={f.mrp ?? ""} onChange={(e) => set("mrp", e.target.value)} className={inputCls} /></Field>
         <Field label="Stock Quantity"><input type="number" min="0" value={f.stock} onChange={(e) => set("stock", e.target.value)} className={inputCls} data-testid="pf-stock" /></Field>
@@ -324,11 +337,9 @@ function ProductForm({ product, cats, onClose, onSaved }) {
         <div className="sm:col-span-2"><Field label="Short description"><input value={f.short_description || ""} onChange={(e) => set("short_description", e.target.value)} className={inputCls} /></Field></div>
         <div className="sm:col-span-2"><Field label="Description"><RichEditor value={f.description || ""} onChange={(value) => set("description", value)} testid="product-description-editor" /></Field></div>
         <div className="sm:col-span-2 rounded-lg border border-gray-200 p-4 space-y-4">
-          <h4 className="font-semibold text-gray-800 text-sm">Pack Quantity & Fulfilment</h4>
-          <p className="text-xs text-gray-500">Price entered above is the price for one selling unit. Set pack quantity to 50 to sell that price per pack of 50 pieces. Existing products default to 1.</p>
+          <h4 className="font-semibold text-gray-800 text-sm">Shipping</h4>
+          <p className="text-xs text-gray-500">Configure the shipping charge and Cash on Delivery availability for this product.</p>
           <div className="grid sm:grid-cols-2 gap-4">
-            <Field label="Pieces / units included in one pack"><input type="number" min="1" value={f.pack_quantity ?? 1} onChange={(e) => set("pack_quantity", Math.max(1, Number(e.target.value || 1)))} className={inputCls} /></Field>
-            <Field label="Quantity unit"><select value={f.quantity_unit || "pieces"} onChange={(e) => set("quantity_unit", e.target.value)} className={inputCls}>{["pieces", "packs", "sets", "units", "pairs", "boxes"].map((unit) => <option key={unit} value={unit}>{unit}</option>)}</select></Field>
             <Field label="Shipping charge per selling unit (₹; blank = legacy store rule)"><input type="number" min="0" value={f.shipping_charge ?? ""} onChange={(e) => set("shipping_charge", e.target.value)} className={inputCls} placeholder="Use store fallback" /></Field>
             <div className="flex items-end pb-2"><label className="flex gap-2 text-sm text-gray-700 items-center"><input type="checkbox" checked={f.cod_available !== false} onChange={(e) => set("cod_available", e.target.checked)} className="accent-plum" /> Cash on Delivery available</label></div>
           </div>
@@ -343,7 +354,11 @@ function ProductForm({ product, cats, onClose, onSaved }) {
         <div className="sm:col-span-2"><Field label="Product Video (Optional)"><VideoUpload value={f.video || ""} onChange={(v) => set("video", v)} testid="product-video" /></Field></div>
         <div className="sm:col-span-2 border border-gray-100 rounded-lg p-4 bg-gray-50">
           <div className="flex items-center justify-between gap-3 mb-3"><div><p className="text-sm font-semibold text-gray-800">Bulk Ordering</p><p className="text-xs text-gray-400">Offer lower per-unit pricing for higher quantities.</p></div><label className="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" checked={!!f.bulk_order?.enabled} onChange={(e) => set("bulk_order", { ...(f.bulk_order || {}), enabled: e.target.checked })} className="accent-plum w-4 h-4" /> Enable bulk ordering</label></div>
-          {f.bulk_order?.enabled && <div className="space-y-3"><Field label="Minimum bulk quantity"><input type="number" min="2" value={f.bulk_order?.min_quantity ?? 10} onChange={(e) => set("bulk_order", { ...(f.bulk_order || {}), min_quantity: Math.max(2, Number(e.target.value || 0)) })} className={inputCls} /></Field><div><div className="flex items-center justify-between mb-2"><p className="text-xs font-medium text-gray-600">Quantity pricing tiers</p><button type="button" onClick={() => set("bulk_order", { ...(f.bulk_order || {}), tiers: [...(f.bulk_order?.tiers || []), { min_quantity: f.bulk_order?.min_quantity || 10, price: f.price || "" }] })} className="text-xs text-plum underline">+ Add tier</button></div><div className="space-y-2">{(f.bulk_order?.tiers || []).map((tier, idx) => <div key={idx} className="grid grid-cols-[1fr_1fr_auto] gap-2 items-end"><div><label className="text-[11px] text-gray-500">Minimum qty</label><input type="number" min={2} value={tier.min_quantity ?? ""} onChange={(e) => { const tiers=[...(f.bulk_order?.tiers||[])]; tiers[idx]={...tiers[idx],min_quantity:Number(e.target.value||0)}; set("bulk_order",{...(f.bulk_order||{}),tiers}); }} className={inputCls}/></div><div><label className="text-[11px] text-gray-500">Unit price</label><input type="number" min="1" value={tier.price ?? ""} onChange={(e) => { const tiers=[...(f.bulk_order?.tiers||[])]; tiers[idx]={...tiers[idx],price:Number(e.target.value||0)}; set("bulk_order",{...(f.bulk_order||{}),tiers}); }} className={inputCls}/></div><button type="button" onClick={()=>set("bulk_order",{...(f.bulk_order||{}),tiers:(f.bulk_order?.tiers||[]).filter((_,i)=>i!==idx)})} className="px-3 py-2 text-xs text-red-600 border border-red-200 rounded">Remove</button></div>)}</div></div></div>}
+          {f.bulk_order?.enabled && <div className="space-y-3">
+            <div className="grid sm:grid-cols-2 gap-3">
+              <Field label="Minimum bulk quantity"><input type="number" min="2" value={f.bulk_order?.min_quantity ?? 10} onChange={(e) => set("bulk_order", { ...(f.bulk_order || {}), min_quantity: Math.max(2, Number(e.target.value || 0)) })} className={inputCls} /></Field>
+            </div>
+            <div><div className="flex items-center justify-between mb-2"><p className="text-xs font-medium text-gray-600">Quantity pricing tiers</p><button type="button" onClick={() => set("bulk_order", { ...(f.bulk_order || {}), tiers: [...(f.bulk_order?.tiers || []), { min_quantity: f.bulk_order?.min_quantity || 10, price: f.price || "", quantity_unit: f.quantity_unit || "pieces" }] })} className="text-xs text-plum underline">+ Add tier</button></div><div className="space-y-2">{(f.bulk_order?.tiers || []).map((tier, idx) => <div key={idx} className="grid sm:grid-cols-[1fr_1fr_1fr_auto] grid-cols-1 gap-2 items-end rounded-lg border border-gray-100 p-3"><div><label className="text-[11px] text-gray-500">Minimum qty</label><input type="number" min={2} value={tier.min_quantity ?? ""} onChange={(e) => { const tiers=[...(f.bulk_order?.tiers||[])]; tiers[idx]={...tiers[idx],min_quantity:Number(e.target.value||0)}; set("bulk_order",{...(f.bulk_order||{}),tiers}); }} className={inputCls}/></div><div><label className="text-[11px] text-gray-500">Unit price (₹)</label><input type="number" min="1" value={tier.price ?? ""} onChange={(e) => { const tiers=[...(f.bulk_order?.tiers||[])]; tiers[idx]={...tiers[idx],price:Number(e.target.value||0)}; set("bulk_order",{...(f.bulk_order||{}),tiers}); }} className={inputCls}/></div><div><label className="text-[11px] text-gray-500">Unit type</label><select value={tier.quantity_unit || f.quantity_unit || "pieces"} onChange={(e) => { const tiers=[...(f.bulk_order?.tiers||[])]; tiers[idx]={...tiers[idx],quantity_unit:e.target.value}; set("bulk_order",{...(f.bulk_order||{}),tiers}); }} className={inputCls}>{["pieces", "packs", "sets", "boxes", "pairs", "units"].map((unit) => <option key={unit} value={unit}>{unit}</option>)}</select></div><button type="button" onClick={()=>set("bulk_order",{...(f.bulk_order||{}),tiers:(f.bulk_order?.tiers||[]).filter((_,i)=>i!==idx)})} className="px-3 py-2 text-xs text-red-600 border border-red-200 rounded">Remove</button></div>)}</div></div></div>}
         </div>
         <Field label="Tags (comma separated)"><input value={Array.isArray(f.tags) ? f.tags.join(", ") : f.tags} onChange={(e) => set("tags", e.target.value)} className={inputCls} /></Field>
         <Field label="Occasion (comma separated)"><input value={Array.isArray(f.occasion) ? f.occasion.join(", ") : f.occasion} onChange={(e) => set("occasion", e.target.value)} className={inputCls} /></Field>
@@ -429,13 +444,13 @@ function ProductDetailModal({ productId, onClose }) {
     {!p ? <p className="text-sm text-gray-400">Loading…</p> : <div className="space-y-6">
       <div className="grid lg:grid-cols-[120px_1fr] gap-5">
         <div className="w-[120px] h-[140px] rounded-2xl overflow-hidden bg-gray-100 border border-gray-200">{p.images?.[0] ? <img src={p.images[0]} alt="" className="w-full h-full object-cover"/> : null}</div>
-        <div><div className="flex flex-wrap items-center gap-2"><StatusChip status={p.status}/>{p.sku && <span className="text-xs font-mono text-gray-500">{p.sku}</span>}</div><h3 className="artful-product-name text-2xl text-gray-900 mt-2">{p.name}</h3><p className="text-sm text-gray-500 mt-1">{p.short_description || "—"}</p><div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">{[["Selling",inr(p.price)],["Purchase",inr(p.cost_price)],["MRP",inr(p.mrp ?? p.compare_at_price)],["Stock",p.stock]].map(([l,v])=><div key={l} className="rounded-xl border border-gray-100 bg-gray-50 p-3"><p className="text-[10px] uppercase tracking-wider text-gray-400">{l}</p><p className="font-semibold text-gray-900 mt-1">{v}</p></div>)}</div></div>
+        <div><div className="flex flex-wrap items-center gap-2"><StatusChip status={p.status}/>{p.sku && <span className="text-xs font-mono text-gray-500">{p.sku}</span>}</div><h3 className="artful-product-name text-2xl text-gray-900 mt-2">{p.name}</h3><p className="text-sm text-gray-500 mt-1">{p.short_description || "—"}</p><div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mt-4">{[["Selling",inr(p.price)],["Product Qty",`${Number(p.pack_quantity || 1)} ${p.quantity_unit || "pieces"}`],["Purchase",inr(p.cost_price)],["MRP",inr(p.mrp ?? p.compare_at_price)],["Stock",p.stock]].map(([l,v])=><div key={l} className="rounded-xl border border-gray-100 bg-gray-50 p-3"><p className="text-[10px] uppercase tracking-wider text-gray-400">{l}</p><p className="font-semibold text-gray-900 mt-1">{v}</p></div>)}</div></div>
       </div>
       <div className="grid sm:grid-cols-3 gap-3">
         {[['Available', Math.max(0, Number(p.stock||0)-Number(p.reserved||0))], ['Reserved', p.reserved||0], ['Low Stock Alert', p.low_stock_threshold ?? 5]].map(([l,v])=><div key={l} className="rounded-xl border border-gray-200 p-4"><p className="text-xs text-gray-500">{l}</p><p className="text-xl font-semibold text-gray-900 mt-1">{v}</p></div>)}
       </div>
       <div className="grid lg:grid-cols-2 gap-5">
-        <div className="rounded-xl border border-gray-200 p-4"><h4 className="font-semibold text-gray-900 flex items-center gap-2"><Layers3 size={15}/> Bulk Ordering</h4>{p.bulk_order?.enabled ? <><p className="text-xs text-emerald-700 mt-1">Enabled · minimum {p.bulk_order.min_quantity || 1} pcs</p><div className="mt-3 space-y-2">{(p.bulk_order.tiers||[]).map((t,i)=><div key={i} className="flex justify-between text-sm"><span>{t.min_quantity}+ pcs</span><b>{inr(t.price)} / pc</b></div>)}</div></> : <p className="text-sm text-gray-400 mt-2">Disabled</p>}</div>
+        <div className="rounded-xl border border-gray-200 p-4"><h4 className="font-semibold text-gray-900 flex items-center gap-2"><Layers3 size={15}/> Bulk Ordering</h4>{p.bulk_order?.enabled ? <><p className="text-xs text-emerald-700 mt-1">Enabled · minimum {p.bulk_order.min_quantity || 1} {p.bulk_order.min_quantity_unit || p.quantity_unit || "pieces"}</p><div className="mt-3 space-y-2">{(p.bulk_order.tiers||[]).map((t,i)=><div key={i} className="flex justify-between text-sm"><span>{t.min_quantity}+ {t.quantity_unit || p.quantity_unit || "pieces"}</span><b>{inr(t.price)} / item</b></div>)}</div></> : <p className="text-sm text-gray-400 mt-2">Disabled</p>}</div>
         <div className="rounded-xl border border-gray-200 p-4"><h4 className="font-semibold text-gray-900">Personalisation</h4><p className="text-sm text-gray-600 mt-2">{p.personalization?.enabled ? `Enabled · ${p.personalization.char_limit || 30} characters` : "Disabled"}</p>{p.tags?.length ? <div className="flex flex-wrap gap-2 mt-3">{p.tags.map(t=><span key={t} className="text-[11px] bg-gray-100 rounded-full px-2.5 py-1">{t}</span>)}</div> : null}</div>
       </div>
       <div className="rounded-xl border border-gray-200 p-4"><h4 className="font-semibold text-gray-900 flex items-center gap-2"><Eye size={15}/> Product description</h4><p className="text-sm text-gray-600 mt-2 whitespace-pre-wrap">{p.description || "No description"}</p></div>

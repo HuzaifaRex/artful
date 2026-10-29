@@ -21,6 +21,25 @@ def slugify(text):
     return s or uuid.uuid4().hex[:8]
 
 
+PRODUCT_QUANTITY_UNITS = {"pieces", "packs", "sets", "boxes", "pairs", "units"}
+
+def _quantity_unit(value, default="pieces"):
+    unit = str(value or default).strip().lower()
+    return unit if unit in PRODUCT_QUANTITY_UNITS else (default if default in PRODUCT_QUANTITY_UNITS else "pieces")
+
+def _normalize_bulk_order(config, default_unit="pieces"):
+    config = config if isinstance(config, dict) else {}
+    unit = _quantity_unit(config.get("min_quantity_unit"), default_unit)
+    tiers = []
+    for tier in config.get("tiers") or []:
+        if not isinstance(tier, dict):
+            continue
+        normalized = dict(tier)
+        normalized["quantity_unit"] = _quantity_unit(tier.get("quantity_unit"), default_unit)
+        tiers.append(normalized)
+    return {**config, "min_quantity_unit": unit, "tiers": tiers}
+
+
 async def audit(admin, action, resource, resource_id=None, before=None, after=None, request=None):
     await db.audit_logs.insert_one({
         "id": str(uuid.uuid4()), "admin_id": admin.get("id"), "admin_email": admin.get("email"),
@@ -538,6 +557,8 @@ async def create_product(payload: dict, request: Request, admin: dict = Depends(
         slug = f"{slug}-{uuid.uuid4().hex[:4]}"
     product_type = payload.get("product_type", "standard")
     is_customizable = product_type == "customizable"
+    quantity_unit = _quantity_unit(payload.get("quantity_unit"), "pieces")
+    bulk_order = _normalize_bulk_order(payload.get("bulk_order", {"enabled": False, "min_quantity": 10, "tiers": []}), quantity_unit)
     doc = {"id": str(uuid.uuid4()), "name": name, "slug": slug,
            "short_description": payload.get("short_description", ""),
            "description": sanitize_html(payload.get("description", "")),
@@ -551,7 +572,7 @@ async def create_product(payload: dict, request: Request, admin: dict = Depends(
            "dimensions": payload.get("dimensions"), "weight": payload.get("weight"),
            "care": payload.get("care"), "shipping_info": payload.get("shipping_info"),
            "pack_quantity": max(1, _int_num(payload.get("pack_quantity"), 1)),
-           "quantity_unit": str(payload.get("quantity_unit") or "pieces")[:30],
+           "quantity_unit": quantity_unit,
            "cod_available": bool(payload.get("cod_available", True)),
            "shipping_charge": None if payload.get("shipping_charge") in (None, "") else max(0, _num(payload.get("shipping_charge"), 0)),
            "material_care": payload.get("material_care", []),
@@ -564,7 +585,7 @@ async def create_product(payload: dict, request: Request, admin: dict = Depends(
            "rating": 0, "review_count": 0, "variants": payload.get("variants", []),
            "product_type": product_type,
            "customization": payload.get("customization", {"enabled": False, "options": [], "pricing": {"mode": "base_addons", "quantity_tiers": [], "rules": []}, "artwork": {"enabled": False, "required": False, "formats": ["pdf", "jpg", "png"], "max_size_mb": 20, "max_files": 1, "instructions": ""}}),
-           "bulk_order": payload.get("bulk_order", {"enabled": False, "min_quantity": 10, "tiers": []}),
+           "bulk_order": bulk_order,
            "personalization": payload.get("personalization", {"enabled": False}),
            "seo": payload.get("seo", {"title": f"{name} — ARTFUL", "description": payload.get("short_description", "")}),
            "views": 0, "sales_count": 0, "created_at": now_iso(), "updated_at": now_iso()}
@@ -600,7 +621,9 @@ async def update_product(pid: str, payload: dict, request: Request, admin: dict 
     if "pack_quantity" in fields:
         fields["pack_quantity"] = max(1, _int_num(fields.get("pack_quantity"), 1))
     if "quantity_unit" in fields:
-        fields["quantity_unit"] = str(fields.get("quantity_unit") or "pieces")[:30]
+        fields["quantity_unit"] = _quantity_unit(fields.get("quantity_unit"), _quantity_unit(p.get("quantity_unit"), "pieces"))
+    if "bulk_order" in fields:
+        fields["bulk_order"] = _normalize_bulk_order(fields.get("bulk_order"), fields.get("quantity_unit") or p.get("quantity_unit") or "pieces")
     if "cod_available" in fields:
         fields["cod_available"] = bool(fields.get("cod_available"))
     if "shipping_charge" in fields:
