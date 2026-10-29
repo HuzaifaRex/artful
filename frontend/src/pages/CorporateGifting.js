@@ -34,7 +34,7 @@ export default function CorporateGifting() {
     <div>
       <div className="relative bg-plum-wine text-cream py-20 overflow-hidden">
         {page.hero_image && <img src={page.hero_image} alt="" className="absolute inset-0 w-full h-full object-cover opacity-30" />}
-        <div className="container-artful text-center relative"><p className="label-caption !text-gold-soft mb-4">{page.hero_eyebrow || "Corporate Gifting"}</p><h1 className="font-serif text-4xl lg:text-5xl font-light">{page.hero_title || "Gifting, elevated for business"}</h1><p className="text-cream/75 mt-4 max-w-xl mx-auto">Curated, brandable hampers for clients, teams and milestones. Share your requirement and our team will craft a bespoke proposal.</p></div>
+        <div className="container-artful text-center relative"><p className="label-caption !text-gold-soft mb-4">{page.hero_eyebrow || ""}</p><h1 className="font-serif text-4xl lg:text-5xl font-light">{page.hero_title || ""}</h1><p className="text-cream/75 mt-4 max-w-xl mx-auto">Curated, brandable hampers for clients, teams and milestones. Share your requirement and our team will craft a bespoke proposal.</p></div>
       </div>
       <div className="container-artful py-14 max-w-2xl mx-auto">
         {page.body_html && <div className="prose max-w-none text-ink-secondary mb-10 text-center" dangerouslySetInnerHTML={{ __html: page.body_html }} />}
