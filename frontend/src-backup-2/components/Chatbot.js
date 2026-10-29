@@ -69,7 +69,7 @@ export default function Chatbot() {
   return (
     <>
       {!open && (
-        <div className="fixed bottom-5 right-5 z-50 flex flex-col items-end gap-3">
+        <div className="fixed bottom-5 btm80px right-5 z-50 flex flex-col items-end gap-3">
           <a
             href="https://wa.me/918878688852"
             target="_blank"
