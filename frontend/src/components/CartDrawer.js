@@ -55,7 +55,7 @@ export default function CartDrawer() {
                       <Link to={`/products/${item.slug}`} onClick={() => setCartOpen(false)} className="artful-product-name text-base text-ink leading-tight line-clamp-2">{item.name}</Link>
                       <button onClick={() => removeItem(item.key)} className="text-ink-muted hover:text-err shrink-0" data-testid={`cart-remove-${item.slug}`}><Trash2 size={15} /></button>
                     </div>
-                    {item.gift_wrap && <p className="text-[11px] text-plum mt-0.5">+ Gift wrap</p>}
+                    {item.gift_wrap && <p className="text-[11px] text-plum mt-0.5">+ Gift wrap · {inr(item.wrap_price ?? item.gift_wrap_price ?? 199)} × {item.qty}</p>}
                     {item.personalization && <p className="text-[11px] text-ink-muted mt-0.5 truncate">"{item.personalization}"</p>}
                     {item.bulk_order && item.qty >= Number(item.bulk_order.min_quantity || 0) && <p className="text-[11px] text-violet-700 mt-0.5">Bulk rate applied · {inr(item.price)} / item</p>}
                     <div className="flex items-center justify-between mt-2">
@@ -75,8 +75,10 @@ export default function CartDrawer() {
               {totals && (
                 <div className="space-y-1.5 text-sm">
                   <div className="flex justify-between text-ink-secondary"><span>Subtotal</span><span data-testid="cart-subtotal">{inr(totals.subtotal)}</span></div>
-                  {totals.savings > 0 && <div className="flex justify-between text-ok"><span>You save</span><span>-{inr(totals.savings)}</span></div>}
-                  <div className="flex justify-between text-ink-secondary"><span>Shipping</span><span>{totals.shipping === 0 ? "Free" : inr(totals.shipping)}</span></div>
+                  {Number(totals.gift_wrapping || 0) > 0 && <div className="flex justify-between text-ink-secondary"><span>Gift wrapping</span><span>{inr(totals.gift_wrapping)}</span></div>}
+                  {Number(totals.discount || 0) > 0 && <div className="flex justify-between text-emerald-700"><span>Discount</span><span>−{inr(totals.discount)}</span></div>}
+                  {totals.savings > 0 && <div className="flex justify-between text-ok"><span>You save</span><span>{inr(totals.savings)}</span></div>}
+                  <div className="flex justify-between text-ink-secondary"><span>Shipping</span><span className={totals.shipping === 0 ? "text-emerald-700 font-semibold" : ""}>{totals.shipping === 0 ? "Free shipping" : inr(totals.shipping)}</span></div>
                   <div className="flex justify-between text-lg text-plum font-medium pt-2 border-t border-line-subtle"><span>Total</span><span data-testid="cart-total">{inr(totals.total)}</span></div>
                 </div>
               )}

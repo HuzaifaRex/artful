@@ -155,7 +155,7 @@ function ProductForm({ product, cats, onClose, onSaved }) {
   const [f, setF] = useState({
     name: "", price: "", cost_price: "", mrp: "", compare_at_price: "", stock: 0, low_stock_threshold: 5, sku: "",
     category_slug: cats[0]?.slug || "", short_description: "", description: "", material: "", color: "",
-    pack_quantity: 1, quantity_unit: "pieces", cod_available: true, shipping_charge: "", material_care: [],
+    pack_quantity: 1, quantity_unit: "pieces", cod_available: true, shipping_charge: "", gift_wrap_enabled: false, gift_wrap_price: 0, material_care: [],
     status: "Draft", badges: [], tags: [], images: [], occasion: [], recipient: [],
     personalization: { enabled: false, char_limit: 30 },
     bulk_order: { enabled: false, min_quantity: 10, min_quantity_unit: "pieces", tiers: [] },
@@ -188,6 +188,8 @@ function ProductForm({ product, cats, onClose, onSaved }) {
       pack_quantity: Math.max(1, Number(prev.pack_quantity || 1)),
       quantity_unit: prev.quantity_unit || "pieces",
       cod_available: prev.cod_available !== false,
+      gift_wrap_enabled: prev.gift_wrap_enabled !== false,
+      gift_wrap_price: Math.max(0, Number(prev.gift_wrap_price ?? 199)),
       material_care: Array.isArray(prev.material_care) ? prev.material_care : [],
     }));
   }, []);
@@ -288,6 +290,8 @@ function ProductForm({ product, cats, onClose, onSaved }) {
       pack_quantity: Math.max(1, Number(f.pack_quantity || 1)),
       quantity_unit: String(f.quantity_unit || "pieces").trim() || "pieces",
       cod_available: f.cod_available !== false,
+      gift_wrap_enabled: !!f.gift_wrap_enabled,
+      gift_wrap_price: f.gift_wrap_enabled ? Math.max(0, Number(f.gift_wrap_price || 0)) : 0,
       shipping_charge: f.shipping_charge === "" || f.shipping_charge == null ? null : Math.max(0, Number(f.shipping_charge || 0)),
       material_care: (Array.isArray(f.material_care) ? f.material_care : []).map((item) => ({ ...item, label: String(item.label || "").trim(), value: String(item.value || "").trim() })).filter((item) => item.label && item.value),
       filter_values: Array.isArray(f.filter_values) ? f.filter_values.filter((x) => x && x.filter_id && Array.isArray(x.values) && x.values.length) : [],
@@ -338,10 +342,14 @@ function ProductForm({ product, cats, onClose, onSaved }) {
         <div className="sm:col-span-2"><Field label="Description"><RichEditor value={f.description || ""} onChange={(value) => set("description", value)} testid="product-description-editor" /></Field></div>
         <div className="sm:col-span-2 rounded-lg border border-gray-200 p-4 space-y-4">
           <h4 className="font-semibold text-gray-800 text-sm">Shipping</h4>
-          <p className="text-xs text-gray-500">Configure the shipping charge and Cash on Delivery availability for this product.</p>
+          <p className="text-xs text-gray-500">Configure this product’s shipping rate, COD eligibility, and optional gift wrapping. When products ship together, the highest applicable product shipping rate is charged once.</p>
           <div className="grid sm:grid-cols-2 gap-4">
-            <Field label="Shipping charge per selling unit (₹; blank = legacy store rule)"><input type="number" min="0" value={f.shipping_charge ?? ""} onChange={(e) => set("shipping_charge", e.target.value)} className={inputCls} placeholder="Use store fallback" /></Field>
+            <Field label="Shipping charge for this product / shipment (₹; blank = store fallback)"><input type="number" min="0" value={f.shipping_charge ?? ""} onChange={(e) => set("shipping_charge", e.target.value)} className={inputCls} placeholder="Use store fallback" /></Field>
             <div className="flex items-end pb-2"><label className="flex gap-2 text-sm text-gray-700 items-center"><input type="checkbox" checked={f.cod_available !== false} onChange={(e) => set("cod_available", e.target.checked)} className="accent-plum" /> Cash on Delivery available</label></div>
+            <div className="sm:col-span-2 rounded-lg border border-amber-200 bg-amber-50/50 p-3 space-y-3">
+              <label className="flex gap-2 text-sm text-gray-800 items-center"><input type="checkbox" checked={!!f.gift_wrap_enabled} onChange={(e) => set("gift_wrap_enabled", e.target.checked)} className="accent-plum" /> Offer gift wrapping for this product</label>
+              {f.gift_wrap_enabled && <Field label="Gift wrapping charge per item (₹)"><input type="number" min="0" value={f.gift_wrap_price ?? 0} onChange={(e) => set("gift_wrap_price", Math.max(0, Number(e.target.value || 0)))} className={inputCls} placeholder="e.g. 49" /></Field>}
+            </div>
           </div>
         </div>
         {filterDefinitions.length > 0 && <div className="sm:col-span-2 rounded-lg border border-gray-200 p-4 space-y-3"><h4 className="font-semibold text-gray-800 text-sm">Product Filter Values</h4><p className="text-xs text-gray-500">Choose the structured filter values customers can use to find this product.</p>{filterDefinitions.map((filter) => { const current = (f.filter_values || []).find((item) => item.filter_id === filter.id); const selected = current?.values || []; const setSelected = (value, checked) => { const next = [...(f.filter_values || [])].filter((item) => item.filter_id !== filter.id); const values = filter.type === "single" ? (checked ? [value] : []) : (checked ? [...selected, value] : selected.filter((x) => x !== value)); if (values.length) next.push({ filter_id: filter.id, filter_name: filter.name, values }); set("filter_values", next); }; return <div key={filter.id} className="border-b border-gray-100 pb-3 last:border-0"><p className="text-sm font-medium text-gray-700 mb-2">{filter.name}</p><div className="flex flex-wrap gap-2">{(filter.values || []).map((value) => <label key={value} className="flex items-center gap-2 text-xs border rounded-full px-3 py-1.5"><input type={filter.type === "single" ? "radio" : "checkbox"} name={`filter-${filter.id}`} checked={selected.includes(value)} onChange={(e) => setSelected(value, e.target.checked)} className="accent-plum"/>{value}</label>)}</div></div>; })}</div>}
@@ -416,12 +424,12 @@ function ProductForm({ product, cats, onClose, onSaved }) {
         </div>
         {custom.pricing?.mode !== "combination" && <div className="rounded-xl border border-gray-200 p-4">
           <Field label="Base price (₹)"><input type="number" min="0" value={f.price ?? 0} onChange={e=>set("price",e.target.value)} className={inputCls}/></Field>
-          
+
           {custom.pricing?.mode === "quantity" && <><div className="mt-4 flex items-center justify-between"><div><p className="text-sm font-semibold">Quantity price tiers</p><p className="text-xs text-gray-500">Set the unit price for each quantity level. The highest matching minimum quantity is used.</p></div><button type="button" onClick={addTier} className="text-xs text-plum">+ Add tier</button></div>
           <div className="space-y-2 mt-3">{(custom.pricing?.quantity_tiers||[]).map((t,i)=><div key={i} className="grid grid-cols-[1fr_1fr_auto] gap-2 items-end"><Field label="Min quantity"><input type="number" min="1" value={t.min_quantity??""} onChange={e=>updateTier(i,{min_quantity:Number(e.target.value||0)})} className={inputCls}/></Field><Field label="Unit price"><input type="number" min="1" value={t.price??""} onChange={e=>updateTier(i,{price:Number(e.target.value||0)})} className={inputCls}/></Field><button type="button" onClick={()=>removeTier(i)} className="text-xs text-red-600 pb-2">Remove</button></div>)}</div>
         </>}</div>}
 
-        
+
         {custom.pricing?.mode === "combination" && <div className="rounded-xl border border-gray-200 p-4">
           <div className="flex items-center justify-between"><div><p className="font-semibold">Combination rules</p><p className="text-xs text-gray-500">Set an exact price for a selected combination and quantity range.</p></div><button type="button" onClick={addRule} className="text-xs text-plum">+ Add rule</button></div>
           <div className="space-y-3 mt-3">{(custom.pricing?.rules||[]).map((r,ri)=><div key={ri} className="rounded-lg bg-gray-50 border p-3">

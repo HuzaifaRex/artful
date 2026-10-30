@@ -60,6 +60,10 @@ async def build_line_items(items):
         selection = it.get("customization") or {}
         option_details = []
         option_addons = 0
+        # Keep standard products on the same normalized line-item shape as custom products.
+        # These values are referenced later when constructing the order snapshot.
+        custom_order_total = None
+        unit_price = base_price
         if is_custom:
             selected_quantity_tier = None
             for opt in custom_cfg.get("options") or []:
@@ -229,8 +233,15 @@ async def build_line_items(items):
             unit_cost = float(unit_cost or 0)
         except (TypeError, ValueError):
             unit_cost = 0.0
-        gift_wrap = bool(it.get("gift_wrap"))
-        wrap_price = 199 if gift_wrap else 0
+        # Gift-wrap eligibility and pricing come only from the product record.
+        # Products created before this option existed retain the previous ₹199 behaviour.
+        gift_wrap_enabled = bool(prod.get("gift_wrap_enabled", True))
+        gift_wrap = bool(it.get("gift_wrap")) and gift_wrap_enabled
+        try:
+            wrap_price = max(0, int(round(float(prod.get("gift_wrap_price", 199) if prod.get("gift_wrap_price") is not None else 199)))) if gift_wrap else 0
+        except (TypeError, ValueError):
+            wrap_price = 199 if gift_wrap and "gift_wrap_price" not in prod else 0
+        gift_wrap_total = wrap_price * qty
         bulk_config = prod.get("bulk_order") or {}
         applicable_bulk_tier = None
         if not is_custom and bulk_config.get("enabled"):
@@ -288,7 +299,11 @@ async def build_line_items(items):
             "total_pieces": qty * pack_quantity if quantity_unit.lower() in ("piece", "pieces", "unit", "units") else None,
             "cod_available": prod.get("cod_available", True),
             "product_shipping_charge": product_shipping_charge,
-            "product_shipping_total": product_shipping_charge * qty if product_shipping_charge is not None else None,
+            # Product shipping is a per-shipment rate, not multiplied by item quantity.
+            "product_shipping_total": product_shipping_charge if product_shipping_charge is not None else None,
+            "gift_wrap_enabled": gift_wrap_enabled,
+            "gift_wrap_price": wrap_price,
+            "gift_wrap_total": gift_wrap_total,
             "material_care": prod.get("material_care") or [],
             "category_slug": prod.get("category_slug"),
             "variant_id": it.get("variant_id"), "variant_label": (variant or {}).get("label") if variant else None,
@@ -307,7 +322,9 @@ async def build_line_items(items):
                            "regular_unit_price": int(base_price), "savings": bulk_savings},
             "gift_wrap": gift_wrap, "wrap_price": wrap_price,
             "personalization": it.get("personalization") or None,
-            "line_total": (int(custom_order_total) if custom_order_total is not None else price * qty) + wrap_price,
+            # Merchandise subtotal excludes gift wrapping; wrap is a separate order-summary line.
+            "line_total": int(custom_order_total) if custom_order_total is not None else price * qty,
+            "total_with_gift_wrap": (int(custom_order_total) if custom_order_total is not None else price * qty) + gift_wrap_total,
             "regular_line_total": (int(base_price) if custom_order_total is not None else (int(prod.get("compare_at_price")) if (prod.get("compare_at_price") or 0) > base_price else int(base_price)) * qty),
             "compare_at_price": prod.get("compare_at_price"),
         })
@@ -393,27 +410,36 @@ async def compute_totals(items, coupon_code=None, customer=None, state=None):
             except (TypeError, ValueError):
                 shipping_charge = flat_ship
             break
-    # Explicit product shipping is charged per selling unit. Legacy products without a
-    # product-level value retain the existing store/state rate as a single order charge.
+    # ARTFUL fulfils products in one consolidated shipment by default. When multiple
+    # products have individual shipping rates, charge the highest applicable rate once
+    # rather than stacking every product's rate (e.g. ₹200 + ₹300 becomes ₹300).
+    # Legacy products still use the configured store/state rate as a candidate rate.
     configured_lines = [line for line in lines if line.get("product_shipping_charge") is not None]
     legacy_lines = [line for line in lines if line.get("product_shipping_charge") is None]
-    product_shipping = sum(int(line.get("product_shipping_total") or 0) for line in configured_lines)
-    shipping_charge = product_shipping + (shipping_charge if legacy_lines else 0)
+    product_shipping = max((int(line.get("product_shipping_charge") or 0) for line in configured_lines), default=0)
+    shipping_candidates = [product_shipping] if configured_lines else []
+    if legacy_lines:
+        shipping_candidates.append(max(0, int(shipping_charge or 0)))
+    shipping_charge = max(shipping_candidates, default=max(0, int(shipping_charge or 0)))
+    gift_wrapping = sum(int(line.get("gift_wrap_total") or 0) for line in lines)
     shipping = 0 if (subtotal - discount) >= threshold or free_shipping or subtotal == 0 else shipping_charge
     tax_rate = settings.get("tax_rate", 0)
-    taxable = max(0, subtotal - discount)
+    taxable = max(0, subtotal + gift_wrapping - discount)
     tax = 0 if settings.get("tax_inclusive", True) else round(taxable * tax_rate / 100)
     regular_total = 0
     for l in lines:
         fallback_regular = ((l.get("compare_at_price") if (l.get("compare_at_price") or 0) > (l.get("base_price") or l["price"]) else (l.get("base_price") or l["price"])) * l["qty"])
         regular_total += int(l.get("regular_line_total", fallback_regular))
     savings = max(0, regular_total - subtotal) + discount
-    total = max(0, subtotal - discount + shipping + tax)
+    total = max(0, subtotal + gift_wrapping - discount + shipping + tax)
     return {
         "items": lines, "errors": errors,
-        "subtotal": subtotal, "discount": discount, "coupon_code": coupon["code"] if coupon else None,
+        "subtotal": subtotal, "gift_wrapping": gift_wrapping, "discount": discount, "coupon_code": coupon["code"] if coupon else None,
         "coupon_error": coupon_error, "coupon_description": coupon.get("description") if coupon else None,
-        "shipping": shipping, "shipping_charge": shipping_charge, "product_shipping": product_shipping, "free_shipping_threshold": threshold, "tax": tax,
+        "shipping": shipping, "shipping_charge": shipping_charge, "product_shipping": product_shipping,
+        "shipping_strategy": "consolidated_highest_product_rate",
+        "shipping_note": "Combined products ship together; only the highest applicable product or store shipping rate is charged once.",
+        "free_shipping_threshold": threshold, "tax": tax,
         "savings": savings, "total": total,
         "currency_symbol": settings.get("currency_symbol", "₹"),
     }

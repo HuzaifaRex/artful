@@ -385,10 +385,10 @@ export default function ProductDetail() {
             </div>
           )}
 
-          <label className="mt-4 flex items-center gap-2 text-sm text-ink-secondary cursor-pointer">
+          {p.gift_wrap_enabled !== false && <label className="mt-4 flex items-center gap-2 text-sm text-ink-secondary cursor-pointer">
             <input type="checkbox" checked={giftWrap} onChange={(e) => setGiftWrap(e.target.checked)} className="accent-plum" data-testid="gift-wrap-checkbox" />
-            Add gift wrapping <span className="text-plum">(+₹199)</span>
-          </label>
+            Add gift wrapping <span className="text-plum">(+{inr(p.gift_wrap_price ?? 199)} per item)</span>
+          </label>}
 
           <div className="mt-6 flex items-center gap-4">
             {!customization?.enabled && !bulkSelected ? <div className="flex items-center border border-line rounded-full">

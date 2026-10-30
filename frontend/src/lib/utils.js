@@ -64,7 +64,7 @@ export function sanitizePhone(v, max = 10) {
 }
 // Sum of gift-wrap charges across priced line items
 export function giftWrapTotal(items) {
-  return (items || []).reduce((s, i) => s + (i.gift_wrap ? (i.wrap_price || 0) : 0), 0);
+  return (items || []).reduce((s, i) => s + (i.gift_wrap ? Number(i.gift_wrap_total ?? (Number(i.wrap_price || 0) * Number(i.qty || 1))) : 0), 0);
 }
 
 // Indian States & UTs for address dropdowns

@@ -575,6 +575,8 @@ async def create_product(payload: dict, request: Request, admin: dict = Depends(
            "quantity_unit": quantity_unit,
            "cod_available": bool(payload.get("cod_available", True)),
            "shipping_charge": None if payload.get("shipping_charge") in (None, "") else max(0, _num(payload.get("shipping_charge"), 0)),
+           "gift_wrap_enabled": bool(payload.get("gift_wrap_enabled", False)),
+           "gift_wrap_price": max(0, _num(payload.get("gift_wrap_price"), 0)) if payload.get("gift_wrap_enabled") else 0,
            "material_care": payload.get("material_care", []),
            "filter_values": payload.get("filter_values", []),
            "stock": 0 if is_customizable else int(payload.get("stock", 0)), "reserved": 0,
@@ -628,6 +630,12 @@ async def update_product(pid: str, payload: dict, request: Request, admin: dict 
         fields["cod_available"] = bool(fields.get("cod_available"))
     if "shipping_charge" in fields:
         fields["shipping_charge"] = None if fields.get("shipping_charge") in (None, "") else max(0, _num(fields.get("shipping_charge"), 0))
+    if "gift_wrap_enabled" in fields:
+        fields["gift_wrap_enabled"] = bool(fields.get("gift_wrap_enabled"))
+        if not fields["gift_wrap_enabled"]:
+            fields["gift_wrap_price"] = 0
+    if "gift_wrap_price" in fields:
+        fields["gift_wrap_price"] = max(0, _num(fields.get("gift_wrap_price"), 0))
     if "material_care" in fields and not isinstance(fields["material_care"], list):
         raise HTTPException(400, "Material and Care entries must be a list.")
     is_customizable = fields.get("product_type", p.get("product_type")) == "customizable"

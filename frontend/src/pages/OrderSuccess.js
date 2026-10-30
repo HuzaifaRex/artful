@@ -34,7 +34,13 @@ export default function OrderSuccess() {
           </div>
           <div className="border-t border-line pt-4 space-y-2 text-sm">
             <div className="flex justify-between text-ink-secondary"><span>Payment</span><span className="capitalize">{order.payment.status.replace("_", " ")}{order.payment.dev_mode ? " (Demo)" : ""}</span></div>
-            <div className="flex justify-between text-plum font-medium text-lg"><span>Total Paid</span><span>{inr(order.pricing.total)}</span></div>
+            <div className="flex justify-between text-ink-secondary"><span>Subtotal</span><span>{inr(order.pricing.subtotal)}</span></div>
+            {Number(order.pricing.gift_wrapping || 0) > 0 && <div className="flex justify-between text-ink-secondary"><span>Gift wrapping</span><span>{inr(order.pricing.gift_wrapping)}</span></div>}
+            {Number(order.pricing.discount || 0) > 0 && <div className="flex justify-between text-emerald-700"><span>Discount{order.pricing.coupon_code ? ` (${order.pricing.coupon_code})` : ""}</span><span>−{inr(order.pricing.discount)}</span></div>}
+            <div className="flex justify-between text-ink-secondary"><span>Shipping</span><span>{order.pricing.shipping ? inr(order.pricing.shipping) : "Free shipping"}</span></div>
+            {Number(order.pricing.tax || 0) > 0 && <div className="flex justify-between text-ink-secondary"><span>Tax</span><span>{inr(order.pricing.tax)}</span></div>}
+            {Number(order.pricing.cod_fee || 0) > 0 && <div className="flex justify-between text-ink-secondary"><span>Cash on Delivery fee</span><span>{inr(order.pricing.cod_fee)}</span></div>}
+            <div className="flex justify-between text-plum font-medium text-lg border-t border-line pt-3"><span>Order Total</span><span>{inr(order.pricing.total)}</span></div>
           </div>
           <div className="border-t border-line mt-4 pt-4 text-sm text-ink-secondary">
             <p className="font-medium text-ink mb-1">Delivery Address</p>

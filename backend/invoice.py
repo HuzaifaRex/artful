@@ -334,6 +334,8 @@ def build_invoice_pdf(order, settings):
     summary_rows = [
         [_paragraph("Subtotal", styles["Body"]), _paragraph(_money(pricing.get("subtotal")), styles["MetaRight"])],
     ]
+    if float(pricing.get("gift_wrapping") or 0) > 0:
+        summary_rows.append([_paragraph("Gift wrapping", styles["Body"]), _paragraph(_money(pricing.get("gift_wrapping")), styles["MetaRight"])])
     if float(pricing.get("discount") or 0) > 0:
         discount_label = "Discount"
         if pricing.get("coupon_code"):
@@ -342,6 +344,8 @@ def build_invoice_pdf(order, settings):
     summary_rows.append([_paragraph("Shipping", styles["Body"]), _paragraph("Free" if not pricing.get("shipping") else _money(pricing.get("shipping")), styles["MetaRight"])])
     if float(pricing.get("tax") or 0) > 0:
         summary_rows.append([_paragraph("Tax", styles["Body"]), _paragraph(_money(pricing.get("tax")), styles["MetaRight"])])
+    if float(pricing.get("cod_fee") or 0) > 0:
+        summary_rows.append([_paragraph("Cash on Delivery fee", styles["Body"]), _paragraph(_money(pricing.get("cod_fee")), styles["MetaRight"])])
     summary_rows.append([_paragraph("TOTAL", ParagraphStyle("TotalLabel", parent=styles["Body"], fontName="Helvetica-Bold", textColor=PLUM, fontSize=10.5)),
                          _paragraph(_money(pricing.get("total")), ParagraphStyle("TotalValue", parent=styles["MetaRight"], fontName="Helvetica-Bold", fontSize=12, textColor=PLUM))])
 

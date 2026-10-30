@@ -3,16 +3,30 @@ import { useNavigate, Link } from "react-router-dom";
 import { Check, Lock, ShieldCheck, Minus, Plus, Trash2 } from "lucide-react";
 import { api, apiError } from "../lib/api";
 import { useStore } from "../context/StoreContext";
-import { inr, giftWrapTotal, isValidPhone, isValidPincode, sanitizePhone, INDIAN_STATES, getCitiesForState } from "../lib/utils";
+import { inr, isValidPhone, isValidPincode, sanitizePhone, INDIAN_STATES, getCitiesForState } from "../lib/utils";
 import { toast } from "sonner";
 
-function loadScript(src) {
-  return new Promise((resolve) => {
-    if (document.querySelector(`script[src="${src}"]`)) return resolve(true);
-    const s = document.createElement("script");
-    s.src = src; s.onload = () => resolve(true); s.onerror = () => resolve(false);
-    document.body.appendChild(s);
+let razorpayScriptPromise = null;
+function loadScript(src = "https://checkout.razorpay.com/v1/checkout.js") {
+  if (typeof window !== "undefined" && window.Razorpay) return Promise.resolve(true);
+  if (razorpayScriptPromise) return razorpayScriptPromise;
+  razorpayScriptPromise = new Promise((resolve) => {
+    // A script element left behind by a previous failed load may never emit another
+    // error/load event. Remove it and retry cleanly instead of leaving checkout pending.
+    const previous = document.querySelector(`script[src="${src}"]`);
+    if (previous) previous.remove();
+    const script = document.createElement("script");
+    script.src = src;
+    script.async = true;
+    const finish = (loaded) => {
+      razorpayScriptPromise = null;
+      resolve(!!loaded && !!window.Razorpay);
+    };
+    script.addEventListener("load", () => finish(true), { once: true });
+    script.addEventListener("error", () => finish(false), { once: true });
+    document.body.appendChild(script);
   });
+  return razorpayScriptPromise;
 }
 
 const EMPTY_ADDR = { name: "", phone: "", line1: "", line2: "", area: "", city: "", state: "", pincode: "", instructions: "" };
@@ -38,7 +52,11 @@ export default function Checkout() {
   const [totals, setTotals] = useState(null);
   const [coupon, setCoupon] = useState("");
   const [couponOptions, setCouponOptions] = useState([]);
+  const [couponOptionsLoading, setCouponOptionsLoading] = useState(false);
+  const [couponApplying, setCouponApplying] = useState(false);
   const [applied, setApplied] = useState(null);
+  const [totalsLoading, setTotalsLoading] = useState(false);
+  const [totalsError, setTotalsError] = useState("");
   const codFee = Math.max(0, Number(settings?.cod_fee ?? 99));
   const canUseCod = cart.every((item) => item.cod_available !== false);
   // auth
@@ -58,24 +76,41 @@ export default function Checkout() {
   const mobileVerified = customer?.phone_verified !== false;
 
   const validate = useCallback(async (c) => {
-    if (cart.length === 0) return;
+    if (cart.length === 0) return null;
+    setTotalsLoading(true);
+    setTotalsError("");
+    const requestedCoupon = c === undefined ? applied : c;
     try {
       const { data } = await api.post("/cart/validate", {
         items: cartPayload,
-        coupon_code: c === undefined ? applied : c,
+        coupon_code: requestedCoupon,
         state: addr.state,
       });
       setTotals(data);
-    } catch { /* ignore */ }
-  }, [cart, cartPayload, applied, addr.state]);
+      if (requestedCoupon && data.coupon_error) {
+        setApplied(null);
+        toast.error(data.coupon_error);
+      }
+      return data;
+    } catch (e) {
+      setTotalsError(apiError(e, "Unable to calculate your order total. Please refresh and try again."));
+      return null;
+    } finally {
+      setTotalsLoading(false);
+    }
+  }, [cart.length, cartPayload, applied, addr.state]);
 
   useEffect(() => { validate(); }, [validate]);
   useEffect(() => { if (!canUseCod && method === "cod") setMethod("razorpay"); }, [canUseCod, method]);
 
   useEffect(() => {
-    if (!cart.length) { setCouponOptions([]); return; }
+    if (!cart.length) { setCouponOptions([]); setCouponOptionsLoading(false); return undefined; }
     let active = true;
-    api.post("/coupons/options", { items: cartPayload }).then(({ data }) => { if (active) setCouponOptions(data.items || []); }).catch(() => { if (active) setCouponOptions([]); });
+    setCouponOptionsLoading(true);
+    api.post("/coupons/options", { items: cartPayload })
+      .then(({ data }) => { if (active) setCouponOptions(Array.isArray(data.items) ? data.items : []); })
+      .catch(() => { if (active) setCouponOptions([]); })
+      .finally(() => { if (active) setCouponOptionsLoading(false); });
     return () => { active = false; };
   }, [cartPayload, cart.length]);
 
@@ -196,64 +231,130 @@ export default function Checkout() {
     updateArtwork(item.key, (item.artwork || []).filter((_, i) => i !== index));
   };
 
-  const applyCoupon = async () => {
-    if (!coupon.trim()) return;
+  const applyCouponCode = async (rawCode) => {
+    const codeValue = String(rawCode || "").trim().toUpperCase();
+    if (!codeValue) return;
+    setCouponApplying(true);
     try {
-      await api.post("/coupons/validate", { items: cartPayload, code: coupon.trim() });
-      setApplied(coupon.trim().toUpperCase()); validate(coupon.trim().toUpperCase());
-      toast.success("Coupon applied"); setCoupon("");
-    } catch (e) { toast.error(apiError(e)); }
+      await api.post("/coupons/validate", { items: cartPayload, code: codeValue });
+      const { data } = await api.post("/cart/validate", {
+        items: cartPayload, coupon_code: codeValue, state: addr.state,
+      });
+      if (data.coupon_error || !data.coupon_code) throw new Error(data.coupon_error || "This coupon is not applicable to your cart.");
+      setApplied(codeValue);
+      setTotals(data);
+      setCoupon("");
+      toast.success(`Coupon ${codeValue} applied`);
+    } catch (e) {
+      toast.error(apiError(e, "Could not apply this coupon."));
+    } finally {
+      setCouponApplying(false);
+    }
+  };
+
+  const applyCoupon = () => applyCouponCode(coupon);
+  const removeCoupon = async () => {
+    setApplied(null);
+    setCoupon("");
+    await validate(null);
+    toast.success("Coupon removed");
   };
 
   const finalize = (orderNumber) => { clearCart(); navigate(`/order-success/${orderNumber}`); };
 
   const placeOrder = async () => {
     if (!customer || !mobileVerified) return toast.error("Please verify your mobile number before checkout");
+    if (!totals || totalsLoading) return toast.error("Your order total is still being calculated. Please try again.");
     for (const f of ["name", "line1", "city", "state", "pincode"]) {
       if (!addr[f]) return toast.error("Please complete your delivery address");
     }
     if (!isValidPhone(addr.phone)) return toast.error("Enter a valid 10-digit mobile number in the address");
     if (!isValidPincode(addr.pincode)) return toast.error("Enter a valid 6-digit pincode");
     setPlacing(true);
+    let createdOrderId = null;
+    let paymentDialogActive = false;
+    let paymentCallbackReceived = false;
+    const cancelPendingOrder = async (orderId, reason) => {
+      if (!orderId) return;
+      try { await api.post("/checkout/cancel-payment", { order_id: orderId, reason }); } catch (_) { /* retain the original checkout error */ }
+    };
     try {
       const { data } = await api.post("/checkout/create-order", {
         items: cartPayload, coupon_code: applied, address: addr, email: customer?.email, payment_method: method,
       });
-      if (method === "cod" && data.confirmed) return finalize(data.order_number);
+      createdOrderId = data.order_id || null;
+      if (method === "cod" && data.confirmed) {
+        finalize(data.order_number);
+        return;
+      }
 
       if (data.dev_mode) {
-        // DEMO mode — Razorpay not configured. Clearly not a real charge.
         const { data: res } = await api.post("/checkout/mock-pay", { order_id: data.order_id });
-        if (res.success) { toast.success("Demo payment complete"); return finalize(res.order.order_number); }
-      } else {
-        const ok = await loadScript("https://checkout.razorpay.com/v1/checkout.js");
-        if (!ok) throw new Error("Could not load payment gateway");
-        const rzp = new window.Razorpay({
-          key: data.key_id, amount: data.amount, currency: "INR", name: "ARTFUL",
-          description: `Order ${data.order_number}`, order_id: data.razorpay_order_id, prefill: data.prefill,
-          theme: { color: "#5C3243" },
-          handler: (r) => {
-            // Move to the processing page immediately. The verification request continues
-            // in the background while the processing page watches the order status.
-            navigate(`/order-processing/${data.order_number}`);
-            api.post("/checkout/verify-payment", {
-              order_id: data.order_id, razorpay_payment_id: r.razorpay_payment_id,
-              razorpay_order_id: r.razorpay_order_id, razorpay_signature: r.razorpay_signature,
-            }).catch((e) => {
-              try {
-                sessionStorage.setItem(
-                  `artful-payment-error-${data.order_number}`,
-                  apiError(e, "Payment verification is still in progress")
-                );
-              } catch (_) { /* ignore storage errors */ }
-            });
-          },
-          modal: { ondismiss: () => toast.info("Payment cancelled") },
-        });
-        rzp.open();
+        if (!res?.success || !res?.order?.order_number) throw new Error("Demo payment could not be confirmed. Please try again.");
+        toast.success("Demo payment complete");
+        finalize(res.order.order_number);
+        return;
       }
-    } catch (e) { toast.error(apiError(e)); }
-    setPlacing(false);
+
+      if (!data.key_id || !data.razorpay_order_id || !Number(data.amount)) {
+        throw new Error(data.message || "The payment gateway did not return a valid payment order. Please contact support.");
+      }
+      const loaded = await loadScript();
+      if (!loaded || !window.Razorpay) throw new Error("Secure payment window could not be loaded. Check your internet connection and try again.");
+
+      const rzp = new window.Razorpay({
+        key: data.key_id,
+        amount: data.amount,
+        currency: "INR",
+        name: "ARTFUL",
+        description: `Order ${data.order_number}`,
+        order_id: data.razorpay_order_id,
+        prefill: data.prefill,
+        theme: { color: "#5C3243" },
+        handler: async (response) => {
+          paymentCallbackReceived = true;
+          paymentDialogActive = false;
+          setPlacing(true);
+          try {
+            const { data: verification } = await api.post("/checkout/verify-payment", {
+              order_id: data.order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_signature: response.razorpay_signature,
+            });
+            if (!verification?.success) throw new Error("Payment was received but order confirmation is pending.");
+            finalize(data.order_number);
+          } catch (e) {
+            try { sessionStorage.setItem(`artful-payment-error-${data.order_number}`, apiError(e, "Payment verification is still in progress")); } catch (_) { /* storage may be unavailable */ }
+            toast.error(apiError(e, "Payment verification is still in progress. Your order status is being checked."));
+            navigate(`/order-processing/${data.order_number}`);
+          } finally {
+            setPlacing(false);
+          }
+        },
+        modal: { ondismiss: () => {
+          paymentDialogActive = false;
+          setPlacing(false);
+          if (!paymentCallbackReceived) cancelPendingOrder(createdOrderId, "Payment window closed before payment was completed.");
+          toast.info("Payment was cancelled. No payment was completed.");
+        } },
+      });
+      rzp.on("payment.failed", (event) => {
+        paymentDialogActive = false;
+        paymentCallbackReceived = true;
+        setPlacing(false);
+        cancelPendingOrder(createdOrderId, event?.error?.description || "Payment failed.");
+        toast.error(event?.error?.description || "Payment failed. Please try another payment method.");
+      });
+      paymentDialogActive = true;
+      rzp.open();
+    } catch (e) {
+      paymentDialogActive = false;
+      await cancelPendingOrder(createdOrderId, "Checkout could not be started.");
+      toast.error(apiError(e, "Unable to start checkout. Please try again."));
+    } finally {
+      if (!paymentDialogActive) setPlacing(false);
+    }
   };
 
   const setField = (name, value) => {
@@ -338,7 +439,7 @@ export default function Checkout() {
               {field("area", "Area / Locality", false)}
               {field("state", "State", true, { type: "select", options: INDIAN_STATES })}
               {field("city", "City", true, { type: "select", options: getCitiesForState(addr.state) })}
-              
+
               {field("pincode", "Pincode", true, { numeric: true })}
               {field("instructions", "Delivery instructions (optional)", false, { full: true })}
             </div>
@@ -386,6 +487,7 @@ export default function Checkout() {
                           <button onClick={() => removeItem(i.key)} className="text-ink-muted hover:text-err shrink-0" data-testid={`checkout-remove-${i.key}`} aria-label="Remove"><Trash2 size={15} /></button>
                         </div>
                         {Number(i.pack_quantity || 1) > 1 && <p className="text-[11px] text-ink-muted mt-1">Each product: {i.pack_quantity} {i.quantity_unit || "pieces"} · Quantity {i.qty} = {i.qty * Number(i.pack_quantity)} {i.quantity_unit || "pieces"}</p>}
+                        {i.gift_wrap && <p className="text-[11px] text-amber-700 mt-1">Gift wrapping · {inr(i.wrap_price ?? i.gift_wrap_price ?? 199)} × {i.qty}</p>}
                         {i.bulk_order?.applied && <p className="text-[11px] text-violet-700 mt-1">Bulk rate applied · {inr(i.price)} / item</p>}
                         {customDetails.length > 0 && <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-1">{customDetails.map((d, idx) => <p key={idx} className="text-[11px] text-ink-secondary truncate"><span className="text-ink-muted">{d.label}:</span> {d.value}</p>)}</div>}
                         <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
@@ -415,28 +517,34 @@ export default function Checkout() {
               })}
             </div>
             <div className="space-y-2 mb-4">
-              <label className="block text-xs font-medium text-ink-secondary">Choose an available coupon</label>
-              <select value={coupon} onChange={(e) => setCoupon(e.target.value)} className="input-field w-full" data-testid="checkout-coupon-select">
-                <option value="">Select coupon</option>
-                {couponOptions.map((option) => <option key={option.code} value={option.code} disabled={!option.eligible}>{option.code} — {option.description || "Offer"}{option.eligible ? "" : ` · ${option.reason || "Not eligible"}`}</option>)}
+              <label className="block text-xs font-medium text-ink-secondary">Available offers</label>
+              <select value={applied || ""} onChange={(e) => { const code = e.target.value; if (!code) { removeCoupon(); return; } const option = couponOptions.find((item) => item.code === code); if (option?.eligible) applyCouponCode(code); }} className="input-field w-full" data-testid="checkout-coupon-select" disabled={couponOptionsLoading || couponApplying}>
+                <option value="">{couponOptionsLoading ? "Loading offers…" : "Select an eligible coupon"}</option>
+                {couponOptions.map((option) => <option key={option.code} value={option.code} disabled={!option.eligible}>{option.code} — {option.description || "Special offer"}{option.eligible ? ` · Save ${inr(option.discount || 0)}${option.free_shipping ? " + Free shipping" : ""}` : ` · ${option.reason || "Not eligible"}`}</option>)}
               </select>
-              {couponOptions.filter((option) => !option.eligible).slice(0, 3).map((option) => <p key={option.code} className="text-[11px] text-ink-muted">{option.code}: {option.reason || "Not eligible for this cart"}</p>)}
-              <div className="flex gap-2"><input value={coupon} onChange={(e) => setCoupon(e.target.value.toUpperCase())} placeholder="Or enter coupon code" className="input-field flex-1" data-testid="checkout-coupon-input" /><button onClick={applyCoupon} className="btn-primary !px-4">Apply</button></div>
-              {applied && <button type="button" onClick={() => { setApplied(null); setCoupon(""); validate(null); }} className="text-xs text-err underline">Remove coupon {applied}</button>}
+              {couponOptions.length === 0 && !couponOptionsLoading && <p className="text-[11px] text-ink-muted">No active coupons are available for this cart. You can still enter a coupon code below.</p>}
+              {couponOptions.filter((option) => !option.eligible).slice(0, 2).map((option) => <p key={option.code} className="text-[11px] text-ink-muted">{option.code}: {option.reason || "Not eligible for this cart"}</p>)}
+              <div className="flex gap-2"><input value={coupon} onChange={(e) => setCoupon(e.target.value.toUpperCase())} placeholder="Enter coupon code" className="input-field flex-1" data-testid="checkout-coupon-input" /><button onClick={applyCoupon} disabled={!coupon.trim() || couponApplying} className="btn-primary !px-4 disabled:opacity-50">{couponApplying ? "Applying…" : "Apply"}</button></div>
+              {applied && <div className="flex items-center justify-between rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-800"><span><b>{applied}</b> applied{totals?.coupon_description ? ` · ${totals.coupon_description}` : ""}</span><button type="button" onClick={removeCoupon} className="underline font-semibold">Remove</button></div>}
             </div>
             {totals && (
-              <div className="space-y-2 text-sm border-t border-line pt-4">
-                {(() => { const wrap = giftWrapTotal(totals.items); return (<>
-                <div className="flex justify-between text-ink-secondary"><span>Subtotal</span><span>{inr(totals.subtotal - wrap)}</span></div>
-                {wrap > 0 && <div className="flex justify-between text-ink-secondary" data-testid="checkout-giftwrap"><span>Gift Wrapping</span><span>{inr(wrap)}</span></div>}
-                {totals.discount > 0 && <div className="flex justify-between text-ok"><span>Discount</span><span>-{inr(totals.discount)}</span></div>}
-                <div className="flex justify-between text-ink-secondary"><span>Shipping</span><span>{totals.shipping === 0 ? "Free" : inr(totals.shipping)}</span></div>
-                <div className="flex justify-between text-lg text-plum font-medium pt-2 border-t border-line-subtle"><span>Total</span><span data-testid="checkout-total">{inr(totals.total + (method === "cod" ? codFee : 0))}</span></div>
-                </>); })()}
+              <div className="space-y-3 text-sm border-t border-line pt-4" data-testid="checkout-pricing-breakdown">
+                <div className="flex justify-between text-ink-secondary"><span>Subtotal</span><span>{inr(totals.subtotal)}</span></div>
+                {Number(totals.gift_wrapping || 0) > 0 && <div className="flex justify-between text-ink-secondary" data-testid="checkout-giftwrap"><span>Gift wrapping</span><span>{inr(totals.gift_wrapping)}</span></div>}
+                {Number(totals.discount || 0) > 0 && <div className="flex justify-between text-emerald-700"><span>Discount{totals.coupon_code ? ` (${totals.coupon_code})` : ""}</span><span>-{inr(totals.discount)}</span></div>}
+                <div className="flex justify-between text-ink-secondary"><span>Shipping</span>{totals.shipping === 0 ? <span className="font-semibold text-emerald-700">Free shipping</span> : <span>{inr(totals.shipping)}</span>}</div>
+                {Number(totals.tax || 0) > 0 && <div className="flex justify-between text-ink-secondary"><span>Tax</span><span>{inr(totals.tax)}</span></div>}
+                {method === "cod" && codFee > 0 && <div className="flex justify-between text-ink-secondary"><span>Cash on Delivery fee</span><span>{inr(codFee)}</span></div>}
+                <div className="border-t border-line-subtle pt-3 flex justify-between items-center text-lg text-plum font-semibold"><span>Order total</span><span data-testid="checkout-total">{inr(totals.total + (method === "cod" ? codFee : 0))}</span></div>
+                {totals.shipping === 0 && <p className="text-[11px] text-emerald-700">Your order qualifies for free shipping.</p>}
+                {totals.shipping > 0 && totals.shipping_note && <p className="text-[11px] text-ink-muted">{totals.shipping_note}</p>}
+                {totalsError && <p className="text-xs text-err" role="alert">{totalsError}</p>}
+                {(totals.errors || []).map((error, index) => <p key={`${error.product_id || "cart"}-${index}`} className="text-xs text-err" role="alert">{error.name ? `${error.name}: ` : ""}{error.error}</p>)}
+                {totals.coupon_error && <p className="text-xs text-err" role="alert">{totals.coupon_error}</p>}
               </div>
             )}
-            <button onClick={placeOrder} disabled={!customer || placing} className="btn-primary w-full mt-6" data-testid="place-order-btn">
-              <Lock size={14} /> {placing ? "Processing…" : method === "cod" ? "Place Order" : "Pay Now"}
+            <button onClick={placeOrder} disabled={!customer || !mobileVerified || placing || totalsLoading || !totals || (totals.errors || []).length > 0} className="btn-primary w-full mt-6 disabled:opacity-50" data-testid="place-order-btn">
+              <Lock size={14} /> {placing ? "Processing…" : totalsLoading ? "Calculating total…" : method === "cod" ? `Place order · ${inr((totals?.total || 0) + codFee)}` : `Pay Now · ${inr(totals?.total || 0)}`}
             </button>
           </div>
         </div>

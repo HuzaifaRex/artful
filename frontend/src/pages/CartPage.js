@@ -59,7 +59,7 @@ export default function CartPage() {
                   <Link to={`/products/${item.slug}`} className="artful-product-name text-lg text-ink hover:text-plum">{item.name}</Link>
                   <button onClick={() => removeItem(item.key)} className="text-ink-muted hover:text-err"><Trash2 size={17} /></button>
                 </div>
-                {item.gift_wrap && <p className="text-xs text-plum mt-1">+ Gift wrap (₹199)</p>}
+                {item.gift_wrap && <p className="text-xs text-plum mt-1">+ Gift wrap ({inr(item.wrap_price ?? item.gift_wrap_price ?? 199)} × {item.qty} = {inr(Number(item.wrap_price ?? item.gift_wrap_price ?? 199) * Number(item.qty || 1))})</p>}
                 {item.personalization && <p className="text-xs text-ink-muted mt-1">Personalization: "{item.personalization}"</p>}
                 {item.bulk_order && item.qty >= Number(item.bulk_order.min_quantity || 0) && <p className="text-xs text-violet-700 mt-1">Bulk price applied · {inr(item.price)} / item</p>}
                 {Number(item.pack_quantity || 1) > 1 && <p className="text-[11px] text-ink-muted mt-1">Each product: {item.pack_quantity} {item.quantity_unit || "pieces"} · Quantity {item.qty} = {item.qty * Number(item.pack_quantity)} {item.quantity_unit || "pieces"}</p>}
@@ -87,8 +87,9 @@ export default function CartPage() {
             {totals && (
               <div className="space-y-2.5 text-sm border-t border-line pt-4">
                 <div className="flex justify-between text-ink-secondary"><span>Subtotal</span><span>{inr(totals.subtotal)}</span></div>
-                {totals.discount > 0 && <div className="flex justify-between text-ok"><span>Discount</span><span>-{inr(totals.discount)}</span></div>}
-                <div className="flex justify-between text-ink-secondary"><span>Shipping</span><span>{totals.shipping === 0 ? "Free" : inr(totals.shipping)}</span></div>
+                {Number(totals.gift_wrapping || 0) > 0 && <div className="flex justify-between text-ink-secondary"><span>Gift wrapping</span><span>{inr(totals.gift_wrapping)}</span></div>}
+                {totals.discount > 0 && <div className="flex justify-between text-emerald-700"><span>Discount</span><span>−{inr(totals.discount)}</span></div>}
+                <div className="flex justify-between text-ink-secondary"><span>Shipping</span><span className={totals.shipping === 0 ? "text-emerald-700 font-semibold" : ""}>{totals.shipping === 0 ? "Free shipping" : inr(totals.shipping)}</span></div>
                 {totals.tax > 0 && <div className="flex justify-between text-ink-secondary"><span>Tax</span><span>{inr(totals.tax)}</span></div>}
                 <div className="flex justify-between text-xl text-plum font-medium pt-3 border-t border-line"><span>Total</span><span data-testid="cartpage-total">{inr(totals.total)}</span></div>
                 {totals.savings > 0 && <p className="text-xs text-ok text-right">You're saving {inr(totals.savings)}</p>}

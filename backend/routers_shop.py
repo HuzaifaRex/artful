@@ -196,7 +196,9 @@ async def cart_validate(payload: dict, request: Request):
 @router.post("/coupons/validate")
 async def coupon_validate(payload: dict, request: Request):
     cust = await optional_customer(request)
-    lines, _ = await build_line_items(payload.get("items", []))
+    lines, errors = await build_line_items(payload.get("items", []))
+    if errors:
+        raise HTTPException(400, {"message": "Please review your cart before applying a coupon.", "errors": errors})
     subtotal = sum(l["line_total"] for l in lines)
     coupon, discount, free_ship, err = await validate_coupon(payload.get("code"), subtotal, lines, cust)
     if err:
@@ -404,9 +406,12 @@ async def create_order(payload: dict, cust: dict = Depends(get_current_customer)
         },
         "items": totals["items"],
         "pricing": {
-            "subtotal": totals["subtotal"], "discount": totals["discount"],
-            "coupon_code": totals["coupon_code"], "shipping": totals["shipping"],
-            "tax": totals["tax"], "cod_fee": totals.get("cod_fee", 0), "savings": totals["savings"], "total": totals["total"],
+            "subtotal": totals["subtotal"], "gift_wrapping": totals.get("gift_wrapping", 0),
+            "discount": totals["discount"], "coupon_code": totals["coupon_code"],
+            "shipping": totals["shipping"], "shipping_charge": totals.get("shipping_charge", totals["shipping"]),
+            "shipping_strategy": totals.get("shipping_strategy"),
+            "tax": totals["tax"], "cod_fee": totals.get("cod_fee", 0),
+            "savings": totals["savings"], "total": totals["total"],
             "currency_symbol": totals["currency_symbol"],
         },
         "address": address, "payment_method": method,
@@ -618,6 +623,53 @@ async def _mark_payment_failed(order, reason="Payment failed."):
             {"id": line["product_id"]}, {"$inc": {"reserved": -line["qty"]}}
         )
     return True
+
+
+@router.post("/checkout/mock-pay")
+async def mock_pay(payload: dict, cust: dict = Depends(get_current_customer)):
+    """Confirm a demo checkout only when Razorpay is not configured.
+
+    This endpoint is deliberately disabled in live-payment mode and is scoped to
+    the authenticated customer's own order. It is idempotent for safe retries.
+    """
+    if ig.razorpay_enabled():
+        raise HTTPException(403, "Demo payment is disabled while live Razorpay payments are configured.")
+    order = await db.orders.find_one({"id": payload.get("order_id"), "customer_id": cust["id"]})
+    if not order:
+        raise HTTPException(404, "Order not found.")
+    payment = order.get("payment") or {}
+    if not payment.get("dev_mode"):
+        raise HTTPException(400, "This order is not eligible for demo payment.")
+    if payment.get("status") in ("paid", "cod_confirmed"):
+        return {"success": True, "order": order_public(order)}
+    if payment.get("status") != "created":
+        raise HTTPException(409, "This payment cannot be completed. Please create a new order.")
+
+    await _finalize_paid_order(order, payment_id=None, method="razorpay")
+    updated = await db.orders.find_one({"id": order["id"]})
+    if not updated or (updated.get("payment") or {}).get("status") != "paid":
+        raise HTTPException(502, "Demo payment could not be confirmed. Please contact support with your order number.")
+    return {"success": True, "order": order_public(updated)}
+
+
+@router.post("/checkout/cancel-payment")
+async def cancel_payment(payload: dict, cust: dict = Depends(get_current_customer)):
+    """Release a customer's inventory reservation after an unpaid checkout is abandoned."""
+    order = await db.orders.find_one({"id": payload.get("order_id"), "customer_id": cust["id"]})
+    if not order:
+        raise HTTPException(404, "Order not found.")
+    payment = order.get("payment") or {}
+    if payment.get("status") in ("paid", "cod_confirmed"):
+        return {"success": False, "message": "This order has already been completed."}
+    if order.get("payment_method") == "cod" or payment.get("provider") == "cod":
+        raise HTTPException(409, "Cash on Delivery orders cannot be cancelled through payment cancellation.")
+    if payment.get("status") == "failed":
+        return {"success": True, "already_cancelled": True}
+    if payment.get("status") != "created":
+        raise HTTPException(409, "This payment is no longer eligible for cancellation.")
+    reason = str(payload.get("reason") or "Payment was not completed.").strip()[:240]
+    changed = await _mark_payment_failed(order, reason)
+    return {"success": bool(changed), "already_cancelled": not bool(changed)}
 
 
 @router.post("/checkout/verify-payment")

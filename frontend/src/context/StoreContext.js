@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
+import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from "react";
 import { api } from "../lib/api";
 import { toast } from "sonner";
 import { getBulkUnitPrice } from "../lib/utils";
@@ -83,6 +83,8 @@ export function StoreProvider({ children }) {
         base_price: product.price, bulk_order: product.bulk_order || null,
         pack_quantity: Math.max(1, Number(product.pack_quantity || 1)), quantity_unit: product.quantity_unit || "pieces",
         cod_available: product.cod_available !== false, shipping_charge: product.shipping_charge ?? null,
+        gift_wrap_enabled: product.gift_wrap_enabled !== false, gift_wrap_price: Number(product.gift_wrap_price ?? 199),
+        wrap_price: Number(product.gift_wrap_price ?? 199),
         material_care: Array.isArray(product.material_care) ? product.material_care : [],
         compare_at_price: product.compare_at_price, qty: nextQty, available,
         variant_id: opts.variant_id || null, gift_wrap: !!opts.gift_wrap,
@@ -144,14 +146,15 @@ export function StoreProvider({ children }) {
     }
   }, [wishlist]);
 
-  const cartPayload = cart.map((i) => ({
+  // Keep the API payload referentially stable between renders. Checkout effects depend on it.
+  const cartPayload = useMemo(() => cart.map((i) => ({
     product_id: i.product_id, variant_id: i.variant_id, qty: i.qty,
     gift_wrap: i.gift_wrap, personalization: i.personalization,
     bulk_tier_quantity: i.bulk_tier_quantity || null,
     customization: i.customization || null,
     custom_size: i.custom_size || null,
     artwork: i.artwork || [],
-  }));
+  })), [cart]);
 
   return (
     <StoreContext.Provider value={{
