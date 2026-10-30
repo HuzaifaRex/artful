@@ -305,7 +305,7 @@ export default function ProductDetail() {
           {p.review_count > 0 && (
             <div className="flex items-center gap-1 mt-3">{[...Array(5)].map((_, i) => <Star key={i} size={15} className={i < Math.round(p.rating) ? "fill-gold text-gold" : "text-line"} />)}<span className="text-xs text-ink-muted ml-2">{p.rating} ({p.review_count})</span></div>
           )}
-          {Number(p.pack_quantity || 1) > 1 && <p className="mt-3 text-sm text-ink-secondary" data-testid="pdp-pack-quantity">Product quantity: {Number(p.pack_quantity).toLocaleString("en-IN")} {p.quantity_unit || "pieces"}</p>}
+          {Number(p.pack_quantity || 1) > 1 && <p className="mt-3 text-lg capitalize text-ink-secondary" data-testid="pdp-pack-quantity">Product quantity: {Number(p.pack_quantity).toLocaleString("en-IN")} {p.quantity_unit || "pieces"}</p>}
           <div className="mt-5 rounded-2xl border border-plum/15 bg-plum/5 p-4" data-testid="pdp-price-summary">
             {customization?.enabled ? <>
               <div className="flex items-center justify-between gap-3"><span className="text-xs text-ink-muted">Base Price</span><span className="text-sm font-medium text-ink-muted">{inr(p.price)}</span></div>
@@ -420,7 +420,7 @@ export default function ProductDetail() {
 
           <div className="mt-8">
             <Accordion title="Material and Care" open>
-              <div className="space-y-2 text-sm text-ink-secondary">
+              <div className="space-y-2 text-lg text-ink-secondary capitalize">
                 {Array.isArray(p.material_care) && p.material_care.length > 0 ? p.material_care.filter((row) => row && row.visible !== false).map((row, index) => <div key={row.id || index}><b>{row.label || row.type || `Details ${index + 1}`}:</b> {row.value || row.description || "—"}</div>) : <><p><b>Material:</b> {p.material || "—"}</p><p><b>Color:</b> {p.color || "—"}</p><p><b>Dimensions:</b> {p.dimensions || "—"}</p><p><b>Care:</b> {p.care || "—"}</p></>}
               </div>
             </Accordion>
