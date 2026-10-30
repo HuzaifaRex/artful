@@ -427,7 +427,7 @@ option,
 
 ul{
   list-style: disc !important;
-  padding-left: 0;
+  padding-left: 20px !important;
 }
 ol{
   list-style: numeric !important;
