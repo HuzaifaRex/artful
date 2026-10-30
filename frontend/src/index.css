@@ -424,3 +424,15 @@ option,
     display: none !important;
   }
 }
+
+ul{
+  list-style: disc !important;
+  padding-left: 0;
+}
+ol{
+  list-style: numeric !important;
+  padding-left: 0;
+}
+b{
+  font-weight: 600 !important;
+}
