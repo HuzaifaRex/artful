@@ -4,6 +4,7 @@ import { adminApi, apiError } from "../lib/api";
 import { toast } from "sonner";
 import { formatDateTime, INDIAN_STATES } from "../lib/utils";
 import { StatusChip, Modal, Field, inputCls, PageHead, Empty } from "./ui";
+import { RichEditor } from "./RichEditor";
 
 const DEFAULT_NAVIGATION = [
   { key: "shop", label: "Shop", to: "/shop", page_heading: "Shop All", page_subheading: "Explore the complete ARTFUL collection." },
@@ -161,7 +162,7 @@ export function Settings() {
         </div>
         <div className="pt-4 border-t border-gray-200 space-y-3">
           <h3 className="font-semibold text-gray-900 text-sm">Footer Content</h3>
-          <Field label="Footer Description"><textarea rows={3} value={s.footer_description || ""} onChange={(e) => set("footer_description", e.target.value)} className={inputCls} placeholder="Short description shown beneath the logo in the website footer" /></Field>
+          <Field label="Footer Description"><RichEditor value={s.footer_description || ""} onChange={(value) => set("footer_description", value)} testid="footer-description-editor" /></Field>
         </div>
         <div className="pt-4 border-t border-gray-200 space-y-3">
           <div className="flex flex-wrap justify-between items-center gap-3"><div><h3 className="font-semibold text-gray-900 text-sm">Website Menu & Page Headings</h3><p className="text-xs text-gray-500 mt-1">Labels, destinations, headings and subheadings shown on the storefront.</p></div><button type="button" onClick={() => setNavigation([...navigation, { key: `custom_${Date.now()}`, label: "New menu item", to: "/shop", page_heading: "", page_subheading: "" }])} className="flex items-center gap-1 border rounded px-3 py-2 text-xs"><Plus size={14}/> Add Menu</button></div>

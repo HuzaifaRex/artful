@@ -4,6 +4,7 @@ from typing import Optional, List
 from db import db, clean
 from search_engine import SearchEngine, normalize
 from security import now_iso, optional_customer, get_current_customer
+from html_safety import sanitize_html
 
 router = APIRouter()
 
@@ -273,6 +274,14 @@ async def homepage():
     settings = await db.settings.find_one({"id": "store"}, {"_id": 0}) or {}
     sections = [s async for s in db.homepage_sections.find({"enabled": True}, {"_id": 0})]
     sections.sort(key=lambda s: s.get("order", 0))
+    # Sanitize saved rich-text card descriptions before sending them to the storefront.
+    for section in sections:
+        if isinstance(section.get("items"), list):
+            for item in section["items"]:
+                if isinstance(item, dict):
+                    for description_key in ("desc", "description"):
+                        if isinstance(item.get(description_key), str):
+                            item[description_key] = sanitize_html(item[description_key])
     banners = [b async for b in db.banners.find({"status": "Active"}, {"_id": 0})]
     return {"announcement": {"enabled": settings.get("announcement_enabled", False),
                              "text": settings.get("announcement_text", "")},
@@ -283,6 +292,8 @@ async def homepage():
 @router.get("/settings")
 async def public_settings():
     s = await db.settings.find_one({"id": "store"}, {"_id": 0}) or {}
+    if isinstance(s.get("footer_description"), str):
+        s["footer_description"] = sanitize_html(s["footer_description"])
     for k in ("cost_",):
         s.pop(k, None)
     return s

@@ -1353,6 +1353,19 @@ async def cms_homepage(admin: dict = Depends(require_permission("content"))):
 @router.put("/cms/homepage/{sid}")
 async def cms_update_section(sid: str, payload: dict, admin: dict = Depends(require_permission("content"))):
     fields = {k: v for k, v in payload.items() if k not in ("id", "_id")}
+    # Homepage card descriptions are rich text. Sanitize on the server boundary
+    # while retaining the existing desc/description key for backwards compatibility.
+    if isinstance(fields.get("items"), list):
+        safe_items = []
+        for item in fields["items"]:
+            if not isinstance(item, dict):
+                continue
+            safe_item = dict(item)
+            for description_key in ("desc", "description"):
+                if description_key in safe_item and isinstance(safe_item[description_key], str):
+                    safe_item[description_key] = sanitize_html(safe_item[description_key])
+            safe_items.append(safe_item)
+        fields["items"] = safe_items
     await db.homepage_sections.update_one({"id": sid}, {"$set": fields})
     return clean(await db.homepage_sections.find_one({"id": sid}))
 
@@ -1843,6 +1856,8 @@ async def get_settings(admin: dict = Depends(require_permission("settings"))):
 @router.put("/settings")
 async def update_settings(payload: dict, request: Request, admin: dict = Depends(require_permission("settings"))):
     fields = {k: v for k, v in payload.items() if k not in ("id", "_id", "integrations")}
+    if "footer_description" in fields and isinstance(fields["footer_description"], str):
+        fields["footer_description"] = sanitize_html(fields["footer_description"])
     await db.settings.update_one({"id": "store"}, {"$set": fields}, upsert=True)
     await audit(admin, "update", "settings", "store", request=request)
     return await db.settings.find_one({"id": "store"}, {"_id": 0})

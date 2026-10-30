@@ -9,11 +9,20 @@ import { DataTable } from "./DataTable";
 
 function SlidesEditor({ slides = [], onChange }) {
   const setSlide = (i, k, v) => { const n = [...slides]; n[i] = { ...n[i], [k]: v }; onChange(n); };
-  const setBadge = (si, bi, k, v) => { const n = [...slides]; const b = [...(n[si].badges || [])]; b[bi] = { ...b[bi], [k]: v }; n[si] = { ...n[si], badges: b }; onChange(n); };
-  const addSlide = () => onChange([...slides, { heading: "New slide", badges: [] }]);
+  const setSlideMedia = (i, key, value) => {
+    const n = [...slides];
+    n[i] = { ...n[i], [key]: value, media_url: "" };
+    if (key === "image") n[i].video_url = "";
+    if (key === "video") n[i].video_url = "";
+    onChange(n);
+  };
+  const setDestination = (i, value) => {
+    const n = [...slides];
+    n[i] = { ...n[i], destination_url: value, url: "", cta_link: "" };
+    onChange(n);
+  };
+  const addSlide = () => onChange([...slides, { media_type: "image", image: "", video: "", destination_url: "" }]);
   const rmSlide = (i) => onChange(slides.filter((_, x) => x !== i));
-  const addBadge = (si) => { const n = [...slides]; n[si] = { ...n[si], badges: [...(n[si].badges || []), { icon: "Award", label: "New badge" }] }; onChange(n); };
-  const rmBadge = (si, bi) => { const n = [...slides]; n[si] = { ...n[si], badges: (n[si].badges || []).filter((_, x) => x !== bi) }; onChange(n); };
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between"><label className="text-sm font-semibold text-gray-800">Carousel Slides</label><button onClick={addSlide} className="text-sm text-plum flex items-center gap-1" data-testid="cms-add-slide"><Plus size={14} /> Add slide</button></div>
@@ -21,21 +30,19 @@ function SlidesEditor({ slides = [], onChange }) {
         <div key={i} className="border border-gray-200 rounded-lg p-4 space-y-3 relative" data-testid={`cms-slide-${i}`}>
           <button onClick={() => rmSlide(i)} className="absolute top-3 right-3 text-gray-400 hover:text-red-600"><Trash2 size={15} /></button>
           <p className="text-xs font-semibold text-gray-500">Slide {i + 1}</p>
-          <Field label="Eyebrow"><input value={s.eyebrow || ""} onChange={(e) => setSlide(i, "eyebrow", e.target.value)} className={inputCls} /></Field>
-          <Field label="Heading"><input value={s.heading || ""} onChange={(e) => setSlide(i, "heading", e.target.value)} className={inputCls} /></Field>
-          <Field label="Subheading"><textarea rows={2} value={s.subheading || ""} onChange={(e) => setSlide(i, "subheading", e.target.value)} className={inputCls} /></Field>
-          <Field label="Media type"><select value={s.media_type || (s.video ? "video" : "image")} onChange={(e) => setSlide(i, "media_type", e.target.value)} className={inputCls}><option value="image">Image</option><option value="video">Video</option></select></Field>
-          {(s.media_type || (s.video ? "video" : "image")) === "video" ? <Field label="Banner video"><VideoUpload value={s.video || s.video_url || ""} onChange={(u) => setSlide(i, "video", u)} testid={`cms-slide-video-${i}`} /></Field> : <Field label="Banner image"><ImageUpload value={s.image || ""} onChange={(u) => setSlide(i, "image", u)} testid={`cms-slide-img-${i}`} /></Field>}
-          <Field label="Destination URL (optional)"><input type="url" placeholder="/shop or https://example.com" value={s.destination_url || s.url || s.cta_link || ""} onChange={(e) => setSlide(i, "destination_url", e.target.value)} className={inputCls} /></Field>
+          <Field label="Media type"><select value={s.media_type || (s.video || s.video_url ? "video" : "image")} onChange={(e) => setSlide(i, "media_type", e.target.value)} className={inputCls}><option value="image">Image</option><option value="video">Video</option></select></Field>
+          {(s.media_type || (s.video || s.video_url ? "video" : "image")) === "video"
+            ? <Field label="Banner video"><VideoUpload value={s.video || s.video_url || s.media_url || ""} onChange={(u) => setSlideMedia(i, "video", u)} testid={`cms-slide-video-${i}`} /></Field>
+            : <Field label="Banner image"><ImageUpload value={s.image || s.media_url || ""} onChange={(u) => setSlideMedia(i, "image", u)} testid={`cms-slide-img-${i}`} /></Field>}
+          <Field label="Destination URL (optional)"><input type="url" placeholder="/shop or https://example.com" value={s.destination_url || s.url || s.cta_link || ""} onChange={(e) => setDestination(i, e.target.value)} className={inputCls} /></Field>
         </div>
       ))}
-      <p className="text-[11px] text-gray-400">Icon names use lucide-react (e.g. Award, RefreshCw, Truck, ShieldCheck, Gift, Star, BadgeIndianRupee).</p>
     </div>
   );
 }
 
 
-function CardsEditor({ items = [], onChange }) {
+function CardsEditor({ items = [], onChange, sectionKey = "homepage" }) {
   const update = (index, key, value) => onChange(items.map((item, i) => i === index ? { ...item, [key]: value } : item));
   const move = (index, delta) => { const next = [...items]; const target = index + delta; if (target < 0 || target >= next.length) return; [next[index], next[target]] = [next[target], next[index]]; onChange(next.map((item, i) => ({ ...item, order: i }))); };
   const add = () => onChange([...items, { icon: "Star", title: "New card", desc: "Add a short description", visible: true, order: items.length }]);
@@ -44,7 +51,7 @@ function CardsEditor({ items = [], onChange }) {
     {items.map((item, index) => <div key={item.id || `${index}-${item.title}`} className="rounded-lg border border-gray-200 p-3 space-y-3">
       <div className="flex justify-between items-center"><p className="text-xs font-semibold text-gray-500">Card {index + 1}</p><div className="flex gap-1"><button type="button" disabled={index === 0} onClick={() => move(index, -1)} className="text-xs border rounded px-2 py-1 disabled:opacity-30">↑</button><button type="button" disabled={index === items.length - 1} onClick={() => move(index, 1)} className="text-xs border rounded px-2 py-1 disabled:opacity-30">↓</button><button type="button" onClick={() => onChange(items.filter((_, i) => i !== index))} className="text-xs border border-red-200 text-red-600 rounded px-2 py-1">Remove</button></div></div>
       <div className="grid sm:grid-cols-2 gap-3"><Field label="Icon (Lucide name)"><input value={item.icon || "Star"} onChange={(e) => update(index, "icon", e.target.value)} className={inputCls} placeholder="Gift, ShieldCheck, Star"/></Field><Field label="Heading"><input value={item.title || ""} onChange={(e) => update(index, "title", e.target.value)} className={inputCls}/></Field></div>
-      <Field label="Description"><textarea rows={2} value={item.desc || item.description || ""} onChange={(e) => { const key = Object.prototype.hasOwnProperty.call(item, "desc") || !item.description ? "desc" : "description"; update(index, key, e.target.value); }} className={inputCls}/></Field>
+      <Field label="Description"><RichEditor value={item.desc ?? item.description ?? ""} onChange={(value) => { const key = Object.prototype.hasOwnProperty.call(item, "desc") || !Object.prototype.hasOwnProperty.call(item, "description") ? "desc" : "description"; update(index, key, value); }} testid={`${sectionKey}-card-description-${index}`} /></Field>
       <label className="flex items-center gap-2 text-sm text-gray-600"><input type="checkbox" checked={item.visible !== false} onChange={(e) => update(index, "visible", e.target.checked)} className="accent-plum"/> Visible on homepage</label>
     </div>)}
     {!items.length && <p className="text-sm text-gray-400">No cards configured.</p>}
@@ -57,6 +64,19 @@ export function HomepageCMS() {
   const load = useCallback(() => adminApi.get("/cms/homepage").then(({ data }) => setSections(data.sections)).catch(() => {}), []);
   useEffect(() => { load(); }, [load]);
   const toggle = async (s) => { await adminApi.put(`/cms/homepage/${s.id}`, { enabled: !s.enabled }); load(); };
+  const openEditor = (section) => {
+    const next = { ...section };
+    if (section.type === "hero" && (!Array.isArray(section.slides) || !section.slides.length) && (section.image || section.video || section.video_url)) {
+      next.slides = [{
+        id: "legacy-hero-slide",
+        media_type: section.media_type || (section.video || section.video_url ? "video" : "image"),
+        image: section.image || "",
+        video: section.video || section.video_url || "",
+        destination_url: section.destination_url || section.url || section.cta_link || "",
+      }];
+    }
+    setEditing(next);
+  };
   const save = async () => { await adminApi.put(`/cms/homepage/${editing.id}`, editing); toast.success("Section updated"); setEditing(null); load(); };
 
   return (
@@ -71,7 +91,7 @@ export function HomepageCMS() {
             </div>
             <div className="flex items-center gap-3">
               <button onClick={() => toggle(s)} className={s.enabled ? "text-emerald-600" : "text-gray-400"} title={s.enabled ? "Enabled" : "Disabled"} data-testid={`cms-toggle-${s.key}`}>{s.enabled ? <Eye size={18} /> : <EyeOff size={18} />}</button>
-              <button onClick={() => setEditing(s)} className="text-gray-400 hover:text-plum"><Edit size={17} /></button>
+              <button onClick={() => openEditor(s)} className="text-gray-400 hover:text-plum"><Edit size={17} /></button>
             </div>
           </div>
         ))}
@@ -79,10 +99,12 @@ export function HomepageCMS() {
       {editing && (
         <Modal open title="Edit Section" onClose={() => setEditing(null)} wide>
           <div className="space-y-4">
-            <Field label="Heading"><input value={editing.heading || ""} onChange={(e) => setEditing({ ...editing, heading: e.target.value })} className={inputCls} data-testid="cms-heading" /></Field>
-            <Field label="Subheading"><textarea rows={2} value={editing.subheading || ""} onChange={(e) => setEditing({ ...editing, subheading: e.target.value })} className={inputCls} /></Field>
-            {["hero", "banner", "story", "categories"].includes(editing.type) && <Field label="Image"><ImageUpload value={editing.image} onChange={(u) => setEditing({ ...editing, image: u })} testid="cms-image" /></Field>}
-            {["hero", "banner", "story"].includes(editing.type) && (
+            {editing.type !== "hero" && <>
+              <Field label="Heading"><input value={editing.heading || ""} onChange={(e) => setEditing({ ...editing, heading: e.target.value })} className={inputCls} data-testid="cms-heading" /></Field>
+              <Field label="Subheading"><textarea rows={2} value={editing.subheading || ""} onChange={(e) => setEditing({ ...editing, subheading: e.target.value })} className={inputCls} /></Field>
+            </>}
+            {editing.type !== "hero" && ["banner", "story", "categories"].includes(editing.type) && <Field label="Image"><ImageUpload value={editing.image} onChange={(u) => setEditing({ ...editing, image: u })} testid="cms-image" /></Field>}
+            {editing.type !== "hero" && ["banner", "story"].includes(editing.type) && (
               <div className="grid grid-cols-2 gap-4">
                 <Field label="CTA Text"><input value={editing.cta_text || ""} onChange={(e) => setEditing({ ...editing, cta_text: e.target.value })} className={inputCls} /></Field>
                 <Field label="CTA Link"><input value={editing.cta_link || ""} onChange={(e) => setEditing({ ...editing, cta_link: e.target.value })} className={inputCls} /></Field>
@@ -91,7 +113,7 @@ export function HomepageCMS() {
             {editing.type === "hero" && (
               <SlidesEditor slides={editing.slides || []} onChange={(slides) => setEditing({ ...editing, slides })} />
             )}
-            {Array.isArray(editing.items) && <CardsEditor items={editing.items || []} onChange={(items) => setEditing({ ...editing, items })} />}
+            {Array.isArray(editing.items) && <CardsEditor items={editing.items || []} sectionKey={editing.key || editing.id || "homepage"} onChange={(items) => setEditing({ ...editing, items })} />}
           </div>
           <div className="flex justify-end gap-3 mt-6"><button onClick={() => setEditing(null)} className="px-4 py-2 text-sm text-gray-600">Cancel</button><button onClick={save} className="bg-plum text-white rounded-md px-5 py-2 text-sm" data-testid="cms-save">Save</button></div>
         </Modal>

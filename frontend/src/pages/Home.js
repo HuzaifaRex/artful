@@ -7,6 +7,7 @@ import ProductCard from "../components/ProductCard";
 import { ProductSkeleton } from "../components/Loader";
 import { getIcon } from "../lib/icons";
 import CategoryMarquee from "../components/CategoryMarquee";
+import { sanitizeHtml } from "../lib/sanitizeHtml";
 
 /* ---------------- MEDIA-ONLY HERO CAROUSEL (admin controlled) ---------------- */
 function safeDestination(value) {
@@ -39,7 +40,7 @@ function HeroCarousel({ section, banners = [] }) {
   const source = activeBanners.length ? activeBanners : cmsSlides;
   const slides = source.map((s, idx) => {
     const mediaType = String(s.media_type || (s.video || s.video_url ? "video" : "image")).toLowerCase() === "video" ? "video" : "image";
-    const media = mediaType === "video" ? (s.video_url || s.video || s.media_url || "") : (s.image || s.media_url || "");
+    const media = mediaType === "video" ? (s.video || s.video_url || s.media_url || "") : (s.image || s.media_url || "");
     return { id: s.id || idx, mediaType, media, destination: safeDestination(s.destination_url || s.url || s.cta_link) };
   }).filter((s) => !!s.media);
   const [emblaRef, embla] = useEmblaCarousel({ loop: slides.length > 1, duration: 30 });
@@ -226,7 +227,7 @@ function ValuesSection({ s }) {
                 <div className="w-14 h-14 rounded-full bg-gold/90 text-plum-wine flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300"><IconCmp size={24} /></div>
                 <span className="absolute top-6 right-7 font-serif text-4xl text-cream/10 group-hover:text-gold/25 transition-colors">0{i + 1}</span>
                 <h3 className="font-serif text-xl mb-2">{v.title}</h3>
-                <p className="text-cream/65 text-sm leading-relaxed">{v.desc}</p>
+                <div className="text-cream/65 text-sm leading-relaxed artful-home-card-description" dangerouslySetInnerHTML={{ __html: sanitizeHtml(v.desc ?? v.description ?? "") }} />
               </div>
             );
           })}
@@ -250,7 +251,7 @@ function PromiseSection({ s }) {
           return (
             <div key={i} className="flex items-start gap-4 p-6 rounded-2xl border border-line bg-surface hover:border-plum transition-colors animate-fadeUp" style={{ animationDelay: `${i * 70}ms` }} data-testid={`promise-card-${i}`}>
               <span className="w-11 h-11 rounded-full bg-plum-light text-plum flex items-center justify-center shrink-0"><IconCmp size={20} /></span>
-              <div><h3 className="text-sm font-semibold text-ink">{it.title}</h3><p className="text-xs text-ink-muted mt-1 leading-relaxed">{it.desc}</p></div>
+              <div><h3 className="text-sm font-semibold text-ink">{it.title}</h3><div className="text-xs text-ink-muted mt-1 leading-relaxed artful-home-card-description" dangerouslySetInnerHTML={{ __html: sanitizeHtml(it.desc ?? it.description ?? "") }} /></div>
             </div>
           );
         })}
