@@ -62,7 +62,7 @@ function HeroCarousel({ section, banners = [] }) {
               const media = slide.mediaType === "video"
                 ? <video src={slide.media} muted autoPlay loop playsInline preload="metadata" className="artful-hero-media" data-testid={`hero-video-${idx}`} />
                 : <img src={slide.media} alt="ARTFUL home banner" loading={idx === 0 ? "eager" : "lazy"} className="artful-hero-media" data-testid={`hero-image-${idx}`} />;
-              return <div key={slide.id || idx} className="min-w-0 flex-0-0-70 mx-auto px-2">
+              return <div key={slide.id || idx} className="min-w-0 flex-0-0-70 mx-auto px-1 md:px-2">
                 {slide.destination ? <a href={slide.destination} className="block" aria-label="Open banner destination">{media}</a> : media}
               </div>;
             })}
