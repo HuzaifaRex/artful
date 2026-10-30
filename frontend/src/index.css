@@ -427,11 +427,11 @@ option,
 
 ul{
   list-style: disc !important;
-  padding-left: 20px !important;
+  padding-left: 15px !important;
 }
 ol{
   list-style: numeric !important;
-padding-left: 20px !important;
+padding-left: 15px !important;
 }
 b{
   font-weight: 600 !important;
