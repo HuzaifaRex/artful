@@ -381,7 +381,7 @@ export default function Checkout() {
     <div className="container-artful py-10" data-testid="guest-checkout-flow">
       <h1 className="section-title mb-10">Checkout</h1>
       <div className="grid lg:grid-cols-3 gap-12">
-        <div className="lg:col-span-2 space-y-8 order-1 md:order-2">
+        <div className="lg:col-span-2 space-y-8 order-2 md:order-1">
           {/* Contact / Auth */}
           <section className="border border-line p-6">
             <div className="flex items-center gap-3 mb-4">
@@ -470,7 +470,7 @@ export default function Checkout() {
         </div>
 
         {/* Summary */}
-        <div className="lg:col-span-1 order-2 md:order-1">
+        <div className="lg:col-span-1 order-1 md:order-2">
           <div className="bg-surface p-6 sticky top-28">
             <h3 className="font-serif text-2xl text-plum mb-5">Your Order</h3>
             <div className="space-y-4 max-h-72 overflow-y-auto mb-5 pr-1">
