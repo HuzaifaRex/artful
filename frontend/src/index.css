@@ -356,7 +356,7 @@ option,
  
   height: auto;
 
-  object-fit: contain;
+  object-fit: cover;
   border-radius: 15px;
   background: rgb(var(--c-surface));
 }

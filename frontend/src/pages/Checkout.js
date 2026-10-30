@@ -486,7 +486,7 @@ export default function Checkout() {
                           <div className="min-w-0"><p className="text-ink leading-tight line-clamp-2 font-medium">{i.name}</p>{isCustom && <span className="inline-flex mt-1 rounded-full bg-plum-light text-plum px-2 py-0.5 text-[10px] font-semibold">Custom Print</span>}</div>
                           <button onClick={() => removeItem(i.key)} className="text-ink-muted hover:text-err shrink-0" data-testid={`checkout-remove-${i.key}`} aria-label="Remove"><Trash2 size={15} /></button>
                         </div>
-                        {Number(i.pack_quantity || 1) > 1 && <p className="text-[11px] text-ink-muted mt-1">Each product: {i.pack_quantity} {i.quantity_unit || "pieces"} · Quantity {i.qty} = {i.qty * Number(i.pack_quantity)} {i.quantity_unit || "pieces"}</p>}
+                        {Number(i.pack_quantity || 1) > 1 && <p className="text-[11px] text-ink-muted mt-1 hidden ">Each product: {i.pack_quantity} {i.quantity_unit || "pieces"} · Quantity {i.qty} = {i.qty * Number(i.pack_quantity)} {i.quantity_unit || "pieces"}</p>}
                         {i.gift_wrap && <p className="text-[11px] text-amber-700 mt-1">Gift wrapping · {inr(i.wrap_price ?? i.gift_wrap_price ?? 199)} × {i.qty}</p>}
                         {i.bulk_order?.applied && <p className="text-[11px] text-violet-700 mt-1">Bulk rate applied · {inr(i.price)} / item</p>}
                         {customDetails.length > 0 && <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-1">{customDetails.map((d, idx) => <p key={idx} className="text-[11px] text-ink-secondary truncate"><span className="text-ink-muted">{d.label}:</span> {d.value}</p>)}</div>}
