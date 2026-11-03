@@ -359,12 +359,13 @@ option,
   object-fit: cover;
   border-radius: 15px;
   background: rgb(var(--c-surface));
+  max-height: 380px;
 }
 
 @media (max-width: 767px) {
   .artful-hero-media {
 
-    max-height: auto;
+    max-height: auto !important;
   }
 }
 
