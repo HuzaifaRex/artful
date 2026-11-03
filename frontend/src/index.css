@@ -359,7 +359,7 @@ option,
   object-fit: cover;
   border-radius: 15px;
   background: rgb(var(--c-surface));
-  max-height: 380px;
+  max-height: 410px;
 }
 
 @media (max-width: 767px) {
