@@ -74,7 +74,7 @@ export default function Header() {
 
             <nav className="hidden lg:flex items-center gap-7 xl:gap-9">
               {navItems.map((n) => (
-                <Link key={n.to} to={n.to} className="text-[12px] font-medium uppercase tracking-widest text-ink-secondary hover:text-plum transition-colors link-underline" data-testid={`nav-${n.label.toLowerCase().replace(/\s/g, "-")}`}>
+                <Link key={n.to} to={n.to} className="text-[12px] font-medium uppercase tracking-widest text-ink-secondary hover:text-plum transition-colors link-underline" data-testid={`nav-${String(n.label || "").toLowerCase().replace(/\s/g, "-")}`}>
                   {n.label}
                 </Link>
               ))}

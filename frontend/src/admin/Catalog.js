@@ -572,7 +572,7 @@ export function Collections() {
     const ids = e.product_ids || [];
     return { ...e, product_ids: ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id] };
   });
-  const filteredProducts = products.filter((p) => !pq || p.name.toLowerCase().includes(pq.toLowerCase()));
+  const filteredProducts = products.filter((p) => !pq || String(p?.name || "").toLowerCase().includes(String(pq || "").toLowerCase()));
 
   return (
     <div>

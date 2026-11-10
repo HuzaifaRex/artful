@@ -171,9 +171,14 @@ function OccasionSection({ s }) {
         <h2 className="section-title">{s.heading}</h2>
         <p className="text-ink-secondary mt-2 mb-10">{s.subheading}</p>
         <div className="flex flex-wrap justify-center gap-3">
-          {(s.items || []).map((it) => (
-            <Link key={it.label} to={it.link} className="px-7 py-3.5 bg-cream border border-line text-sm text-plum hover:bg-plum hover:text-white transition-colors" data-testid={`occasion-${it.label.toLowerCase()}`}>{it.label}</Link>
-          ))}
+          {(s.items || []).map((it, index) => {
+            const label = String(it?.label || "");
+            const link = it?.link || "#";
+            if (!label) return null;
+            return (
+              <Link key={it?.id || label || index} to={link} className="px-7 py-3.5 bg-cream border border-line text-sm text-plum hover:bg-plum hover:text-white transition-colors" data-testid={`occasion-${label.toLowerCase().replace(/\s+/g, "-")}`}>{label}</Link>
+            );
+          })}
         </div>
       </div>
     </section>
